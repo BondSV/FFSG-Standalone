@@ -1,0 +1,105 @@
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { useAuth } from "@/hooks/useAuth";
+import { LogOut, ArrowRight, CheckCircle, Clock } from "lucide-react";
+
+interface HeaderProps {
+  currentState: any;
+  onCommitWeek: () => void;
+}
+
+export default function Header({ currentState, onCommitWeek }: HeaderProps) {
+  const { user } = useAuth();
+
+  const formatCurrency = (value: number) => {
+    return new Intl.NumberFormat('en-GB', {
+      style: 'currency',
+      currency: 'GBP',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(value);
+  };
+
+  const getPhaseInfo = (week: number) => {
+    if (week <= 2) return { name: 'Strategy Phase', color: 'bg-blue-100 text-blue-800' };
+    if (week <= 6) return { name: 'Development Phase', color: 'bg-green-100 text-green-800' };
+    if (week <= 12) return { name: 'Sales Phase', color: 'bg-purple-100 text-purple-800' };
+    return { name: 'Run-out Phase', color: 'bg-orange-100 text-orange-800' };
+  };
+
+  const phase = getPhaseInfo(currentState?.weekNumber || 1);
+
+  return (
+    <header className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="flex items-center justify-between">
+        {/* Left side - Game info */}
+        <div className="flex items-center gap-6">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900">Vintage Revival</h1>
+            <p className="text-sm text-gray-600">Fast Fashion Business Simulation</p>
+          </div>
+          
+          <div className="flex items-center gap-4">
+            <Badge className={phase.color}>
+              {phase.name}
+            </Badge>
+            
+            <div className="flex items-center gap-2">
+              {currentState?.isCommitted ? (
+                <CheckCircle className="text-green-600" size={16} />
+              ) : (
+                <Clock className="text-gray-500" size={16} />
+              )}
+              <span className="text-sm font-medium">
+                Week {currentState?.weekNumber || 1}/15
+              </span>
+            </div>
+            
+            <div className="text-sm">
+              <span className="text-gray-600">Cash: </span>
+              <span className="font-mono font-semibold">
+                {formatCurrency(parseFloat(currentState?.cashOnHand || '500000'))}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Right side - Actions */}
+        <div className="flex items-center gap-4">
+          {/* Commit Week Button */}
+          <Button 
+            onClick={onCommitWeek}
+            disabled={currentState?.isCommitted}
+            className="flex items-center gap-2"
+          >
+            {currentState?.isCommitted ? (
+              <>
+                <CheckCircle size={16} />
+                Week Committed
+              </>
+            ) : (
+              <>
+                Commit Week {currentState?.weekNumber || 1}
+                <ArrowRight size={16} />
+              </>
+            )}
+          </Button>
+
+          {/* User info and logout */}
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-gray-700">
+              {(user as any)?.firstName || (user as any)?.email}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => window.location.href = "/api/logout"}
+            >
+              <LogOut size={16} />
+            </Button>
+          </div>
+        </div>
+      </div>
+    </header>
+  );
+}
