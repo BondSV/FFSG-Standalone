@@ -9,8 +9,9 @@ import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { ShoppingCart, Calculator, Palette } from "lucide-react";
+import { ShoppingCart, Calculator, Palette, Truck, PoundSterling, History } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface ProcurementProps {
   gameSession: any;
@@ -67,6 +68,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
 
   const [selectedSupplier, setSelectedSupplier] = useState<'supplier1' | 'supplier2'>('supplier1');
   const [quantityErrors, setQuantityErrors] = useState<Record<string, string>>({});
+  const [gmcCommitments, setGmcCommitments] = useState<Record<string, number>>(() => {
+    return (currentState?.procurementContracts?.gmcCommitments as Record<string, number>) || {};
+  });
 
   // Load existing procurement data when component mounts or currentState changes
   useEffect(() => {
@@ -325,12 +329,15 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       totalUnits: Object.values(materialQuantities).reduce((s: number, v: any) => s + (Number(v) || 0), 0),
     };
 
-    const updates = {
+    const updates: any = {
       materialPurchases: [
         ...(currentState?.materialPurchases || []),
         materialPurchase
       ]
     };
+    if (contractData.type === 'gmc') {
+      updates.gmcCommitments = gmcCommitments;
+    }
 
     updateStateMutation.mutate(updates);
     
@@ -581,6 +588,14 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            {/* Supplier select (first) */}
+            <div className="border rounded-lg p-4">
+              <h3 className="font-semibold mb-3">Supplier</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant={selectedSupplier === 'supplier1' ? 'default' : 'outline'} onClick={() => setSelectedSupplier('supplier1')} className="justify-start">Supplier-1</Button>
+                <Button variant={selectedSupplier === 'supplier2' ? 'default' : 'outline'} onClick={() => setSelectedSupplier('supplier2')} className="justify-start">Supplier-2</Button>
+              </div>
+            </div>
             {/* Contract picker */}
             <div className="border rounded-lg p-4">
               <h3 className="font-semibold mb-3">Contract</h3>
@@ -593,16 +608,19 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             {/* GMC commitment */}
             <div className="border rounded-lg p-4">
               <h3 className="font-semibold mb-3">GMC Commitment</h3>
-              <p className="text-xs text-gray-600 mb-2">Total season units across materials with this supplier. Counts for discounts. Min 70% of season need.</p>
-              <Input type="number" placeholder={`0 (x ${((gameConstants?.BATCH_SIZE as number) || 25000).toLocaleString()})`} disabled={contractData.type !== 'gmc'} onChange={() => { /* store when posting order */ }} />
-            </div>
-            {/* Supplier select */}
-            <div className="border rounded-lg p-4">
-              <h3 className="font-semibold mb-3">Supplier</h3>
-              <div className="grid grid-cols-2 gap-2">
-                <Button variant={selectedSupplier === 'supplier1' ? 'default' : 'outline'} onClick={() => setSelectedSupplier('supplier1')} className="justify-start">Supplier-1</Button>
-                <Button variant={selectedSupplier === 'supplier2' ? 'default' : 'outline'} onClick={() => setSelectedSupplier('supplier2')} className="justify-start">Supplier-2</Button>
-              </div>
+              <p className="text-xs text-gray-600 mb-2">Total season units with this supplier. Counts for discounts. Min 70% of season need.</p>
+              <Input
+                type="number"
+                value={gmcCommitments[selectedSupplier] || 0}
+                onChange={(e) => setGmcCommitments(prev => ({ ...prev, [selectedSupplier]: Number(e.target.value || 0) }))}
+                placeholder={`0 (x ${((gameConstants?.BATCH_SIZE as number) || 25000).toLocaleString()})`}
+                disabled={contractData.type !== 'gmc'}
+              />
+              {contractData.type === 'gmc' && (
+                <div className="text-xs text-gray-600 mt-2">
+                  Commitment for {selectedSupplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'}: {(gmcCommitments[selectedSupplier] || 0).toLocaleString()} units
+                </div>
+              )}
             </div>
           </div>
         </CardContent>
@@ -750,8 +768,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       </div>
                     )}
                       <div className="flex justify-between items-center text-sm text-gray-700">
-                        <span>Down Payment Due This Week</span>
-                        <span className="font-mono">{formatCurrency(downPaymentNow)}</span>
+                        <span>{contractData.type === 'fvc' ? 'FVC: 30% due now; 70% at W+8' : contractData.type === 'gmc' ? 'GMC: each batch settles at W+2' : 'SPT: pay on delivery (defects not billed)'}</span>
+                        <span className="font-mono">{contractData.type === 'fvc' ? formatCurrency(downPaymentNow) : ''}</span>
                       </div>
                     <div className="flex justify-between items-center font-bold text-lg border-t border-gray-300 pt-2 mt-2">
                       <span>Total Commitment:</span>
@@ -823,47 +841,85 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         </Card>
       )}
 
-      {/* Volume Discount Tiers */}
+      {/* Contracts / Orders Ledger */}
       <Card className="border border-gray-100">
         <CardHeader>
-          <CardTitle>Volume Discount Tiers</CardTitle>
-          <p className="text-sm text-gray-600">
-            <TooltipWrapper content="A dynamic discount applied to your material costs based on the total volume you commit to a single supplier. Larger commitments unlock higher discounts.">
-              <span className="cursor-help">Discounts based on total units committed to single supplier</span>
-            </TooltipWrapper>
-          </p>
+          <CardTitle className="flex items-center gap-2"><History size={18}/> Contracts & Orders</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg">
-              <div>
-                <div className="font-medium text-gray-900">Tier 1: 100,000 - 299,999 units</div>
-                <div className="text-sm text-gray-600">Basic volume discount</div>
-              </div>
-              <div className="text-lg font-bold text-gray-900">3%</div>
-            </div>
-            <div className="flex items-center justify-between p-4 bg-secondary bg-opacity-10 rounded-lg">
-              <div>
-                <div className="font-medium text-secondary">Tier 2: 300,000 - 499,999 units</div>
-                <div className="text-sm text-gray-600">Preferred partner discount</div>
-              </div>
-              <div className="text-lg font-bold text-secondary">7%</div>
-            </div>
-            <div className="flex items-center justify-between p-4 bg-primary bg-opacity-10 rounded-lg">
-              <div>
-                <div className="font-medium text-primary">Tier 3: 500,000+ units</div>
-                <div className="text-sm text-gray-600">Strategic partnership discount</div>
-              </div>
-              <div className="text-lg font-bold text-primary">12%</div>
-            </div>
-            <div className="flex items-center justify-between p-4 bg-gradient-to-r from-yellow-50 to-yellow-100 rounded-lg border border-yellow-200">
-              <div>
-                <div className="font-medium text-yellow-800">Single Supplier Bonus</div>
-                <div className="text-sm text-yellow-700">100% commitment to one supplier in Week 1</div>
-              </div>
-              <div className="text-lg font-bold text-yellow-800">15% (S1) / 10% (S2)</div>
-            </div>
-          </div>
+          <Tabs defaultValue="week">
+            <TabsList>
+              <TabsTrigger value="week">This Week's Orders</TabsTrigger>
+              <TabsTrigger value="season">Season Commitments & History</TabsTrigger>
+            </TabsList>
+            <TabsContent value="week" className="mt-4">
+              {(currentState?.materialPurchases || []).filter((p: any) => p.purchaseWeek === currentWeek).length === 0 ? (
+                <div className="text-sm text-gray-600">No orders placed this week.</div>
+              ) : (
+                <div className="space-y-3">
+                  {(currentState?.materialPurchases || []).filter((p: any) => p.purchaseWeek === currentWeek).map((p: any, idx: number) => {
+                    const delivery = p.purchaseWeek + (p.type === 'fvc' ? 3 : p.type === 'spot' ? 1 : 2);
+                    return (
+                      <div key={idx} className="border rounded-md p-3 text-sm">
+                        <div className="flex justify-between">
+                          <div className="font-medium">{p.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {p.type?.toUpperCase()}</div>
+                          <div className="text-gray-600 flex items-center gap-1"><Truck size={14}/> Arrives W{delivery}</div>
+                        </div>
+                        <div className="mt-1 text-gray-700">
+                          {(p.orders || []).map((o: any, i: number) => (
+                            <div key={i} className="flex justify-between">
+                              <span className="capitalize">{o.material.replace(/([A-Z])/g, ' $1').trim()} — {o.quantity.toLocaleString()} units</span>
+                              <span className="font-mono">{formatCurrency(o.totalCost)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </TabsContent>
+            <TabsContent value="season" className="mt-4">
+              {!(currentState?.procurementContracts?.contracts || []).length ? (
+                <div className="text-sm text-gray-600">No procurement commitments yet.</div>
+              ) : (
+                <div className="space-y-3">
+                  {(currentState?.procurementContracts?.contracts || []).map((c: any, idx: number) => {
+                    const deliveries = c.deliveries || [];
+                    const delivered = Number(c.deliveredUnits || 0);
+                    const committed = Number(c.units || 0);
+                    return (
+                      <div key={idx} className="border rounded-md p-3 text-sm">
+                        <div className="flex justify-between">
+                          <div className="font-medium">{c.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {c.type}</div>
+                          <div className="text-gray-600">Material: <span className="capitalize">{String(c.material).replace(/([A-Z])/g, ' $1').trim()}</span></div>
+                        </div>
+                        <div className="mt-1 grid grid-cols-2 md:grid-cols-4 gap-2">
+                          <div>Committed: <span className="font-mono">{committed.toLocaleString()}</span></div>
+                          <div>Delivered: <span className="font-mono">{delivered.toLocaleString()}</span></div>
+                          <div>Outstanding: <span className="font-mono">{Math.max(0, committed - delivered).toLocaleString()}</span></div>
+                          <div>Signed W{c.weekSigned}</div>
+                        </div>
+                        {deliveries.length > 0 && (
+                          <div className="mt-2 text-gray-700">
+                            <div className="font-medium mb-1">Deliveries</div>
+                            <div className="space-y-1">
+                              {deliveries.map((d: any, i: number) => (
+                                <div key={i} className="flex items-center justify-between">
+                                  <span>W{d.week}: {Number(d.units).toLocaleString()} units</span>
+                                  <span className="flex items-center gap-1 text-gray-600"><PoundSterling size={14}/>{formatCurrency((Number(d.units) || 0) * Number(d.unitPrice || 0))}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </TabsContent>
+          </Tabs>
         </CardContent>
       </Card>
     </div>

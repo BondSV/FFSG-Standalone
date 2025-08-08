@@ -218,10 +218,16 @@ export class GameEngine {
 
     // 1) Process procurement: compute discounts once per contract if not set; schedule deliveries; pay deposits/instalments due this week
     const contracts = state.procurementContracts.contracts || [];
-    // Compute supplier totals for discounts
+    // Compute supplier totals for discounts (FVC units + GMC commitments + SPT units)
     const supplierTotals: Record<string, number> = {};
     for (const c of contracts) {
-      supplierTotals[c.supplier] = (supplierTotals[c.supplier] || 0) + this.toNumber(c.units);
+      if (c.type === 'FVC' || c.type === 'SPT') {
+        supplierTotals[c.supplier] = (supplierTotals[c.supplier] || 0) + this.toNumber(c.units);
+      }
+    }
+    const gmcCommitmentsBySupplier: Record<string, number> = (state.procurementContracts as any)?.gmcCommitments || {};
+    for (const [sup, commit] of Object.entries(gmcCommitmentsBySupplier)) {
+      supplierTotals[sup] = (supplierTotals[sup] || 0) + this.toNumber(commit);
     }
     for (const c of contracts) {
       if (c.discountPercentApplied == null) {
@@ -512,13 +518,33 @@ export class GameEngine {
     // 9) Final week penalties (GMC undelivered)
     if (week === 15) {
       let gmcPenalty = 0;
-      for (const c of contracts) {
-        if (c.type === 'GMC') {
-          const undelivered = Math.max(0, this.toNumber(c.units) - this.toNumber(c.deliveredUnits));
-          if (undelivered > 0) {
-            const unitPrice = this.computeContractUnitPrice(c);
-            gmcPenalty += undelivered * unitPrice * 0.20;
+      // Penalty per supplier based on GMC commitment minus delivered GMC units
+      for (const [sup, commit] of Object.entries(gmcCommitmentsBySupplier)) {
+        const deliveredSum = contracts
+          .filter((c: any) => c.type === 'GMC' && c.supplier === sup)
+          .reduce((s: number, c: any) => s + this.toNumber(c.deliveredUnits), 0);
+        const undelivered = Math.max(0, this.toNumber(commit) - deliveredSum);
+        if (undelivered > 0) {
+          // Compute average GMC unit price for this supplier
+          const gmcContracts = contracts.filter((c: any) => c.type === 'GMC' && c.supplier === sup);
+          let avgUnit = 0;
+          let totalUnitsForAvg = 0;
+          for (const c of gmcContracts) {
+            const unit = this.computeContractUnitPrice(c);
+            const delivered = this.toNumber(c.deliveredUnits);
+            if (delivered > 0) {
+              avgUnit += unit * delivered;
+              totalUnitsForAvg += delivered;
+            }
           }
+          if (totalUnitsForAvg > 0) {
+            avgUnit = avgUnit / totalUnitsForAvg;
+          } else if (gmcContracts.length > 0) {
+            avgUnit = gmcContracts.reduce((s: number, c: any) => s + this.computeContractUnitPrice(c), 0) / gmcContracts.length;
+          } else {
+            avgUnit = 0;
+          }
+          gmcPenalty += undelivered * avgUnit * 0.20;
         }
       }
       if (gmcPenalty > 0) {
