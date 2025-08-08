@@ -77,8 +77,8 @@ export default function Sidebar({ activeTab, onTabChange, currentState }: Sideba
               )
             );
             const hasProductionScheduled = Boolean(
-              (currentState?.productionSchedule || []).some((p: any) =>
-                p.quantity > 0
+              (currentState?.productionSchedule?.batches || []).some((b: any) =>
+                Number(b.quantity) > 0
               )
             );
             const baseAllowed = tab.id === 'overview' || tab.id === 'pricing' || pricesLocked;
