@@ -144,3 +144,151 @@ export type GameSession = typeof gameSessions.$inferSelect;
 export type WeeklyState = typeof weeklyStates.$inferSelect;
 export type InsertGameSession = z.infer<typeof insertGameSessionSchema>;
 export type InsertWeeklyState = z.infer<typeof insertWeeklyStateSchema>;
+
+// ----------------------------
+// Runtime JSON Shapes (Server)
+// ----------------------------
+// These TypeScript interfaces describe the structure of the JSON fields stored
+// in the weekly state. They are not enforced by the database schema (jsonb),
+// but they provide compile-time safety for the game engine and routes.
+
+export type ProductKey = 'jacket' | 'dress' | 'pants';
+export type SupplierKey = 'supplier1' | 'supplier2';
+export type MaterialKey =
+  | 'selvedgeDenim'
+  | 'standardDenim'
+  | 'egyptianCotton'
+  | 'polyesterBlend'
+  | 'fineWaleCorduroy'
+  | 'wideWaleCorduroy';
+
+export interface ProductDecision {
+  rrp: number | null;
+  fabric: MaterialKey | null;
+  hasPrint: boolean;
+  rrpLocked?: boolean;
+  confirmedMaterialCost?: number; // after procurement contracts
+}
+
+export type ProductDecisions = Record<ProductKey, ProductDecision>;
+
+export interface MaterialsInventoryByKey {
+  onHand: number; // units
+  allocated: number; // units reserved for production
+  inTransit: Array<{ quantity: number; arrivalWeek: number; supplier: SupplierKey; unitCost: number }>;
+}
+
+export type RawMaterialsInventory = Partial<Record<MaterialKey, MaterialsInventoryByKey>>;
+
+export interface WorkInProcessBatchSnapshot {
+  id: string;
+  product: ProductKey;
+  method: 'inhouse' | 'outsource';
+  startWeek: number;
+  endWeek: number; // production completes at endWeek
+  quantity: number; // units
+  materialUnitCost: number; // confirmed material unit cost used
+  productionUnitCost: number; // per unit
+}
+
+export interface FinishedGoodsLot {
+  id: string;
+  product: ProductKey;
+  quantity: number; // on-hand units
+  unitCostBasis: number; // sum below
+  unitMaterialCost: number;
+  unitProductionCost: number;
+  unitShippingCost: number;
+}
+
+export interface ShipmentInTransit {
+  id: string;
+  product: ProductKey;
+  quantity: number;
+  unitShippingCost: number;
+  unitMaterialCost?: number;
+  unitProductionCost?: number;
+  arrivalWeek: number; // available at start of next week after this arrival
+}
+
+export interface ProductionBatchPlan {
+  id: string;
+  product: ProductKey;
+  quantity: number; // must be multiple of 25,000
+  method: 'inhouse' | 'outsource';
+  startWeek: number;
+  shipping: 'standard' | 'expedited';
+}
+
+export interface ProcurementContract {
+  id: string;
+  type: 'FVC' | 'GMC' | 'SPT';
+  supplier: SupplierKey;
+  material: MaterialKey;
+  units: number; // committed units
+  weekSigned: number; // for SPT this is the order week
+  unitBasePrice: number; // list price before discounts and surcharges
+  printSurcharge: number; // per unit if applicable
+  discountPercentApplied: number; // dynamic volume discount applied
+  deliveries?: Array<{ week: number; units: number }>; // planned arrivals
+  paidSoFar?: number; // bookkeeping for payment waterfall
+  deliveredUnits?: number; // track delivered
+}
+
+export interface MarketingPlan {
+  totalSpend: number; // this week
+  channels?: Array<{ name: string; spend: number }>; // optional breakdown
+}
+
+export interface WeeklyDiscountsByProduct {
+  jacket: number; // 0..1
+  dress: number;
+  pants: number;
+}
+
+export interface WeeklyDemandByProduct {
+  jacket: number;
+  dress: number;
+  pants: number;
+}
+
+export interface WeeklySalesByProduct {
+  jacket: number;
+  dress: number;
+  pants: number;
+}
+
+export interface CostBreakdown {
+  materials: number;
+  production: number;
+  logistics: number;
+  marketing: number;
+  holding: number;
+  interest: number;
+}
+
+export interface RunningTotals {
+  revenueToDate: number;
+  unitsSoldToDate: number;
+  cogsMaterialsToDate: number;
+  cogsProductionToDate: number;
+  cogsLogisticsToDate: number;
+  cogsMarketingToDate: number; // allocated portion of marketing
+}
+
+export interface ExtendedWeeklyState {
+  productData: ProductDecisions;
+  rawMaterials: RawMaterialsInventory;
+  workInProcess: { batches: WorkInProcessBatchSnapshot[] };
+  finishedGoods: { lots: FinishedGoodsLot[] };
+  shipmentsInTransit?: ShipmentInTransit[];
+  productionSchedule: { batches: ProductionBatchPlan[] };
+  procurementContracts: { contracts: ProcurementContract[] };
+  marketingPlan?: MarketingPlan;
+  weeklyDiscounts: WeeklyDiscountsByProduct;
+  weeklyDemand: WeeklyDemandByProduct;
+  weeklySales: WeeklySalesByProduct;
+  lostSales: WeeklySalesByProduct;
+  costBreakdown?: CostBreakdown;
+  totals?: RunningTotals;
+}

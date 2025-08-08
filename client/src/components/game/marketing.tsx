@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -9,7 +9,7 @@ import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { Megaphone, TrendingUp, Users, Eye } from "lucide-react";
+import { Megaphone, TrendingUp, Users, Eye, AlertTriangle } from "lucide-react";
 
 interface MarketingProps {
   gameSession: any;
@@ -72,6 +72,7 @@ const products = ['jacket', 'dress', 'pants'];
 export default function Marketing({ gameSession, currentState }: MarketingProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { data: gameConstants } = useQuery({ queryKey: ['/api/game/constants'], retry: false });
   
   const [marketingSpend, setMarketingSpend] = useState(
     Number(currentState?.marketingSpend || 0)
@@ -94,6 +95,11 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       return acc;
     }, {} as Record<string, number>);
   });
+
+  const [projectedDemand, setProjectedDemand] = useState<Record<string, number>>({ jacket: 0, dress: 0, pants: 0 });
+  const [projectedSales, setProjectedSales] = useState<Record<string, number>>({ jacket: 0, dress: 0, pants: 0 });
+  const [violations, setViolations] = useState<{ floor: string[]; positioning: string[] }>({ floor: [], positioning: [] });
+  const [isAutoSaving, setIsAutoSaving] = useState(false);
 
   const updateStateMutation = useMutation({
     mutationFn: async (updates: any) => {
@@ -127,9 +133,12 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   });
 
   const handleSave = () => {
+    const channelsArray = marketingChannels.map((c) => ({ name: c.id, spend: calculateChannelSpend(c.id) }));
     const updates = {
       marketingSpend: marketingSpend.toString(),
+      marketingPlan: { totalSpend: marketingSpend, channels: channelsArray },
       weeklyDiscounts,
+      marketingChannels: channelAllocation,
     };
     updateStateMutation.mutate(updates);
   };
@@ -142,10 +151,22 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   };
 
   const handleChannelAllocationChange = (channelId: string, percentage: number) => {
-    setChannelAllocation(prev => ({
-      ...prev,
-      [channelId]: percentage,
-    }));
+    setChannelAllocation(prev => {
+      const next = { ...prev, [channelId]: percentage } as Record<string, number>;
+      // Enforce total exactly 100% by scaling others proportionally if over/underflows
+      const total = Object.values(next).reduce((s, v) => s + (Number(v) || 0), 0);
+      if (total === 100) return next;
+      const keys = Object.keys(next);
+      const remainderKeys = keys.filter(k => k !== channelId);
+      const remainderTotal = remainderKeys.reduce((s, k) => s + (Number(prev[k]) || 0), 0) || 1;
+      const targetRemainder = 100 - (Number(next[channelId]) || 0);
+      const adjusted: Record<string, number> = { ...next };
+      remainderKeys.forEach(k => {
+        const share = (Number(prev[k]) || 0) / remainderTotal;
+        adjusted[k] = Math.max(0, Math.min(100, Number((targetRemainder * share).toFixed(1))));
+      });
+      return adjusted;
+    });
   };
 
   const formatCurrency = (value: number) => {
@@ -177,6 +198,89 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   };
 
   const currentWeek = currentState?.weekNumber || 1;
+
+  // Compute totals and constraints
+  const totalAllocation = useMemo(() => Object.values(channelAllocation).reduce((s, v) => s + (Number(v) || 0), 0), [channelAllocation]);
+  const productData = currentState?.productData || {};
+  const finishedGoodsLots = (currentState?.finishedGoods?.lots || []) as Array<any>;
+  const availableFGByProduct = useMemo(() => {
+    const byP: Record<string, number> = { jacket: 0, dress: 0, pants: 0 };
+    finishedGoodsLots.forEach((l) => { byP[l.product] = (byP[l.product] || 0) + Number(l.quantity || 0); });
+    return byP;
+  }, [finishedGoodsLots]);
+
+  // Auto-save on change with debounce to ensure commit uses latest
+  useEffect(() => {
+    if (!isWeekInSalesPhase()) return;
+    setIsAutoSaving(true);
+    const t = setTimeout(() => {
+      const channelsArray = marketingChannels.map((c) => ({ name: c.id, spend: calculateChannelSpend(c.id) }));
+      apiRequest('POST', `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, {
+        marketingSpend: marketingSpend.toString(),
+        marketingPlan: { totalSpend: marketingSpend, channels: channelsArray },
+        weeklyDiscounts,
+        marketingChannels: channelAllocation,
+      }).finally(() => setIsAutoSaving(false));
+    }, 400);
+    return () => clearTimeout(t);
+  }, [marketingSpend, JSON.stringify(weeklyDiscounts), JSON.stringify(channelAllocation)]);
+
+  // Real-time demand projections per product
+  useEffect(() => {
+    const fetchDemand = async () => {
+      const prods = ['jacket', 'dress', 'pants'];
+      const results: Record<string, number> = {};
+      await Promise.all(prods.map(async (p) => {
+        const d = weeklyDiscounts[p as keyof typeof weeklyDiscounts] || 0;
+        const rrp = Number(productData?.[p]?.rrp || 0);
+        const hasPrint = Boolean(productData?.[p]?.hasPrint);
+        if (!rrp) { results[p] = 0; return; }
+        try {
+          const res = await apiRequest('POST', '/api/game/calculate-demand', {
+            product: p,
+            week: currentWeek,
+            rrp,
+            discount: d / 100,
+            marketingSpend,
+            hasPrint,
+          });
+          const { demand } = await res.json();
+          results[p] = Number(demand || 0);
+        } catch {
+          results[p] = 0;
+        }
+      }));
+      setProjectedDemand(results);
+      setProjectedSales({
+        jacket: Math.min(results['jacket'] || 0, availableFGByProduct['jacket'] || 0),
+        dress: Math.min(results['dress'] || 0, availableFGByProduct['dress'] || 0),
+        pants: Math.min(results['pants'] || 0, availableFGByProduct['pants'] || 0),
+      });
+    };
+    fetchDemand();
+  }, [marketingSpend, weeklyDiscounts, currentWeek, productData, availableFGByProduct]);
+
+  // Validate price floor and positioning penalty
+  useEffect(() => {
+    const floorViolations: string[] = [];
+    const positioningWarnings: string[] = [];
+    const manuf = gameConstants?.MANUFACTURING || {};
+    (['jacket', 'dress', 'pants'] as const).forEach((p) => {
+      const rrp = Number(productData?.[p]?.rrp || 0);
+      const discountPct = Number(weeklyDiscounts[p] || 0);
+      const salePrice = rrp * (1 - discountPct / 100);
+      const confirmed = Number(productData?.[p]?.confirmedMaterialCost || 0);
+      const prodCost = Number((manuf as any)[p]?.inHouseCost || 0);
+      if (rrp && salePrice < 1.05 * (confirmed + prodCost)) {
+        floorViolations.push(p);
+      }
+      const hm = Number(gameConstants?.PRODUCTS?.[p]?.hmPrice || 1);
+      const x = rrp / hm - 1;
+      const positioningEffect = 1 + (0.8 / (1 + Math.exp(-(-50) * (x - 0.20)))) - 0.4;
+      if (positioningEffect < 0.85) positioningWarnings.push(p);
+    });
+    setViolations({ floor: floorViolations, positioning: positioningWarnings });
+  }, [weeklyDiscounts, productData, gameConstants]);
 
   return (
     <div className="p-6">
@@ -239,6 +343,10 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                 className="mt-1"
                 disabled={!isWeekInSalesPhase()}
               />
+              <div className="text-xs text-gray-500 mt-1">
+                PromoLift ≈ {Math.max(0.2, (marketingSpend || 0) / (Number(gameConstants?.BASELINE_MARKETING_SPEND) || 216667)).toFixed(2)}x
+              </div>
+              {isAutoSaving && <div className="text-xs text-gray-400 mt-1">Saving...</div>}
             </div>
             
             {/* Visual indicator */}
@@ -293,6 +401,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               const ChannelIcon = channel.icon;
               const spend = calculateChannelSpend(channel.id);
               const reach = calculateExpectedReach(channel.id);
+              const conversions = Math.round(reach * channel.conversionRate);
               
               return (
                 <div key={channel.id} className="border border-gray-200 rounded-lg p-4">
@@ -308,7 +417,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                     </div>
                     <div className="text-right">
                       <p className="font-mono font-semibold">{formatCurrency(spend)}</p>
-                      <p className="text-sm text-gray-600">{reach.toLocaleString()} reach</p>
+                      <p className="text-sm text-gray-600">{reach.toLocaleString()} reach • {conversions.toLocaleString()} conversions</p>
                     </div>
                   </div>
                   
@@ -328,6 +437,11 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                 </div>
               );
             })}
+            <div className="text-sm text-gray-600">
+              Total allocation: {totalAllocation.toFixed(1)}% {Math.abs(totalAllocation - 100) > 1 ? (
+                <span className="text-yellow-700 inline-flex items-center gap-1 ml-2"><AlertTriangle size={14} /> Not equal to 100%</span>
+              ) : null}
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -347,6 +461,12 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             {products.map((product) => {
               const productName = product === 'jacket' ? 'Vintage Denim Jacket' : 
                                  product === 'dress' ? 'Floral Print Dress' : 'Corduroy Pants';
+              const rrp = Number(productData?.[product]?.rrp || 0);
+              const salePrice = rrp * (1 - (weeklyDiscounts[product as keyof typeof weeklyDiscounts] || 0) / 100);
+              const isFloorViolation = violations.floor.includes(product);
+              const isPositioningPenalty = violations.positioning.includes(product);
+              const projDemand = projectedDemand[product] || 0;
+              const projSales = projectedSales[product] || 0;
               
               return (
                 <div key={product} className="border border-gray-200 rounded-lg p-4">
@@ -365,10 +485,18 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                         className="mt-1"
                         disabled={!isWeekInSalesPhase()}
                       />
+                      {isFloorViolation && (
+                        <div className="text-xs text-red-600 mt-1">Sale price below 105% of cost floor</div>
+                      )}
+                      {isPositioningPenalty && (
+                        <div className="text-xs text-yellow-700 mt-1">Positioning penalty exceeds 15%</div>
+                      )}
                     </div>
                     <div className="text-sm text-gray-600">
-                      <p>Current RRP: £120.00</p>
-                      <p>Sale Price: £{(120 * (1 - (weeklyDiscounts[product as keyof typeof weeklyDiscounts] || 0) / 100)).toFixed(2)}</p>
+                      <p>Current RRP: £{rrp ? rrp.toFixed(2) : '—'}</p>
+                      <p>Sale Price: £{salePrice ? salePrice.toFixed(2) : '—'}</p>
+                      <p className="mt-1">Projected demand: {projDemand.toLocaleString()}</p>
+                      <p>Projected units sold (cap FG): {projSales.toLocaleString()} / {availableFGByProduct[product].toLocaleString()}</p>
                     </div>
                   </div>
                 </div>
@@ -391,9 +519,9 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
           <Button 
             variant="outline" 
             onClick={handleSave}
-            disabled={updateStateMutation.isPending}
+            disabled={updateStateMutation.isPending || violations.floor.length > 0}
           >
-            {updateStateMutation.isPending ? "Saving..." : "Save Changes"}
+            {updateStateMutation.isPending ? "Saving..." : violations.floor.length > 0 ? "Fix Price Floor" : "Save Changes"}
           </Button>
         </div>
       </div>

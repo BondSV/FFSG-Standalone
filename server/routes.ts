@@ -74,6 +74,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // List all weekly states for a game session (for analytics/final dashboard)
+  app.get('/api/game/:gameId/weeks', isAuthenticated, async (req: any, res) => {
+    try {
+      const { gameId } = req.params;
+      const gameSession = await storage.getGameSession(gameId);
+      if (!gameSession) {
+        return res.status(404).json({ message: "Game session not found" });
+      }
+      const weeklyStates = await storage.getAllWeeklyStates(gameId);
+      // Sort by weekNumber ascending
+      const sorted = weeklyStates.sort((a: any, b: any) => Number(a.weekNumber) - Number(b.weekNumber));
+      res.json({ gameSession, weeks: sorted });
+    } catch (error) {
+      console.error("Error fetching weekly states:", error);
+      res.status(500).json({ message: "Failed to fetch weekly states" });
+    }
+  });
+
   // Weekly state routes
   app.get('/api/game/:gameId/week/:weekNumber', isAuthenticated, async (req: any, res) => {
     try {
@@ -119,7 +137,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         // Process material purchases if they exist in updates
         if (updates.materialPurchases) {
-          const processedUpdates = GameEngine.processMaterialPurchases(weeklyState, updates);
+          // Convert material purchases UI into procurement contracts (iterative orders)
+          // We will append GMC/SPT/FVC entries under procurementContracts and ignore immediate cash effects.
+          const existing = (weeklyState as any).procurementContracts || { contracts: [] };
+          const contracts = existing.contracts || [];
+          const currentWeek = Number(weeklyState.weekNumber);
+          const purchases = updates.materialPurchases as any[];
+          for (const p of purchases) {
+            // One contract per material
+            for (const order of (p.orders || [])) {
+              // Pull base and surcharge from constants to keep source of truth in engine
+              const sup = GAME_CONSTANTS.SUPPLIERS as any;
+              const base = sup[p.supplier]?.materials?.[order.material]?.price || 0;
+              const surchargeCatalog = sup[p.supplier]?.materials?.[order.material]?.printSurcharge || 0;
+              const applyPrint = Boolean(p.printOptions?.[order.material]);
+
+              const contractBase: any = {
+                id: `${p.timestamp}-${order.material}`,
+                supplier: p.supplier,
+                material: order.material,
+                unitBasePrice: base,
+                printSurcharge: applyPrint ? surchargeCatalog : 0,
+              };
+
+              if (p.type === 'fvc') {
+                contracts.push({
+                  ...contractBase,
+                  type: 'FVC',
+                  units: order.quantity,
+                  weekSigned: currentWeek,
+                });
+              } else if (p.type === 'gmc') {
+                // GMC: commitment lives on a contract, orders recorded per week
+                let contract = contracts.find((c: any) => c.type === 'GMC' && c.supplier === p.supplier && c.material === order.material);
+                if (!contract) {
+                  contract = { ...contractBase, type: 'GMC', units: p.gmcCommitmentUnits || 0, weekSigned: 1, gmcOrders: [] };
+                  contracts.push(contract);
+                }
+                contract.gmcOrders = contract.gmcOrders || [];
+                contract.gmcOrders.push({ week: currentWeek, units: order.quantity });
+              } else if (p.type === 'spot') {
+                contracts.push({
+                  ...contractBase,
+                  type: 'SPT',
+                  units: order.quantity,
+                  weekSigned: currentWeek,
+                });
+              }
+            }
+          }
+          const processedUpdates = { procurementContracts: { contracts } } as any;
           weeklyState = await storage.updateWeeklyState(weeklyState.id, processedUpdates);
         } 
         // Process production schedule if it exists in updates
@@ -194,34 +261,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
       
-      // Commit the week
-      const committedState = await storage.commitWeeklyState(weeklyState.id);
+      // Commit the week via engine (full simulation); persist result
+      const computed = GameEngine.commitWeek(weeklyState as any);
+      const committedState = await storage.updateWeeklyState(weeklyState.id, computed as any);
+      await storage.commitWeeklyState(weeklyState.id);
       
       // If this is week 15, mark game as completed
       if (week === 15) {
         const allStates = await storage.getAllWeeklyStates(gameId);
         const serviceLevel = GameEngine.calculateServiceLevel(allStates);
-        
-        // Calculate final metrics (simplified)
+
         const totalRevenue = allStates.reduce((sum, state) => sum + Number(state.weeklyRevenue), 0);
-        const totalCosts = allStates.reduce((sum, state) => 
+        const totalOperationalCosts = allStates.reduce((sum, state) => 
           sum + Number(state.materialCosts) + Number(state.productionCosts) + 
           Number(state.logisticsCosts) + Number(state.holdingCosts), 0);
-        
+        const totalInterest = allStates.reduce((sum, state) => sum + Number(state.interestAccrued || 0), 0);
+        const totalMarketing = allStates.reduce((sum, state) => sum + Number((state as any).marketingPlan?.totalSpend ?? state.marketingSpend ?? 0), 0);
+        const totalCosts = totalOperationalCosts + totalMarketing + totalInterest;
         const economicProfit = GameEngine.calculateEconomicProfit(totalRevenue, totalCosts, GAME_CONSTANTS.STARTING_CAPITAL);
-        
+
+        // Dead stock penalty: value of remaining finished goods at unit cost basis
+        const finalState = committedState as any;
+        const deadStockPenalty = (finalState.finishedGoods?.lots || []).reduce((s: number, l: any) => s + Number(l.quantity || 0) * Number(l.unitCostBasis || 0), 0);
+        const finalScore = economicProfit - deadStockPenalty;
+
         await storage.updateGameSession(gameId, {
           isCompleted: true,
           finalServiceLevel: serviceLevel.toString(),
           finalCash: committedState.cashOnHand,
           finalEconomicProfit: economicProfit.toString(),
+          finalScore: finalScore.toString(),
         });
       }
       
-      // Create next week's state if not final week
+      // Create next week's skeleton from committed state if not final week
       if (week < 15) {
-        const nextWeekState = {
-          ...weeklyState,
+        const nextWeekState: any = {
+          ...computed,
           id: undefined,
           weekNumber: week + 1,
           phase: GameEngine.getPhaseForWeek(week + 1),
@@ -229,8 +305,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           validationErrors: [],
           validationWarnings: [],
         };
-        
-        await storage.createWeeklyState(nextWeekState as any);
+        await storage.createWeeklyState(nextWeekState);
       }
       
       res.json(committedState);

@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -36,6 +36,7 @@ interface ContractData {
 export default function Procurement({ gameSession, currentState }: ProcurementProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const { data: gameConstants } = useQuery({ queryKey: ["/api/game/constants"], retry: false });
   
   // Initialize form data from current state
   const [contractData, setContractData] = useState<ContractData>({
@@ -65,6 +66,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   });
 
   const [selectedSupplier, setSelectedSupplier] = useState<'supplier1' | 'supplier2'>('supplier1');
+  const [quantityErrors, setQuantityErrors] = useState<Record<string, string>>({});
 
   // Load existing procurement data when component mounts or currentState changes
   useEffect(() => {
@@ -204,16 +206,25 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       }
     });
 
-    const discount = calculateDiscount(totalVolume, selectedSupplier);
-    const discountedCost = totalCost * (1 - discount);
+    // Determine single-supplier bonus eligibility (Week 1 and cover full seasonal need)
+    const seasonNeed = (gameConstants?.PRODUCTS?.jacket?.forecast || 0)
+      + (gameConstants?.PRODUCTS?.dress?.forecast || 0)
+      + (gameConstants?.PRODUCTS?.pants?.forecast || 0);
+    const isWeek1 = (currentState?.weekNumber || 1) === 1;
+    const singleSupplierBonusEligible = isWeek1 && totalVolume >= seasonNeed;
+    const supplierMax = selectedSupplier === 'supplier1' ? 0.15 : 0.10;
+
+    const tierDiscount = calculateDiscount(totalVolume, selectedSupplier);
+    const appliedDiscount = singleSupplierBonusEligible ? supplierMax : tierDiscount;
+    const discountedCost = totalCost * (1 - appliedDiscount);
 
     setContractData(prev => ({
       ...prev,
       orders,
       totalCommitment: discountedCost,
-      discount: discount * 100,
+      discount: appliedDiscount * 100,
     }));
-  }, [materialQuantities, printOptions, selectedSupplier]);
+  }, [materialQuantities, printOptions, selectedSupplier, gameConstants, currentState?.weekNumber]);
 
   // Save procurement data mutation
   const updateStateMutation = useMutation({
@@ -256,9 +267,16 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   };
 
   const handleMaterialQuantityChange = (material: string, quantity: number) => {
+    const batchSize = (gameConstants?.BATCH_SIZE as number) || 25000;
+    const safeQuantity = Math.max(0, quantity);
+    if (safeQuantity % batchSize !== 0) {
+      setQuantityErrors(prev => ({ ...prev, [material]: `Quantity must be a multiple of ${batchSize.toLocaleString()}` }));
+    } else {
+      setQuantityErrors(prev => { const { [material]: _, ...rest } = prev; return rest; });
+    }
     setMaterialQuantities(prev => ({
       ...prev,
-      [material]: Math.max(0, quantity),
+      [material]: safeQuantity,
     }));
   };
 
@@ -276,6 +294,10 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         description: "Please select materials and quantities before purchasing.",
         variant: "destructive",
       });
+      return;
+    }
+    if (Object.keys(quantityErrors).length > 0) {
+      toast({ title: "Invalid Quantities", description: "Fix quantity errors before purchasing.", variant: "destructive" });
       return;
     }
 
@@ -300,6 +322,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       shipmentWeek,
       timestamp: new Date().toISOString(),
       status: 'ordered',
+      totalUnits: Object.values(materialQuantities).reduce((s: number, v: any) => s + (Number(v) || 0), 0),
     };
 
     const updates = {
@@ -347,6 +370,21 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   };
 
   const canPlaceOrders = currentState?.weekNumber <= 6;  // Can only order in development phase
+  const batchSize = (gameConstants?.BATCH_SIZE as number) || 25000;
+  const totalUnits = Object.values(materialQuantities).reduce((s, v) => s + (Number(v) || 0), 0);
+  const tierLabel = (() => {
+    if (contractData.discount >= 15) return 'Single Supplier Bonus';
+    if (totalUnits >= 500000) return 'Tier 3 (12%)';
+    if (totalUnits >= 300000) return 'Tier 2 (7%)';
+    if (totalUnits >= 100000) return 'Tier 1 (3%)';
+    return 'No Discount';
+  })();
+  const downPaymentNow = (() => {
+    if (!contractData.type) return 0;
+    if (contractData.type === 'fvc') return contractData.totalCommitment * 0.25;
+    if (contractData.type === 'gmc') return contractData.totalCommitment * 0.40;
+    return 0; // Spot pays on delivery
+  })();
   return (
     <div className="p-6">
       <div className="mb-6">
@@ -382,17 +420,24 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                           ? 'bg-green-100 text-green-800'
                           : 'bg-yellow-100 text-yellow-800'
                       }`}>
-                        {purchase.shipmentWeek <= (currentState?.weekNumber || 1) ? 'Delivered' : 'In Transit'}
+                        {purchase.shipmentWeek <= (currentState?.weekNumber || 1) ? 'Arrived' : 'In Transit'}
                       </span>
                     </div>
                   </div>
                   <div className="text-xs text-gray-600">
-                    {purchase.orders?.map((order: any, orderIndex: number) => (
-                      <span key={orderIndex}>
-                        {order.material.replace(/([A-Z])/g, ' $1').trim()}: {order.quantity.toLocaleString()} units
-                        {orderIndex < purchase.orders.length - 1 ? ' • ' : ''}
-                      </span>
-                    ))}
+                    {purchase.orders?.map((order: any, orderIndex: number) => {
+                      const defectRate = purchase.supplier === 'supplier2' ? 0.05 : 0;
+                      const goodUnits = Math.round(order.quantity * (1 - defectRate));
+                      return (
+                        <span key={orderIndex}>
+                          {order.material.replace(/([A-Z])/g, ' $1').trim()}: {order.quantity.toLocaleString()} units
+                          {defectRate > 0 && (
+                            <span className="text-gray-500"> (est. usable {goodUnits.toLocaleString()})</span>
+                          )}
+                          {orderIndex < purchase.orders.length - 1 ? ' • ' : ''}
+                        </span>
+                      );
+                    })}
                   </div>
                 </div>
               ))}
@@ -706,12 +751,15 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       <Input
                         type="number"
                         min="0"
-                        step="1000"
+                        step={(gameConstants?.BATCH_SIZE as number) || 25000}
                         value={materialQuantities[material] || ''}
                         onChange={(e) => handleMaterialQuantityChange(material, parseInt(e.target.value) || 0)}
-                        placeholder="0"
+                        placeholder={`0 (x ${((gameConstants?.BATCH_SIZE as number) || 25000).toLocaleString()})`}
                         className="mb-2"
                       />
+                      {quantityErrors[material] && (
+                        <div className="text-xs text-red-600 mb-1">{quantityErrors[material]}</div>
+                      )}
                       <div className="text-xs text-gray-600">
                         <div>Unit Price: {formatCurrency(finalPrice)}</div>
                         <div className="font-medium">
@@ -754,17 +802,25 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       <span className="font-mono">{formatCurrency(order.totalCost)}</span>
                     </div>
                   ))}
-                  <div className="border-t border-gray-200 pt-2 mt-2">
+                    <div className="border-t border-gray-200 pt-2 mt-2">
+                      <div className="flex justify-between items-center">
+                        <span className="text-sm text-gray-600">Total Units</span>
+                        <span className="font-mono text-sm">{totalUnits.toLocaleString()}</span>
+                      </div>
                     <div className="flex justify-between items-center font-medium">
                       <span>Subtotal:</span>
                       <span className="font-mono">{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0))}</span>
                     </div>
-                    {contractData.discount > 0 && (
+                      {contractData.discount > 0 && (
                       <div className="flex justify-between items-center text-green-600">
-                        <span>Volume Discount ({contractData.discount.toFixed(1)}%):</span>
+                        <span>{tierLabel} ({contractData.discount.toFixed(1)}%):</span>
                         <span className="font-mono">-{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0) * (contractData.discount / 100))}</span>
                       </div>
                     )}
+                      <div className="flex justify-between items-center text-sm text-gray-700">
+                        <span>Down Payment Due This Week</span>
+                        <span className="font-mono">{formatCurrency(downPaymentNow)}</span>
+                      </div>
                     <div className="flex justify-between items-center font-bold text-lg border-t border-gray-300 pt-2 mt-2">
                       <span>Total Commitment:</span>
                       <span className="font-mono">{formatCurrency(contractData.totalCommitment)}</span>
@@ -819,6 +875,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       ? 'Forward contracts take 3 weeks to fulfill'
                       : 'GMC contracts take 2 weeks to fulfill'}
                   </div>
+                  <div className="text-xs text-blue-600">Batch Size: {batchSize.toLocaleString()} units</div>
                 </div>
               </div>
             )}

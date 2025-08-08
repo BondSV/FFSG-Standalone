@@ -16,6 +16,7 @@ import Production from "@/components/game/production";
 import Logistics from "@/components/game/logistics";
 import Marketing from "@/components/game/marketing";
 import Analytics from "@/components/game/analytics";
+import FinalDashboard from "@/components/game/final-dashboard";
 import CommitWeekModal from "@/components/game/commit-week-modal";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
@@ -161,6 +162,9 @@ export default function Dashboard() {
         
         <main className="flex-1 overflow-y-auto">
           {renderTabContent()}
+          {gameSession?.isCompleted && (
+            <FinalDashboard gameId={gameSession.id} />
+          )}
         </main>
       </div>
 
