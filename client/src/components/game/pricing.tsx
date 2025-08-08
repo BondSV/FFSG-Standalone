@@ -1,61 +1,198 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Progress } from "@/components/ui/progress";
 import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { DollarSign, TrendingUp, AlertCircle } from "lucide-react";
+import { DollarSign, AlertCircle } from "lucide-react";
 
 interface PricingProps {
   gameSession: any;
   currentState: any;
 }
 
+// Product configuration mapped to the required SkuCard contract
 const products = [
   {
-    id: 'jacket',
+    skuId: 'jacket',
     name: 'Vintage Denim Jacket',
-    forecast: 100000,
-    hmPrice: 80,
-    highEndRange: { min: 300, max: 550 },
+    base_units: 100000,
+    hmp: 80,
+    hi_low: [300, 550] as [number, number],
     elasticity: -1.40,
   },
   {
-    id: 'dress',
+    skuId: 'dress',
     name: 'Floral Print Dress',
-    forecast: 150000,
-    hmPrice: 50,
-    highEndRange: { min: 180, max: 210 },
+    base_units: 150000,
+    hmp: 50,
+    hi_low: [180, 210] as [number, number],
     elasticity: -1.20,
   },
   {
-    id: 'pants',
+    skuId: 'pants',
     name: 'Corduroy Pants',
-    forecast: 120000,
-    hmPrice: 60,
-    highEndRange: { min: 190, max: 220 },
+    base_units: 120000,
+    hmp: 60,
+    hi_low: [190, 220] as [number, number],
     elasticity: -1.55,
   },
 ];
 
+function clamp(value: number, min: number, max: number) {
+  return Math.min(max, Math.max(min, value));
+}
+
+function round(value: number) {
+  return Math.round(value);
+}
+
+function currency(value: number) {
+  return new Intl.NumberFormat('en-GB', {
+    style: 'currency',
+    currency: 'GBP',
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 0,
+  }).format(value || 0);
+}
+
+function percentGap(price: number, hmp: number) {
+  if (!price || !hmp) return '0%';
+  const pct = ((price - hmp) / hmp) * 100;
+  const sign = pct > 0 ? '+' : '';
+  return `${sign}${pct.toFixed(0)}%`;
+}
+
+function badgeColour(price: number, hmp: number) {
+  if (!price || !hmp) return "bg-gray-100 text-gray-700";
+  const pct = ((price - hmp) / hmp) * 100;
+  // green (−20% – +10%), amber (+10% – +40%), red (outside)
+  if (pct >= -20 && pct <= 10) return "bg-green-100 text-green-800";
+  if (pct > 10 && pct <= 40) return "bg-amber-100 text-amber-800";
+  return "bg-red-100 text-red-800";
+}
+
+function demand(price: number, hmp: number, ref_price: number, base_units: number, elasticity: number) {
+  const ratio = price / ref_price;
+  const price_effect = Math.pow(ratio, elasticity);
+  const x = (price / hmp) - 1;
+  const position_effect = 1 + (0.8 / (1 + Math.exp(50 * (x - 0.20)))) - 0.4;
+  const demand_units = base_units * price_effect * position_effect;
+  return demand_units;
+}
+
+function PricingMetrics({ price, hmp, ref_price, base_units, elasticity }: { price: number; hmp: number; ref_price: number; base_units: number; elasticity: number; }) {
+  const ratio = price / ref_price;
+  const price_effect = Math.pow(ratio, elasticity);
+  const x = (price / hmp) - 1;
+  const position_effect = 1 + (0.8 / (1 + Math.exp(50 * (x - 0.20)))) - 0.4;
+  const demand_units = base_units * price_effect * position_effect;
+  const demand_pct = demand_units / base_units;
+  const revenue = price * demand_units;
+
+  return (
+    <div className="space-y-2 text-sm">
+      <Label className="text-slate-800 font-semibold">Demand Impact</Label>
+      <Progress value={clamp(demand_pct * 100, 0, 200)} className="h-2 bg-zinc-200">
+        {/* Progress component handles styling; bg is set via className */}
+      </Progress>
+      <div className="flex justify-between text-slate-800">
+        <span>{round(demand_units).toLocaleString()} units</span>
+        <span>{currency(revenue)}</span>
+      </div>
+      <TooltipWrapper content={`Elasticity ${elasticity}. A 10% ↑ price changes demand by ≈${Math.abs(elasticity) * 10}% . Reference price is H&M + 20%.`}>
+        <span className="text-xs text-slate-600 cursor-help">More on elasticity and reference price</span>
+      </TooltipWrapper>
+    </div>
+  );
+}
+
+function SkuCard({
+  skuId,
+  name,
+  hmp,
+  base_units,
+  elasticity,
+  hi_low,
+  price,
+  onChange,
+  isLocked,
+}: {
+  skuId: string;
+  name: string;
+  hmp: number;
+  base_units: number;
+  elasticity: number;
+  hi_low: [number, number];
+  price: number;
+  onChange: (skuId: string, price: number) => void;
+  isLocked: boolean;
+}) {
+  const ref_price = useMemo(() => hmp * 1.2, [hmp]);
+
+  return (
+    <Card className="p-6 rounded-2xl shadow-md grid grid-cols-1 md:grid-cols-2 gap-6">
+      <div className="md:col-span-2">
+        <CardTitle className="text-slate-800 font-semibold">{name}</CardTitle>
+      </div>
+
+      {/* LEFT – Decision inputs */}
+      <div className="space-y-4">
+        <Label className="text-slate-800 font-semibold">Recommended Retail Price (RRP) £</Label>
+        <Input
+          type="number"
+          value={Number.isFinite(price) && price > 0 ? price : ''}
+          min={hmp * 0.5}
+          max={hi_low[1]}
+          step={1}
+          onChange={(e) => onChange(skuId, parseFloat(e.target.value))}
+          className="w-40"
+          disabled={isLocked}
+        />
+
+        <Badge className={badgeColour(price, hmp)}>
+          {percentGap(price, hmp)} vs H&M
+        </Badge>
+
+        <small className="text-slate-500 italic">
+          High-End Benchmark {currency(hi_low[0])} – {currency(hi_low[1])}
+        </small>
+      </div>
+
+      {/* RIGHT – Live insight */}
+      <div>
+        <PricingMetrics
+          price={price || 0}
+          hmp={hmp}
+          ref_price={ref_price}
+          base_units={base_units}
+          elasticity={elasticity}
+        />
+      </div>
+    </Card>
+  );
+}
+
 export default function Pricing({ gameSession, currentState }: PricingProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const [pricingData, setPricingData] = useState(() => {
     const productData = currentState?.productData || {};
     const initialData: any = {};
-    
-    products.forEach(product => {
-      initialData[product.id] = {
-        rrp: productData[product.id]?.rrp || '',
+
+    products.forEach((product) => {
+      initialData[product.skuId] = {
+        rrp: productData[product.skuId]?.rrp || '',
       };
     });
-    
+
     return initialData;
   });
 
@@ -64,13 +201,13 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
     if (currentState?.productData) {
       const productData = currentState.productData;
       const newData: any = {};
-      
-      products.forEach(product => {
-        newData[product.id] = {
-          rrp: productData[product.id]?.rrp || '',
+
+      products.forEach((product) => {
+        newData[product.skuId] = {
+          rrp: productData[product.skuId]?.rrp || '',
         };
       });
-      
+
       setPricingData(newData);
     }
   }, [currentState]);
@@ -106,12 +243,12 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
     },
   });
 
-  const handleInputChange = (productId: string, field: string, value: any) => {
+  const handlePriceChange = (productId: string, value: number) => {
     setPricingData((prev: any) => ({
       ...prev,
       [productId]: {
         ...prev[productId],
-        [field]: value,
+        rrp: value,
       },
     }));
   };
@@ -126,7 +263,7 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
             {
               ...currentState?.productData?.[productId],
               rrp: data.rrp,
-            }
+            },
           ])
         ),
       },
@@ -134,30 +271,21 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
     updateStateMutation.mutate(updates);
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-GB', {
-      style: 'currency',
-      currency: 'GBP',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
-  };
-
   const isLocked = currentState?.weekNumber > 1;
 
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2 flex items-center gap-2">
+        <h1 className="text-2xl font-bold text-slate-800 mb-2 flex items-center gap-2">
           <DollarSign size={24} />
-          Pricing Strategy
+          Price Positioning
         </h1>
-        <p className="text-gray-600">Set your recommended retail prices for each product line</p>
+        <p className="text-slate-700">Set each SKU’s RRP and see in real time how it shifts your positioning vs H&M and demand. No costs here; those come later.</p>
         {isLocked && (
           <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-2">
             <AlertCircle size={16} className="text-yellow-600" />
             <span className="text-sm text-yellow-800">
-              Pricing decisions are locked after Week 1. Current prices are final.
+              RRPs are locked after Week 1. Current prices are final.
             </span>
           </div>
         )}
@@ -165,101 +293,21 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
 
       <div className="space-y-6">
         {products.map((product) => {
-          const rrp = parseFloat(pricingData[product.id]?.rrp) || 0;
-          const isInRange = rrp >= product.highEndRange.min && rrp <= product.highEndRange.max;
-          const marginVsHM = rrp > 0 ? ((rrp - product.hmPrice) / product.hmPrice * 100) : 0;
+          const price = parseFloat(pricingData[product.skuId]?.rrp) || 0;
 
           return (
-            <Card key={product.id} className="border border-gray-100">
-              <CardHeader>
-                <CardTitle className="flex items-center justify-between">
-                  <span>{product.name}</span>
-                  <div className="flex items-center gap-2">
-                    {rrp > 0 && (
-                      <span className={`text-sm px-2 py-1 rounded ${
-                        isInRange 
-                          ? 'bg-green-100 text-green-800' 
-                          : 'bg-red-100 text-red-800'
-                      }`}>
-                        {isInRange ? 'In Range' : 'Out of Range'}
-                      </span>
-                    )}
-                  </div>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Market Context */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <Label className="text-sm text-gray-600">H&M Equivalent</Label>
-                    <div className="font-semibold">{formatCurrency(product.hmPrice)}</div>
-                  </div>
-                  <div>
-                    <Label className="text-sm text-gray-600">High-End Range</Label>
-                    <div className="font-semibold">
-                      {formatCurrency(product.highEndRange.min)} - {formatCurrency(product.highEndRange.max)}
-                    </div>
-                  </div>
-                  <div>
-                    <Label className="text-sm text-gray-600">
-                      <TooltipWrapper content="Price elasticity shows how demand changes with price. -1.40 means a 10% price increase reduces demand by 14%.">
-                        <span className="cursor-help">Price Elasticity</span>
-                      </TooltipWrapper>
-                    </Label>
-                    <div className="font-semibold">{product.elasticity}</div>
-                  </div>
-                </div>
-
-                {/* Pricing Input */}
-                <div className="space-y-4">
-                  <div className="flex flex-col space-y-2">
-                    <Label htmlFor={`rrp-${product.id}`} className="text-base font-medium">
-                      Recommended Retail Price (RRP)
-                    </Label>
-                    <div className="flex items-center space-x-4">
-                      <div className="relative flex-1 max-w-xs">
-                        <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500">£</span>
-                        <Input
-                          id={`rrp-${product.id}`}
-                          type="number"
-                          min="0"
-                          step="1"
-                          value={pricingData[product.id]?.rrp || ''}
-                          onChange={(e) => handleInputChange(product.id, 'rrp', e.target.value)}
-                          className="pl-8"
-                          placeholder="0"
-                          disabled={isLocked}
-                        />
-                      </div>
-                      {rrp > 0 && (
-                        <div className="flex items-center gap-4 text-sm">
-                          <div className="flex items-center gap-1">
-                            <TrendingUp size={14} className="text-gray-500" />
-                            <span className="text-gray-600">vs H&M:</span>
-                            <span className={`font-medium ${marginVsHM > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {marginVsHM > 0 ? '+' : ''}{marginVsHM.toFixed(0)}%
-                            </span>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Pricing Guidance */}
-                  <div className="text-sm text-gray-600 space-y-1">
-                    <p>
-                      <TooltipWrapper content="Based on market research, prices in this range will position your product as premium but accessible to your target market.">
-                        <span className="cursor-help font-medium">Recommended Range:</span>
-                      </TooltipWrapper>
-                      {' '}{formatCurrency(product.highEndRange.min)} - {formatCurrency(product.highEndRange.max)}
-                    </p>
-                    <p>
-                      <span className="font-medium">Market Forecast:</span> {product.forecast.toLocaleString()} units at optimal pricing
-                    </p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <SkuCard
+              key={product.skuId}
+              skuId={product.skuId}
+              name={product.name}
+              hmp={product.hmp}
+              base_units={product.base_units}
+              elasticity={product.elasticity}
+              hi_low={product.hi_low}
+              price={price}
+              onChange={handlePriceChange}
+              isLocked={isLocked}
+            />
           );
         })}
       </div>
@@ -279,7 +327,7 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
           ) : (
             <>
               <DollarSign size={16} />
-              Save Pricing Strategy
+              Save RRPs
             </>
           )}
         </Button>

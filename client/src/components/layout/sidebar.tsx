@@ -22,8 +22,8 @@ const tabs = [
   { id: 'overview', label: 'Overview', icon: Home },
   { id: 'pricing', label: 'Price Positioning', icon: DollarSign },
   { id: 'design', label: 'Design', icon: Palette },
-  { id: 'procurement', label: 'Procurement', icon: ShoppingCart },
   { id: 'marketing', label: 'Marketing', icon: Megaphone },
+  { id: 'procurement', label: 'Procurement', icon: ShoppingCart },
   { id: 'production', label: 'Production', icon: Factory },
   { id: 'logistics', label: 'Logistics', icon: Truck },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
@@ -69,7 +69,22 @@ export default function Sidebar({ activeTab, onTabChange, currentState }: Sideba
             const pricesLocked = Boolean((currentState?.productData?.jacket?.rrpLocked
               && currentState?.productData?.dress?.rrpLocked
               && currentState?.productData?.pants?.rrpLocked));
-            const allowTab = tab.id === 'overview' || tab.id === 'pricing' || pricesLocked;
+            // Lock until prices locked, except overview/pricing. Additionally, lock Production until there is some purchased material scheduled to arrive.
+            // Lock Logistics until Production is scheduled.
+            const hasIncomingMaterials = Boolean(
+              (currentState?.procurementContracts?.contracts || []).some((c: any) =>
+                c.deliveries && c.deliveries.length > 0
+              )
+            );
+            const hasProductionScheduled = Boolean(
+              (currentState?.productionSchedule || []).some((p: any) =>
+                p.quantity > 0
+              )
+            );
+            const baseAllowed = tab.id === 'overview' || tab.id === 'pricing' || pricesLocked;
+            const productionUnlocked = baseAllowed && (tab.id !== 'production' || hasIncomingMaterials);
+            const logisticsUnlocked = productionUnlocked && (tab.id !== 'logistics' || hasProductionScheduled);
+            const allowTab = logisticsUnlocked;
             const isDisabled = !allowTab;
             
             return (

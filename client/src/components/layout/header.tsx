@@ -74,7 +74,7 @@ export default function Header({ currentState, onCommitWeek }: HeaderProps) {
               </span>
             </div>
             <div className="text-sm">
-              <span className="text-gray-600">Credit Avail: </span>
+              <span className="text-gray-600">Credit Available: </span>
               <span className="font-mono font-semibold">
                 {formatCurrency(creditAvailable)}
               </span>
