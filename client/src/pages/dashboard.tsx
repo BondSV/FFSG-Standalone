@@ -168,16 +168,7 @@ export default function Dashboard() {
         </main>
       </div>
 
-      {/* Floating Commit Button */}
-      <div className="fixed bottom-6 right-6">
-        <Button 
-          onClick={() => setShowCommitModal(true)}
-          className="rounded-full w-14 h-14 shadow-lg hover:scale-110 transition-transform"
-          disabled={currentState?.isCommitted}
-        >
-          <ArrowRight size={24} />
-        </Button>
-      </div>
+      {/* Floating Commit Button removed */}
 
       <CommitWeekModal 
         open={showCommitModal}

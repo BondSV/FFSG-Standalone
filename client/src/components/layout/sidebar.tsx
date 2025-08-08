@@ -20,12 +20,12 @@ interface SidebarProps {
 
 const tabs = [
   { id: 'overview', label: 'Overview', icon: Home },
-  { id: 'pricing', label: 'Pricing', icon: DollarSign },
+  { id: 'pricing', label: 'Price Positioning', icon: DollarSign },
   { id: 'design', label: 'Design', icon: Palette },
   { id: 'procurement', label: 'Procurement', icon: ShoppingCart },
+  { id: 'marketing', label: 'Marketing', icon: Megaphone },
   { id: 'production', label: 'Production', icon: Factory },
   { id: 'logistics', label: 'Logistics', icon: Truck },
-  { id: 'marketing', label: 'Marketing', icon: Megaphone },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
 ];
 
@@ -66,16 +66,23 @@ export default function Sidebar({ activeTab, onTabChange, currentState }: Sideba
           {tabs.map((tab) => {
             const Icon = tab.icon;
             const isActive = activeTab === tab.id;
+            const pricesLocked = Boolean((currentState?.productData?.jacket?.rrpLocked
+              && currentState?.productData?.dress?.rrpLocked
+              && currentState?.productData?.pants?.rrpLocked));
+            const allowTab = tab.id === 'overview' || tab.id === 'pricing' || pricesLocked;
+            const isDisabled = !allowTab;
             
             return (
               <button
                 key={tab.id}
-                onClick={() => onTabChange(tab.id)}
+                onClick={() => !isDisabled && onTabChange(tab.id)}
                 className={cn(
                   "w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors",
-                  isActive
-                    ? "bg-primary text-white"
-                    : "text-gray-700 hover:bg-gray-100"
+                  isDisabled
+                    ? "text-gray-400 cursor-not-allowed"
+                    : isActive
+                      ? "bg-primary text-white"
+                      : "text-gray-700 hover:bg-gray-100"
                 )}
               >
                 <Icon size={18} />

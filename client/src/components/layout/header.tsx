@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useAuth } from "@/hooks/useAuth";
-import { LogOut, ArrowRight, CheckCircle, Clock, RotateCcw } from "lucide-react";
+import { ArrowRight, CheckCircle, Clock, RotateCcw } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
 
 interface HeaderProps {
   currentState: any;
@@ -9,8 +9,6 @@ interface HeaderProps {
 }
 
 export default function Header({ currentState, onCommitWeek }: HeaderProps) {
-  const { user } = useAuth();
-
   const formatCurrency = (value: number) => {
     return new Intl.NumberFormat('en-GB', {
       style: 'currency',
@@ -37,6 +35,11 @@ export default function Header({ currentState, onCommitWeek }: HeaderProps) {
       window.location.href = '/';
     }
   };
+
+  const { data: constants } = useQuery({ queryKey: ["/api/game/constants"], retry: false });
+  const creditUsed = parseFloat(currentState?.creditUsed || '0');
+  const creditLimit = Number((constants as any)?.CREDIT_LIMIT || 0);
+  const creditAvailable = Math.max(0, creditLimit - creditUsed);
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">
@@ -70,21 +73,17 @@ export default function Header({ currentState, onCommitWeek }: HeaderProps) {
                 {formatCurrency(parseFloat(currentState?.cashOnHand || '500000'))}
               </span>
             </div>
+            <div className="text-sm">
+              <span className="text-gray-600">Credit Avail: </span>
+              <span className="font-mono font-semibold">
+                {formatCurrency(creditAvailable)}
+              </span>
+            </div>
           </div>
         </div>
 
         {/* Right side - Actions */}
         <div className="flex items-center gap-3">
-          {/* Restart Game */}
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleRestart}
-            title="Restart Game"
-          >
-            <RotateCcw size={16} />
-          </Button>
-
           {/* Commit Week Button */}
           <Button 
             onClick={onCommitWeek}
@@ -104,19 +103,15 @@ export default function Header({ currentState, onCommitWeek }: HeaderProps) {
             )}
           </Button>
 
-          {/* User info and logout */}
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-700">
-              {(user as any)?.firstName || (user as any)?.email}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => window.location.href = "/api/logout"}
-            >
-              <LogOut size={16} />
-            </Button>
-          </div>
+          {/* Restart Game */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRestart}
+            title="Restart Game"
+          >
+            <RotateCcw size={16} />
+          </Button>
         </div>
       </div>
     </header>
