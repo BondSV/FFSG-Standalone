@@ -80,13 +80,34 @@ function badgeColour(price: number, hmp: number) {
   return "bg-red-100 text-red-800";
 }
 
+// Saturating S-shaped position effect around the reference price.
+// - Gentle near the reference price (small deltas => tiny effect)
+// - Accelerates through psychologically significant gaps
+// - Slows as it approaches saturation (ceiling/floor)
+function computePositionEffect(price: number, ref_price: number): number {
+  const signedDelta = (price / ref_price) - 1; // relative gap to reference
+  const delta = Math.abs(signedDelta);
+
+  const ceil = 0.95;    // max amplitude of positioning influence
+  const p = 3;          // curvature (higher => flatter near zero, steeper mid)
+  const s = 0.21;       // scale where acceleration becomes noticeable (~21%)
+  const base = 1 - Math.exp(-Math.pow(delta / s, p));
+
+  // Small-delta bump to reflect noticeable response around ~5% gaps, decays quickly
+  const bumpGamma = 40;
+  const bumpWidth = 0.08; // concentrated around 5-8%
+  const bump = bumpGamma * (delta * delta) * Math.exp(-Math.pow(delta / bumpWidth, 2));
+
+  const magnitude = Math.min(1, ceil * base + bump);
+  const raw = 1 + (signedDelta < 0 ? magnitude : -magnitude);
+  // Clamp to avoid negative or extreme multipliers
+  return clamp(raw, 0.1, 2.0);
+}
+
 function demand(price: number, hmp: number, ref_price: number, base_units: number, elasticity: number) {
   const ratio = price / ref_price;
   const price_effect = Math.pow(ratio, elasticity);
-  const x = (price / hmp) - 1;
-  // Smooth the positioning effect around the reference price (H&M + 20%)
-  // by reducing the logistic slope from 50 to 10 for gradual changes.
-  const position_effect = 1 + (0.8 / (1 + Math.exp(10 * (x - 0.20)))) - 0.4;
+  const position_effect = computePositionEffect(price, ref_price);
   const demand_units = base_units * price_effect * position_effect;
   return demand_units;
 }
@@ -100,9 +121,7 @@ function PricingMetrics({ price, hmp, ref_price, base_units, elasticity }: { pri
   if (hasValidPrice) {
     const ratio = price / ref_price;
     const price_effect = Math.pow(ratio, elasticity);
-    const x = (price / hmp) - 1;
-    // Smooth positioning effect (slope 10 instead of 50)
-    const position_effect = 1 + (0.8 / (1 + Math.exp(10 * (x - 0.20)))) - 0.4;
+    const position_effect = computePositionEffect(price, ref_price);
     demand_units = base_units * price_effect * position_effect;
     demand_pct = demand_units / base_units;
   }
@@ -159,12 +178,12 @@ function SkuCard({
       {/* Benchmark strip */}
       <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div className="rounded-lg border border-gray-200 p-4 bg-white">
-          <Label className="text-xs text-slate-600">H&M Benchmark Price</Label>
-          <div className="text-lg font-semibold text-slate-800">{currency(hmp)}</div>
+          <Label className="text-sm md:text-base text-slate-700 font-semibold">H&M Benchmark Price</Label>
+          <div className="text-base font-medium text-slate-800">{currency(hmp)}</div>
         </div>
         <div className="rounded-lg border border-gray-200 p-4 bg-white">
-          <Label className="text-xs text-slate-600">High‑End Benchmark Range</Label>
-          <div className="text-lg font-semibold text-slate-800">{currency(hi_low[0])} – {currency(hi_low[1])}</div>
+          <Label className="text-sm md:text-base text-slate-700 font-semibold">High‑End Benchmark Range</Label>
+          <div className="text-base font-medium text-slate-800">{currency(hi_low[0])} – {currency(hi_low[1])}</div>
         </div>
       </div>
 
