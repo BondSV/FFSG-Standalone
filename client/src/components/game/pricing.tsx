@@ -16,6 +16,9 @@ interface PricingProps {
   currentState: any;
 }
 
+// Use a unified elasticity across SKUs for this screen
+const UNIFIED_ELASTICITY = -1.40;
+
 // Product configuration mapped to the required SkuCard contract
 const products = [
   {
@@ -24,7 +27,7 @@ const products = [
     base_units: 100000,
     hmp: 80,
     hi_low: [300, 550] as [number, number],
-    elasticity: -1.40,
+    elasticity: UNIFIED_ELASTICITY,
   },
   {
     skuId: 'dress',
@@ -32,7 +35,7 @@ const products = [
     base_units: 150000,
     hmp: 50,
     hi_low: [180, 210] as [number, number],
-    elasticity: -1.20,
+    elasticity: UNIFIED_ELASTICITY,
   },
   {
     skuId: 'pants',
@@ -40,7 +43,7 @@ const products = [
     base_units: 120000,
     hmp: 60,
     hi_low: [190, 220] as [number, number],
-    elasticity: -1.55,
+    elasticity: UNIFIED_ELASTICITY,
   },
 ];
 
@@ -81,18 +84,28 @@ function demand(price: number, hmp: number, ref_price: number, base_units: numbe
   const ratio = price / ref_price;
   const price_effect = Math.pow(ratio, elasticity);
   const x = (price / hmp) - 1;
-  const position_effect = 1 + (0.8 / (1 + Math.exp(50 * (x - 0.20)))) - 0.4;
+  // Smooth the positioning effect around the reference price (H&M + 20%)
+  // by reducing the logistic slope from 50 to 10 for gradual changes.
+  const position_effect = 1 + (0.8 / (1 + Math.exp(10 * (x - 0.20)))) - 0.4;
   const demand_units = base_units * price_effect * position_effect;
   return demand_units;
 }
 
 function PricingMetrics({ price, hmp, ref_price, base_units, elasticity }: { price: number; hmp: number; ref_price: number; base_units: number; elasticity: number; }) {
-  const ratio = price / ref_price;
-  const price_effect = Math.pow(ratio, elasticity);
-  const x = (price / hmp) - 1;
-  const position_effect = 1 + (0.8 / (1 + Math.exp(50 * (x - 0.20)))) - 0.4;
-  const demand_units = base_units * price_effect * position_effect;
-  const demand_pct = demand_units / base_units;
+  const hasValidPrice = Number.isFinite(price) && price > 0 && Number.isFinite(hmp) && hmp > 0 && Number.isFinite(ref_price) && ref_price > 0;
+
+  let demand_units = 0;
+  let demand_pct = 0;
+
+  if (hasValidPrice) {
+    const ratio = price / ref_price;
+    const price_effect = Math.pow(ratio, elasticity);
+    const x = (price / hmp) - 1;
+    // Smooth positioning effect (slope 10 instead of 50)
+    const position_effect = 1 + (0.8 / (1 + Math.exp(10 * (x - 0.20)))) - 0.4;
+    demand_units = base_units * price_effect * position_effect;
+    demand_pct = demand_units / base_units;
+  }
 
   return (
     <div className="space-y-3 text-sm">
@@ -100,11 +113,11 @@ function PricingMetrics({ price, hmp, ref_price, base_units, elasticity }: { pri
       <div className="grid grid-cols-1 gap-1 text-slate-800">
         <div className="flex justify-between">
           <span>Estimated demand at this RRP</span>
-          <span className="font-medium">{round(demand_units).toLocaleString()} units</span>
+          <span className="font-medium">{hasValidPrice ? round(demand_units).toLocaleString() : '—'}{!hasValidPrice && ' '}</span>
         </div>
         <div className="flex justify-between text-slate-700">
           <span>Relative to baseline</span>
-          <span className="font-medium">{clamp(demand_pct * 100, 0, 200).toFixed(0)}%</span>
+          <span className="font-medium">{hasValidPrice ? `${clamp(demand_pct * 100, 0, 200).toFixed(0)}%` : '—'}</span>
         </div>
       </div>
       <TooltipWrapper content={"Price elasticity describes how sensitive demand is to price changes. When elasticity is negative, increasing price tends to reduce demand, and lowering price tends to raise demand. Consider: What price signals ‘accessible premium’ versus ‘value’? How might reference brands shape shopper expectations? How would a higher or lower RRP influence your forecast mix and launch risk?"}>
