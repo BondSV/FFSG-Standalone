@@ -93,15 +93,15 @@ function computePositionEffect(price: number, ref_price: number): number {
   const s = 0.21;       // scale where acceleration becomes noticeable (~21%)
   const base = 1 - Math.exp(-Math.pow(delta / s, p));
 
-  // Small-delta bump to reflect noticeable response around ~5% gaps, decays quickly
+  // Small-delta bump to reflect noticeable response around ~5-8% gaps, decays quickly
   const bumpGamma = 40;
-  const bumpWidth = 0.08; // concentrated around 5-8%
+  const bumpWidth = 0.08;
   const bump = bumpGamma * (delta * delta) * Math.exp(-Math.pow(delta / bumpWidth, 2));
 
   const magnitude = Math.min(1, ceil * base + bump);
   const raw = 1 + (signedDelta < 0 ? magnitude : -magnitude);
-  // Clamp to avoid negative or extreme multipliers
-  return clamp(raw, 0.1, 2.0);
+  // Allow full floor at 0 and ceiling at 2 for extreme cases
+  return clamp(raw, 0, 2.0);
 }
 
 function demand(price: number, hmp: number, ref_price: number, base_units: number, elasticity: number) {
@@ -115,16 +115,20 @@ function demand(price: number, hmp: number, ref_price: number, base_units: numbe
 function PricingMetrics({ price, hmp, ref_price, base_units, elasticity }: { price: number; hmp: number; ref_price: number; base_units: number; elasticity: number; }) {
   const hasValidPrice = Number.isFinite(price) && price > 0 && Number.isFinite(hmp) && hmp > 0 && Number.isFinite(ref_price) && ref_price > 0;
 
-  let demand_units = 0;
-  let demand_pct = 0;
+  let demand_units_raw = 0;
+  let demand_pct_raw = 0;
 
   if (hasValidPrice) {
     const ratio = price / ref_price;
     const price_effect = Math.pow(ratio, elasticity);
     const position_effect = computePositionEffect(price, ref_price);
-    demand_units = base_units * price_effect * position_effect;
-    demand_pct = demand_units / base_units;
+    demand_units_raw = base_units * price_effect * position_effect;
+    demand_pct_raw = demand_units_raw / base_units;
   }
+
+  // Clamp both displays consistently
+  const demand_pct_clamped = clamp(demand_pct_raw, 0, 2);
+  const demand_units_clamped = round(base_units * demand_pct_clamped);
 
   return (
     <div className="space-y-3 text-sm">
@@ -132,11 +136,11 @@ function PricingMetrics({ price, hmp, ref_price, base_units, elasticity }: { pri
       <div className="grid grid-cols-1 gap-1 text-slate-800">
         <div className="flex justify-between">
           <span>Estimated demand at this RRP</span>
-          <span className="font-medium">{hasValidPrice ? round(demand_units).toLocaleString() : '—'}{!hasValidPrice && ' '}</span>
+          <span className="font-medium">{hasValidPrice ? `${demand_units_clamped.toLocaleString()} units` : '—'}{!hasValidPrice && ' '}</span>
         </div>
         <div className="flex justify-between text-slate-700">
           <span>Relative to baseline</span>
-          <span className="font-medium">{hasValidPrice ? `${clamp(demand_pct * 100, 0, 200).toFixed(0)}%` : '—'}</span>
+          <span className="font-medium">{hasValidPrice ? `${(demand_pct_clamped * 100).toFixed(0)}%` : '—'}</span>
         </div>
       </div>
       <TooltipWrapper content={"Price elasticity describes how sensitive demand is to price changes. When elasticity is negative, increasing price tends to reduce demand, and lowering price tends to raise demand. Consider: What price signals ‘accessible premium’ versus ‘value’? How might reference brands shape shopper expectations? How would a higher or lower RRP influence your forecast mix and launch risk?"}>
@@ -193,8 +197,6 @@ function SkuCard({
         <Input
           type="number"
           value={Number.isFinite(price) && price > 0 ? price : ''}
-          min={hmp * 0.5}
-          max={hi_low[1]}
           step={1}
           onChange={(e) => onChange(skuId, parseFloat(e.target.value))}
           className="w-40"
