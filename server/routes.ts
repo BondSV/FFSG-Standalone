@@ -74,6 +74,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Restart current game: mark active session as completed so the client shows the welcome/start screen
+  app.post('/api/game/restart', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const active = await storage.getUserActiveGameSession(userId);
+      if (!active) {
+        return res.status(404).json({ message: 'No active game to restart' });
+      }
+      await storage.updateGameSession(active.id, { isCompleted: true });
+      res.json({ ok: true });
+    } catch (error) {
+      console.error('Error restarting game:', error);
+      res.status(500).json({ message: 'Failed to restart game' });
+    }
+  });
+
   // List all weekly states for a game session (for analytics/final dashboard)
   app.get('/api/game/:gameId/weeks', isAuthenticated, async (req: any, res) => {
     try {

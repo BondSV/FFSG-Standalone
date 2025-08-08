@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
-import { LogOut, ArrowRight, CheckCircle, Clock } from "lucide-react";
+import { LogOut, ArrowRight, CheckCircle, Clock, RotateCcw } from "lucide-react";
 
 interface HeaderProps {
   currentState: any;
@@ -28,6 +28,15 @@ export default function Header({ currentState, onCommitWeek }: HeaderProps) {
   };
 
   const phase = getPhaseInfo(currentState?.weekNumber || 1);
+
+  const handleRestart = async () => {
+    try {
+      await fetch('/api/game/restart', { method: 'POST', credentials: 'include' });
+      window.location.href = '/';
+    } catch (_) {
+      window.location.href = '/';
+    }
+  };
 
   return (
     <header className="bg-white border-b border-gray-200 px-6 py-4">
@@ -65,7 +74,17 @@ export default function Header({ currentState, onCommitWeek }: HeaderProps) {
         </div>
 
         {/* Right side - Actions */}
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-3">
+          {/* Restart Game */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRestart}
+            title="Restart Game"
+          >
+            <RotateCcw size={16} />
+          </Button>
+
           {/* Commit Week Button */}
           <Button 
             onClick={onCommitWeek}

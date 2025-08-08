@@ -573,104 +573,36 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         </Card>
       </div>
 
-      {/* Contract Selection */}
+      {/* Contract & Ordering Flow - Redesigned */}
       <Card className="border border-gray-100 mb-8">
         <CardHeader>
-          <CardTitle>Contract Options</CardTitle>
-          <p className="text-sm text-gray-600">Choose your procurement strategy for maximum discounts</p>
+          <CardTitle>Procurement Planner</CardTitle>
+          <p className="text-sm text-gray-600">1) Choose contract. 2) Set GMC commitment (if chosen). 3) Place weekly material orders.</p>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* FVC Contract */}
-            <div className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-              contractData.type === 'fvc' 
-                ? 'border-primary bg-primary bg-opacity-10' 
-                : 'border-gray-200 hover:border-gray-300'
-            }`} onClick={() => handleContractSelect('fvc')}>
-              <h3 className="font-semibold text-gray-900 mb-2">
-                <TooltipWrapper content="Contract Type: High-risk, high-reward. Requires a large upfront payment for all materials in Week 1. This is the best way to achieve the highest possible volume discounts.">
-                  <span className="cursor-help">Full Volume Commitment (FVC)</span>
-                </TooltipWrapper>
-              </h3>
-              <div className="space-y-2 text-sm text-gray-600 mb-4">
-                <p>• Sign in Week 1 only</p>
-                <p>• 25% down, 75% on delivery</p>
-                <p>• Highest discount potential</p>
-                <p>• Committed to full volume</p>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+            {/* Contract picker */}
+            <div className="border rounded-lg p-4">
+              <h3 className="font-semibold mb-3">Contract</h3>
+              <div className="space-y-2">
+                <Button variant={contractData.type === 'fvc' ? 'default' : 'outline'} className="w-full justify-start" onClick={() => handleContractSelect('fvc')}>FVC (30% now, 70% in 8w)</Button>
+                <Button variant={contractData.type === 'gmc' ? 'default' : 'outline'} className="w-full justify-start" onClick={() => handleContractSelect('gmc')}>GMC (2w settlement per batch)</Button>
+                <Button variant={contractData.type === 'spot' ? 'default' : 'outline'} className="w-full justify-start" disabled={currentState?.weekNumber <= 2} onClick={() => currentState?.weekNumber > 2 && handleContractSelect('spot')}>SPT (pay on delivery)</Button>
               </div>
-              <Button 
-                className="w-full" 
-                variant={contractData.type === 'fvc' ? 'default' : 'outline'}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleContractSelect('fvc');
-                }}
-              >
-                {contractData.type === 'fvc' ? '✓ Selected' : 'Select FVC'}
-              </Button>
             </div>
-
-            {/* GMC Contract */}
-            <div className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-              contractData.type === 'gmc' 
-                ? 'border-primary bg-primary bg-opacity-10' 
-                : 'border-gray-200 hover:border-gray-300'
-            }`} onClick={() => handleContractSelect('gmc')}>
-              <h3 className="font-semibold text-gray-900 mb-2">
-                <TooltipWrapper content="Contract Type: A balanced option. Commit to buying at least 70% of your total needs to secure a good discount, with payments spread across deliveries.">
-                  <span className="cursor-help">Guaranteed Minimum (GMC)</span>
-                </TooltipWrapper>
-              </h3>
-              <div className="space-y-2 text-sm text-gray-600 mb-4">
-                <p>• Minimum 70% of season needs</p>
-                <p>• 40% on signing, 30% each delivery</p>
-                <p>• 20% penalty on undelivered</p>
-                <p>• Good discount access</p>
-              </div>
-              <Button 
-                className="w-full" 
-                variant={contractData.type === 'gmc' ? 'default' : 'outline'}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  handleContractSelect('gmc');
-                }}
-              >
-                {contractData.type === 'gmc' ? '✓ Selected' : 'Select GMC'}
-              </Button>
+            {/* GMC commitment */}
+            <div className="border rounded-lg p-4">
+              <h3 className="font-semibold mb-3">GMC Commitment</h3>
+              <p className="text-xs text-gray-600 mb-2">Total season units across materials with this supplier. Counts for discounts. Min 70% of season need.</p>
+              <Input type="number" placeholder={`0 (x ${((gameConstants?.BATCH_SIZE as number) || 25000).toLocaleString()})`} disabled={contractData.type !== 'gmc'} onChange={() => { /* store when posting order */ }} />
             </div>
-
-            {/* Spot Purchases */}
-            <div className={`border rounded-lg p-4 cursor-pointer transition-colors ${
-              contractData.type === 'spot' 
-                ? 'border-primary bg-primary bg-opacity-10' 
-                : 'border-gray-200 hover:border-gray-300'
-            } ${currentState?.weekNumber > 2 ? '' : 'opacity-50'}`} 
-            onClick={() => currentState?.weekNumber > 2 && handleContractSelect('spot')}>
-              <h3 className="font-semibold text-gray-900 mb-2">
-                <TooltipWrapper content="Contract Type: Maximum flexibility, highest cost. Order any amount of material, any week, with no commitment. You will pay the full list price with no discounts.">
-                  <span className="cursor-help">Spot Purchases (SPT)</span>
-                </TooltipWrapper>
-              </h3>
-              <div className="space-y-2 text-sm text-gray-600 mb-4">
-                <p>• Order any week</p>
-                <p>• Payment on delivery</p>
-                <p>• Maximum flexibility</p>
-                <p>• Minimal discounts</p>
+            {/* Supplier select */}
+            <div className="border rounded-lg p-4">
+              <h3 className="font-semibold mb-3">Supplier</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <Button variant={selectedSupplier === 'supplier1' ? 'default' : 'outline'} onClick={() => setSelectedSupplier('supplier1')} className="justify-start">Supplier-1</Button>
+                <Button variant={selectedSupplier === 'supplier2' ? 'default' : 'outline'} onClick={() => setSelectedSupplier('supplier2')} className="justify-start">Supplier-2</Button>
               </div>
-              <Button 
-                className="w-full" 
-                variant={contractData.type === 'spot' ? 'default' : 'outline'}
-                disabled={currentState?.weekNumber <= 2}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (currentState?.weekNumber > 2) {
-                    handleContractSelect('spot');
-                  }
-                }}
-              >
-                {contractData.type === 'spot' ? '✓ Selected' : 
-                 currentState?.weekNumber <= 2 ? 'Available Week 3+' : 'Select SPT'}
-              </Button>
             </div>
           </div>
         </CardContent>
