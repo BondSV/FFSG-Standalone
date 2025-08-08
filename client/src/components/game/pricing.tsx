@@ -5,7 +5,6 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -94,20 +93,22 @@ function PricingMetrics({ price, hmp, ref_price, base_units, elasticity }: { pri
   const position_effect = 1 + (0.8 / (1 + Math.exp(50 * (x - 0.20)))) - 0.4;
   const demand_units = base_units * price_effect * position_effect;
   const demand_pct = demand_units / base_units;
-  const revenue = price * demand_units;
 
   return (
-    <div className="space-y-2 text-sm">
-      <Label className="text-slate-800 font-semibold">Demand Impact</Label>
-      <Progress value={clamp(demand_pct * 100, 0, 200)} className="h-2 bg-zinc-200">
-        {/* Progress component handles styling; bg is set via className */}
-      </Progress>
-      <div className="flex justify-between text-slate-800">
-        <span>{round(demand_units).toLocaleString()} units</span>
-        <span>{currency(revenue)}</span>
+    <div className="space-y-3 text-sm">
+      <Label className="text-slate-800 font-semibold">Demand Insight</Label>
+      <div className="grid grid-cols-1 gap-1 text-slate-800">
+        <div className="flex justify-between">
+          <span>Estimated demand at this RRP</span>
+          <span className="font-medium">{round(demand_units).toLocaleString()} units</span>
+        </div>
+        <div className="flex justify-between text-slate-700">
+          <span>Relative to baseline</span>
+          <span className="font-medium">{clamp(demand_pct * 100, 0, 200).toFixed(0)}%</span>
+        </div>
       </div>
-      <TooltipWrapper content={`Elasticity ${elasticity}. A 10% ↑ price changes demand by ≈${Math.abs(elasticity) * 10}% . Reference price is H&M + 20%.`}>
-        <span className="text-xs text-slate-600 cursor-help">More on elasticity and reference price</span>
+      <TooltipWrapper content={"Price elasticity describes how sensitive demand is to price changes. When elasticity is negative, increasing price tends to reduce demand, and lowering price tends to raise demand. Consider: What price signals ‘accessible premium’ versus ‘value’? How might reference brands shape shopper expectations? How would a higher or lower RRP influence your forecast mix and launch risk?"}>
+        <span className="text-xs text-slate-600 cursor-help">What is price elasticity?</span>
       </TooltipWrapper>
     </div>
   );
@@ -142,6 +143,18 @@ function SkuCard({
         <CardTitle className="text-slate-800 font-semibold">{name}</CardTitle>
       </div>
 
+      {/* Benchmark strip */}
+      <div className="md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="rounded-lg border border-gray-200 p-4 bg-white">
+          <Label className="text-xs text-slate-600">H&M Benchmark Price</Label>
+          <div className="text-lg font-semibold text-slate-800">{currency(hmp)}</div>
+        </div>
+        <div className="rounded-lg border border-gray-200 p-4 bg-white">
+          <Label className="text-xs text-slate-600">High‑End Benchmark Range</Label>
+          <div className="text-lg font-semibold text-slate-800">{currency(hi_low[0])} – {currency(hi_low[1])}</div>
+        </div>
+      </div>
+
       {/* LEFT – Decision inputs */}
       <div className="space-y-4">
         <Label className="text-slate-800 font-semibold">Recommended Retail Price (RRP) £</Label>
@@ -161,7 +174,7 @@ function SkuCard({
         </Badge>
 
         <small className="text-slate-500 italic">
-          High-End Benchmark {currency(hi_low[0])} – {currency(hi_low[1])}
+          Consider where your RRP positions you: below, near, or above H&M — and how far from the high‑end.
         </small>
       </div>
 
@@ -254,15 +267,27 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
   };
 
   const handleSave = () => {
+    // Require all RRPs before locking
+    const allSet = products.every(p => Number(pricingData[p.skuId]?.rrp) > 0);
+    if (!allSet) {
+      toast({
+        title: "Set all RRPs",
+        description: "Please enter an RRP for each SKU before locking.",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const updates = {
       productData: {
         ...currentState?.productData,
         ...Object.fromEntries(
-          Object.entries(pricingData).map(([productId, data]: [string, any]) => [
-            productId,
+          products.map((p) => [
+            p.skuId,
             {
-              ...currentState?.productData?.[productId],
-              rrp: data.rrp,
+              ...currentState?.productData?.[p.skuId],
+              rrp: pricingData[p.skuId].rrp,
+              rrpLocked: true,
             },
           ])
         ),
@@ -271,7 +296,8 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
     updateStateMutation.mutate(updates);
   };
 
-  const isLocked = currentState?.weekNumber > 1;
+  const rrpsLocked = ['jacket', 'dress', 'pants'].every((p) => currentState?.productData?.[p]?.rrpLocked);
+  const isLocked = rrpsLocked || (currentState?.weekNumber > 1);
 
   return (
     <div className="p-6">
@@ -280,12 +306,19 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
           <DollarSign size={24} />
           Price Positioning
         </h1>
-        <p className="text-slate-700">Set each SKU’s RRP and see in real time how it shifts your positioning vs H&M and demand. No costs here; those come later.</p>
+        <p className="text-slate-700 mb-2">
+          Positioning is how your price signals brand intent and competitive stance. Set it first to anchor all downstream decisions.
+        </p>
+        <ul className="text-slate-700 text-sm list-disc ml-5 space-y-1">
+          <li>Choose a compelling RRP for each SKU relative to H&M and the high‑end set.</li>
+          <li>Watch how demand responds as you move up or down from the target zone.</li>
+          <li>Consider: What price feels ‘accessible premium’? What trade‑offs in volume vs. status? How might this influence launch risk?</li>
+        </ul>
         {isLocked && (
           <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-2">
             <AlertCircle size={16} className="text-yellow-600" />
             <span className="text-sm text-yellow-800">
-              RRPs are locked after Week 1. Current prices are final.
+              RRPs are locked. You can proceed to the next steps.
             </span>
           </div>
         )}
@@ -312,7 +345,7 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
         })}
       </div>
 
-      {/* Save Button */}
+      {/* Lock Button */}
       <div className="flex justify-end mt-8">
         <Button
           onClick={handleSave}
@@ -322,12 +355,12 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
           {updateStateMutation.isPending ? (
             <>
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              Saving...
+              Locking...
             </>
           ) : (
             <>
               <DollarSign size={16} />
-              Save RRPs
+              Lock RRP
             </>
           )}
         </Button>
