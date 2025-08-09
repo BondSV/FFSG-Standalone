@@ -268,10 +268,6 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="font-medium">2 weeks</div>
               </div>
               <div>
-                <div className="text-gray-600">Max Discount:</div>
-                <div className="font-medium">15%</div>
-              </div>
-              <div>
                 <div className="font-semibold">Single Supplier Deal:<br/>+2% extra (locks other supplier)</div>
               </div>
             </div>
@@ -280,18 +276,36 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <div>
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
+                  {/* Desktop/tablet (3 columns) */}
+                  <div className="hidden md:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
                     <div className="whitespace-nowrap">Fabric</div>
                     <div className="text-right whitespace-nowrap">Price</div>
                     <div className="text-right whitespace-nowrap">Add Print</div>
                   </div>
-                  {Object.keys(supplierPrices.supplier1).map((mat) => (
-                    <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
-                      <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
-                      <div className="text-right font-mono whitespace-nowrap">{formatCurrency((supplierPrices as any).supplier1[mat])}</div>
-                      <div className="text-right font-mono text-gray-700 whitespace-nowrap">+{formatCurrency(((printSurcharges as any).supplier1[mat] || 0))}</div>
+                  <div className="hidden md:block">
+                    {Object.keys(supplierPrices.supplier1).map((mat) => (
+                      <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
+                        <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
+                        <div className="text-right font-mono whitespace-nowrap">{formatCurrency((supplierPrices as any).supplier1[mat])}</div>
+                        <div className="text-right font-mono text-gray-700 whitespace-nowrap">+{formatCurrency(((printSurcharges as any).supplier1[mat] || 0))}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Mobile (2 columns): Price (+Print) */}
+                  <div className="md:hidden">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 font-medium text-gray-600 mb-1">
+                      <div>Fabric</div>
+                      <div className="text-right">Price (+Print)</div>
                     </div>
-                  ))}
+                    {Object.keys(supplierPrices.supplier1).map((mat) => (
+                      <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 py-0.5">
+                        <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
+                        <div className="text-right font-mono whitespace-nowrap">
+                          {formatCurrency((supplierPrices as any).supplier1[mat])} <span className="text-gray-600">(+{formatCurrency(((printSurcharges as any).supplier1[mat] || 0))})</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
               {/* Right: discount tiers for Supplier-1 */}
@@ -346,10 +360,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="text-gray-600">Lead Time:</div>
                 <div className="font-medium">2 weeks</div>
               </div>
-              <div>
-                <div className="text-gray-600">Max Discount:</div>
-                <div className="font-medium">10%</div>
-              </div>
+              
               <div>
                 <div className="font-semibold">Single Supplier Deal:<br/>+2% extra (locks other supplier)</div>
               </div>
