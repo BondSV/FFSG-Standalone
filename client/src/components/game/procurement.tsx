@@ -286,13 +286,6 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               ))}
             </div>
             <div className="flex items-center gap-2 mt-4">
-              <Button
-                variant={selectedSupplier === 'supplier1' ? 'default' : 'outline'}
-                onClick={() => setSelectedSupplier('supplier1')}
-                disabled={isSupplierDisabledByDeal('supplier1')}
-              >
-                Use Supplier-1
-              </Button>
               {!singleSupplierDeal && (
                 <Button variant="outline" onClick={() => setDealDialog({ open: true, supplier: 'supplier1' })}>
                   Sign Single Supplier Deal
@@ -343,13 +336,6 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               ))}
             </div>
             <div className="flex items-center gap-2 mt-4">
-              <Button
-                variant={selectedSupplier === 'supplier2' ? 'default' : 'outline'}
-                onClick={() => setSelectedSupplier('supplier2')}
-                disabled={isSupplierDisabledByDeal('supplier2')}
-              >
-                Use Supplier-2
-              </Button>
               {!singleSupplierDeal && (
                 <Button variant="outline" onClick={() => setDealDialog({ open: true, supplier: 'supplier2' })}>
                   Sign Single Supplier Deal
@@ -377,32 +363,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               )}
           </div>
         </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            {/* Supplier choice with basket count */}
-            <div className="border rounded-lg p-4">
-              <h3 className="font-semibold mb-3">Supplier</h3>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant={selectedSupplier === 'supplier1' ? 'default' : 'outline'}
-                  onClick={() => setSelectedSupplier('supplier1')}
-                  className="justify-between"
-                  disabled={isSupplierDisabledByDeal('supplier1')}
-                >
-                  <span>Supplier-1</span>
-                  <Badge variant="secondary">{getSupplierBasketCount('supplier1')}</Badge>
-                </Button>
-                <Button
-                  variant={selectedSupplier === 'supplier2' ? 'default' : 'outline'}
-                  onClick={() => setSelectedSupplier('supplier2')}
-                  className="justify-between"
-                  disabled={isSupplierDisabledByDeal('supplier2')}
-                >
-                  <span>Supplier-2</span>
-                  <Badge variant="secondary">{getSupplierBasketCount('supplier2')}</Badge>
-                </Button>
-              </div>
-            </div>
+          <CardContent>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
 
             {/* GMC — Supplier 1 */}
             <div className="border rounded-lg p-4">
@@ -427,7 +389,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <div className="rounded-md bg-gray-50 p-3"><div className="font-medium">Tier 2</div><div className="text-gray-600">300,000 – 499,999 units → 7%</div></div>
               <div className="rounded-md bg-gray-50 p-3"><div className="font-medium">Tier 3</div><div className="text-gray-600">500,000+ units → 12%</div></div>
             </div>
-            <div className="text-xs text-gray-600 mt-2">Week 1 only: Single‑supplier bonus (Supplier‑1 up to 15%; Supplier‑2 up to 10%) if full season volume is committed with one supplier.</div>
+            <div className="text-xs text-gray-600 mt-2">Optional Single‑Supplier Deal: +2% extra discount on all future orders from your chosen supplier (on top of volume tiers). Signing the deal locks the other supplier.</div>
           </div>
         </CardContent>
       </Card>
