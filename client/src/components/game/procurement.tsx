@@ -249,7 +249,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       {/* Supplier Overview (restored large cards) */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
         {/* Supplier-1 Card */}
-        <Card className="border border-gray-100">
+        <Card className="border border-gray-100 relative">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Supplier-1 (Premium)</CardTitle>
@@ -257,7 +257,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             </div>
             <p className="text-sm text-gray-600">Premium quality, higher cost, 2-week lead time</p>
           </CardHeader>
-          <CardContent className="flex flex-col h-full">
+          <CardContent className="flex flex-col h-full pb-16">
             <div className="grid grid-cols-2 gap-4 text-sm mb-4">
               <div>
                 <div className="text-gray-600">Quality:</div>
@@ -275,21 +275,21 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="font-semibold">Single Supplier Deal:<br/>+2% extra (locks other supplier)</div>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Left: materials with price + print surcharge */}
-              <div>
+              <div className="md:col-span-2">
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
                   <div className="grid grid-cols-12 gap-3 font-medium text-gray-600 mb-1">
-                    <div className="col-span-6">Fabric</div>
-                    <div className="col-span-3 text-right">Price</div>
-                    <div className="col-span-3 text-right">Add Print</div>
+                    <div className="col-span-7 whitespace-nowrap">Fabric</div>
+                    <div className="col-span-2 text-right whitespace-nowrap">Price</div>
+                    <div className="col-span-3 text-right whitespace-nowrap">Add Print</div>
                   </div>
                   {Object.keys(supplierPrices.supplier1).map((mat) => (
                     <div key={mat} className="grid grid-cols-12 gap-3 py-0.5">
-                      <div className="col-span-6 capitalize">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
-                      <div className="col-span-3 text-right font-mono">{formatCurrency((supplierPrices as any).supplier1[mat])}</div>
-                      <div className="col-span-3 text-right font-mono text-gray-700">+{formatCurrency(((printSurcharges as any).supplier1[mat] || 0))}</div>
+                      <div className="col-span-7 capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
+                      <div className="col-span-2 text-right font-mono whitespace-nowrap">{formatCurrency((supplierPrices as any).supplier1[mat])}</div>
+                      <div className="col-span-3 text-right font-mono text-gray-700 whitespace-nowrap">+{formatCurrency(((printSurcharges as any).supplier1[mat] || 0))}</div>
                     </div>
                   ))}
                 </div>
@@ -306,15 +306,15 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     { min:350000, max:499999, discount:0.12 },
                     { min:500000, max:Infinity, discount:0.15 },
                   ]).map((t:any, i:number)=> (
-                    <div key={i} className="flex justify-between">
-                      <span>{t.max===Infinity ? `${t.min.toLocaleString()}+ units` : `${t.min.toLocaleString()} – ${t.max.toLocaleString()} units`}</span>
-                      <span className="font-medium">{Math.round(t.discount*100)}%</span>
+                    <div key={i} className="grid grid-cols-[1fr_auto] gap-2">
+                      <span className="whitespace-nowrap">{t.max===Infinity ? `${t.min.toLocaleString()}+ units` : `${t.min.toLocaleString()} – ${t.max.toLocaleString()} units`}</span>
+                      <span className="font-medium text-right whitespace-nowrap">{Math.round(t.discount*100)}%</span>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
-            <div className="mt-auto flex items-center justify-end gap-2 pt-4">
+            <div className="absolute bottom-4 right-4 flex items-center justify-end gap-2">
               {!singleSupplierDeal && (
                 <Button variant="outline" onClick={() => setDealDialog({ open: true, supplier: 'supplier1' })}>
                   Sign Single Supplier Deal
@@ -328,7 +328,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         </Card>
 
         {/* Supplier-2 Card */}
-        <Card className="border border-gray-100">
+        <Card className="border border-gray-100 relative">
           <CardHeader>
             <div className="flex items-center justify-between">
               <CardTitle>Supplier-2 (Standard)</CardTitle>
@@ -336,7 +336,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             </div>
             <p className="text-sm text-gray-600">Standard quality, lower cost, 2-week lead time</p>
           </CardHeader>
-          <CardContent className="flex flex-col h-full">
+          <CardContent className="flex flex-col h-full pb-16">
             <div className="grid grid-cols-2 gap-4 text-sm mb-4">
               <div>
                 <div className="text-gray-600">Quality:</div>
@@ -354,21 +354,21 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="font-semibold">Single Supplier Deal:<br/>+2% extra (locks other supplier)</div>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Left: materials with price + print surcharge */}
-              <div>
+              <div className="md:col-span-2">
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
                   <div className="grid grid-cols-12 gap-3 font-medium text-gray-600 mb-1">
-                    <div className="col-span-6">Fabric</div>
-                    <div className="col-span-3 text-right">Price</div>
-                    <div className="col-span-3 text-right">Add Print</div>
+                    <div className="col-span-7 whitespace-nowrap">Fabric</div>
+                    <div className="col-span-2 text-right whitespace-nowrap">Price</div>
+                    <div className="col-span-3 text-right whitespace-nowrap">Add Print</div>
                   </div>
                   {Object.keys(supplierPrices.supplier2).map((mat) => (
                     <div key={mat} className="grid grid-cols-12 gap-3 py-0.5">
-                      <div className="col-span-6 capitalize">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
-                      <div className="col-span-3 text-right font-mono">{formatCurrency((supplierPrices as any).supplier2[mat])}</div>
-                      <div className="col-span-3 text-right font-mono text-gray-700">+{formatCurrency(((printSurcharges as any).supplier2[mat] || 0))}</div>
+                      <div className="col-span-7 capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
+                      <div className="col-span-2 text-right font-mono whitespace-nowrap">{formatCurrency((supplierPrices as any).supplier2[mat])}</div>
+                      <div className="col-span-3 text-right font-mono text-gray-700 whitespace-nowrap">+{formatCurrency(((printSurcharges as any).supplier2[mat] || 0))}</div>
                     </div>
                   ))}
                 </div>
@@ -385,15 +385,15 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     { min:300000, max:399999, discount:0.07 },
                     { min:400000, max:Infinity, discount:0.09 },
                   ]).map((t:any, i:number)=> (
-                    <div key={i} className="flex justify-between">
-                      <span>{t.max===Infinity ? `${t.min.toLocaleString()}+ units` : `${t.min.toLocaleString()} – ${t.max.toLocaleString()} units`}</span>
-                      <span className="font-medium">{Math.round(t.discount*100)}%</span>
+                    <div key={i} className="grid grid-cols-[1fr_auto] gap-2">
+                      <span className="whitespace-nowrap">{t.max===Infinity ? `${t.min.toLocaleString()}+ units` : `${t.min.toLocaleString()} – ${t.max.toLocaleString()} units`}</span>
+                      <span className="font-medium text-right whitespace-nowrap">{Math.round(t.discount*100)}%</span>
                     </div>
                   ))}
                 </div>
               </div>
             </div>
-            <div className="mt-auto flex items-center justify-end gap-2 pt-4">
+            <div className="absolute bottom-4 right-4 flex items-center justify-end gap-2">
               {!singleSupplierDeal && (
                 <Button variant="outline" onClick={() => setDealDialog({ open: true, supplier: 'supplier2' })}>
                   Sign Single Supplier Deal
