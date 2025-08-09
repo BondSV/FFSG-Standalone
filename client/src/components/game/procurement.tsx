@@ -275,21 +275,21 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="font-semibold">Single Supplier Deal:<br/>+2% extra (locks other supplier)</div>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Left: materials with price + print surcharge */}
-              <div className="md:col-span-2">
+              <div>
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
-                  <div className="grid grid-cols-12 gap-3 font-medium text-gray-600 mb-1">
-                    <div className="col-span-7 whitespace-nowrap">Fabric</div>
-                    <div className="col-span-2 text-right whitespace-nowrap">Price</div>
-                    <div className="col-span-3 text-right whitespace-nowrap">Add Print</div>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
+                    <div className="whitespace-nowrap">Fabric</div>
+                    <div className="text-right whitespace-nowrap">Price</div>
+                    <div className="text-right whitespace-nowrap">Add Print</div>
                   </div>
                   {Object.keys(supplierPrices.supplier1).map((mat) => (
-                    <div key={mat} className="grid grid-cols-12 gap-3 py-0.5">
-                      <div className="col-span-7 capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
-                      <div className="col-span-2 text-right font-mono whitespace-nowrap">{formatCurrency((supplierPrices as any).supplier1[mat])}</div>
-                      <div className="col-span-3 text-right font-mono text-gray-700 whitespace-nowrap">+{formatCurrency(((printSurcharges as any).supplier1[mat] || 0))}</div>
+                    <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
+                      <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
+                      <div className="text-right font-mono whitespace-nowrap">{formatCurrency((supplierPrices as any).supplier1[mat])}</div>
+                      <div className="text-right font-mono text-gray-700 whitespace-nowrap">+{formatCurrency(((printSurcharges as any).supplier1[mat] || 0))}</div>
                     </div>
                   ))}
                 </div>
@@ -306,9 +306,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     { min:350000, max:499999, discount:0.12 },
                     { min:500000, max:Infinity, discount:0.15 },
                   ]).map((t:any, i:number)=> (
-                    <div key={i} className="grid grid-cols-[1fr_auto] gap-2">
+                    <div key={i} className="grid grid-cols-[1fr_auto] gap-x-4">
                       <span className="whitespace-nowrap">{t.max===Infinity ? `${t.min.toLocaleString()}+ units` : `${t.min.toLocaleString()} – ${t.max.toLocaleString()} units`}</span>
-                      <span className="font-medium text-right whitespace-nowrap">{Math.round(t.discount*100)}%</span>
+                      <span className="font-medium text-right whitespace-nowrap tabular-nums font-mono">{Math.round(t.discount*100)}%</span>
                     </div>
                   ))}
                 </div>
@@ -354,21 +354,21 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="font-semibold">Single Supplier Deal:<br/>+2% extra (locks other supplier)</div>
               </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
               {/* Left: materials with price + print surcharge */}
-              <div className="md:col-span-2">
+              <div>
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
-                  <div className="grid grid-cols-12 gap-3 font-medium text-gray-600 mb-1">
-                    <div className="col-span-7 whitespace-nowrap">Fabric</div>
-                    <div className="col-span-2 text-right whitespace-nowrap">Price</div>
-                    <div className="col-span-3 text-right whitespace-nowrap">Add Print</div>
+                  <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
+                    <div className="whitespace-nowrap">Fabric</div>
+                    <div className="text-right whitespace-nowrap">Price</div>
+                    <div className="text-right whitespace-nowrap">Add Print</div>
                   </div>
                   {Object.keys(supplierPrices.supplier2).map((mat) => (
-                    <div key={mat} className="grid grid-cols-12 gap-3 py-0.5">
-                      <div className="col-span-7 capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
-                      <div className="col-span-2 text-right font-mono whitespace-nowrap">{formatCurrency((supplierPrices as any).supplier2[mat])}</div>
-                      <div className="col-span-3 text-right font-mono text-gray-700 whitespace-nowrap">+{formatCurrency(((printSurcharges as any).supplier2[mat] || 0))}</div>
+                    <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
+                      <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
+                      <div className="text-right font-mono whitespace-nowrap">{formatCurrency((supplierPrices as any).supplier2[mat])}</div>
+                      <div className="text-right font-mono text-gray-700 whitespace-nowrap">+{formatCurrency(((printSurcharges as any).supplier2[mat] || 0))}</div>
                     </div>
                   ))}
                 </div>
@@ -385,9 +385,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     { min:300000, max:399999, discount:0.07 },
                     { min:400000, max:Infinity, discount:0.09 },
                   ]).map((t:any, i:number)=> (
-                    <div key={i} className="grid grid-cols-[1fr_auto] gap-2">
+                    <div key={i} className="grid grid-cols-[1fr_auto] gap-x-4">
                       <span className="whitespace-nowrap">{t.max===Infinity ? `${t.min.toLocaleString()}+ units` : `${t.min.toLocaleString()} – ${t.max.toLocaleString()} units`}</span>
-                      <span className="font-medium text-right whitespace-nowrap">{Math.round(t.discount*100)}%</span>
+                      <span className="font-medium text-right whitespace-nowrap tabular-nums font-mono">{Math.round(t.discount*100)}%</span>
                     </div>
                   ))}
                 </div>
