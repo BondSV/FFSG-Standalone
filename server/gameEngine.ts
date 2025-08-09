@@ -229,18 +229,15 @@ export class GameEngine {
     for (const [sup, commit] of Object.entries(gmcCommitmentsBySupplier)) {
       supplierTotals[sup] = (supplierTotals[sup] || 0) + this.toNumber(commit);
     }
+
+    const singleSupplierDeal: SupplierKey | undefined = (state.procurementContracts as any)?.singleSupplierDeal;
+
     for (const c of contracts) {
       if (c.discountPercentApplied == null) {
-        // Apply single-supplier bonus if week 1 and all contracts are with same supplier and total units >= 370k
-        const allWeek1 = contracts.filter(x => x.weekSigned === 1);
-        const uniqueSuppliers = new Set(allWeek1.map(x => x.supplier));
-        const totalW1Units = allWeek1.reduce((s, x) => s + this.toNumber(x.units), 0);
-        const needUnits = GAME_CONSTANTS.PRODUCTS.jacket.forecast + GAME_CONSTANTS.PRODUCTS.dress.forecast + GAME_CONSTANTS.PRODUCTS.pants.forecast;
-        if (c.weekSigned === 1 && uniqueSuppliers.size === 1 && totalW1Units >= needUnits) {
-          c.discountPercentApplied = GAME_CONSTANTS.SUPPLIERS[c.supplier].maxDiscount;
-        } else {
-          c.discountPercentApplied = this.computeSupplierVolumeDiscount(supplierTotals[c.supplier] || 0);
-        }
+        // New rule: tier discount + flat +2% if single-supplier deal matches this supplier
+        const tier = this.computeSupplierVolumeDiscount(supplierTotals[c.supplier] || 0);
+        const extra = singleSupplierDeal && c.supplier === singleSupplierDeal ? 0.02 : 0;
+        c.discountPercentApplied = tier + extra;
       }
       if (c.unitBasePrice == null) {
         c.unitBasePrice = this.getMaterialBasePrice(c.supplier as SupplierKey, c.material as MaterialKey);
