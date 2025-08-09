@@ -194,14 +194,21 @@ function SkuCard({
       {/* LEFT – Decision inputs */}
       <div className="space-y-4">
         <Label className="text-slate-800 font-semibold">Recommended Retail Price (RRP) £</Label>
-        <Input
-          type="number"
-          value={Number.isFinite(price) && price > 0 ? price : ''}
-          step={1}
-          onChange={(e) => onChange(skuId, parseFloat(e.target.value))}
-          className="w-40"
-          disabled={isLocked}
-        />
+        {isLocked ? (
+          <div className="flex items-baseline gap-2">
+            <span className="text-2xl font-bold text-slate-800">{currency(price)}</span>
+            <span className="text-xs text-slate-500 uppercase tracking-wide">Locked</span>
+          </div>
+        ) : (
+          <Input
+            type="number"
+            value={Number.isFinite(price) && price > 0 ? price : ''}
+            step={1}
+            onChange={(e) => onChange(skuId, parseFloat(e.target.value))}
+            className="w-40"
+            disabled={isLocked}
+          />
+        )}
 
         <Badge className={badgeColour(price, hmp)}>
           {percentGap(price, hmp)} vs H&M
@@ -229,17 +236,17 @@ function SkuCard({
 export default function Pricing({ gameSession, currentState }: PricingProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
+  
   const [pricingData, setPricingData] = useState(() => {
     const productData = currentState?.productData || {};
     const initialData: any = {};
-
+    
     products.forEach((product) => {
       initialData[product.skuId] = {
         rrp: productData[product.skuId]?.rrp || '',
       };
     });
-
+    
     return initialData;
   });
 
@@ -248,26 +255,39 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
     if (currentState?.productData) {
       const productData = currentState.productData;
       const newData: any = {};
-
+      
       products.forEach((product) => {
         newData[product.skuId] = {
           rrp: productData[product.skuId]?.rrp || '',
         };
       });
-
+      
       setPricingData(newData);
     }
   }, [currentState]);
 
   const updateStateMutation = useMutation({
     mutationFn: async (updates: any) => {
-      await apiRequest('PATCH', `/api/game/${gameSession.id}/week/${currentState.weekNumber}`, updates);
+      await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, updates);
     },
-    onSuccess: () => {
+    onSuccess: (_data, variables) => {
+      // Optimistically update cached current state so other tabs unlock immediately
+      queryClient.setQueryData(['/api/game/current'], (old: any) => {
+        if (!old) return old;
+        const next = { ...old };
+        next.currentState = {
+          ...next.currentState,
+          productData: {
+            ...next.currentState?.productData,
+            ...variables.productData,
+          },
+        };
+        return next;
+      });
       queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
       toast({
-        title: "Saved",
-        description: "Your pricing decisions have been saved.",
+        title: "Locked",
+        description: "Your RRPs have been locked.",
       });
     },
     onError: (error) => {
@@ -284,7 +304,7 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
       }
       toast({
         title: "Error",
-        description: "Failed to save pricing data. Please try again.",
+        description: "Failed to lock RRPs. Please try again.",
         variant: "destructive",
       });
     },
@@ -341,7 +361,7 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
           Price Positioning
         </h1>
         <p className="text-slate-700 mb-2">
-          Positioning is how your price signals brand intent and competitive stance. Set it first to anchor all downstream decisions.
+          Positioning is how your price signals brand intent and competitive stance. Set it first to anchor all downstream decisions. Balance expected demand (sales volume) with income per unit: very low prices can drive volume but risk low or negative margins.
         </p>
         <ul className="text-slate-700 text-sm list-disc ml-5 space-y-1">
           <li>Choose a compelling RRP for each SKU relative to H&M and the high‑end set.</li>
@@ -384,7 +404,8 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
         <Button
           onClick={handleSave}
           disabled={updateStateMutation.isPending || isLocked}
-          className="flex items-center gap-2"
+          className={`flex items-center gap-2 ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+          variant={isLocked ? 'secondary' : undefined}
         >
           {updateStateMutation.isPending ? (
             <>
