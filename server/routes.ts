@@ -152,12 +152,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } as any);
       } else {
         // Process material purchases if they exist in updates
-        if (updates.materialPurchases || updates.gmcCommitments) {
+        if (updates.materialPurchases || updates.gmcCommitments || (updates.procurementContracts && typeof updates.procurementContracts.singleSupplierDeal !== 'undefined')) {
           // Convert material purchases UI into procurement contracts (iterative orders)
           // We will append GMC/SPT/FVC entries under procurementContracts and ignore immediate cash effects.
           const existing = (weeklyState as any).procurementContracts || { contracts: [] };
           const contracts = existing.contracts || [];
           const gmcCommitments = { ...(existing as any).gmcCommitments };
+          const singleSupplierDeal = (updates.procurementContracts && updates.procurementContracts.singleSupplierDeal) || (existing as any).singleSupplierDeal;
           const currentWeek = Number(weeklyState.weekNumber);
           const purchases = (updates.materialPurchases as any[]) || [];
           for (const p of purchases) {
@@ -206,7 +207,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (updates.gmcCommitments && typeof updates.gmcCommitments === 'object') {
             Object.assign(gmcCommitments, updates.gmcCommitments);
           }
-          const processedUpdates = { procurementContracts: { contracts, gmcCommitments } } as any;
+          const processedUpdates = { procurementContracts: { contracts, gmcCommitments, singleSupplierDeal } } as any;
           weeklyState = await storage.updateWeeklyState(weeklyState.id, processedUpdates);
         } 
         // Process production schedule if it exists in updates
