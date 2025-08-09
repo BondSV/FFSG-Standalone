@@ -237,13 +237,18 @@ export default function Design({ gameSession, currentState }: DesignProps) {
           const base = sel.fabric ? getAvgMaterialPrice(sel.fabric) : 0;
           const surcharge = sel.fabric && sel.hasPrint ? getAvgPrintSurcharge(sel.fabric) : 0;
           const projected = projectedDemand(product.id, sel.fabric, !!sel.hasPrint);
+          const rrpVal = currentState?.productData?.[product.id]?.rrp;
 
           return (
             <Card key={product.id} className="border border-gray-100">
               <CardHeader>
-                <CardTitle className="flex items-center justify-between">
+                <CardTitle className="flex items-start justify-between">
                   <span className="flex items-center gap-2"><Shirt size={20} /> {product.name}</span>
-                  <span className="text-sm text-gray-600">Baseline demand: {product.forecast.toLocaleString()} units</span>
+                  <div className="text-right">
+                    <div className="text-sm text-gray-900 font-medium">Projected demand: {projected != null ? `${projected.toLocaleString()} units` : '—'}</div>
+                    <div className="text-xs text-gray-600">Ref material cost: {sel.fabric ? `${currency(base)}${surcharge ? ` + ${currency(surcharge)}` : ''}` : '—'}</div>
+                    <div className="text-xs text-gray-600">Locked RRP: {rrpVal ? currency(Number(rrpVal)) : '—'}</div>
+                  </div>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-6">
@@ -300,23 +305,6 @@ export default function Design({ gameSession, currentState }: DesignProps) {
                   </div>
                 </div>
 
-                {/* Live Metrics */}
-                {(sel.fabric || sel.hasPrint) && (
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-sm">
-                    <div>
-                      <div className="text-blue-900 font-medium">Ref material cost</div>
-                      <div className="text-blue-800">{currency(base)}{surcharge ? ` + ${currency(surcharge)}` : ''}</div>
-                    </div>
-                    <div>
-                      <div className="text-blue-900 font-medium">Projected demand</div>
-                      <div className="text-blue-800">{projected != null ? `${projected.toLocaleString()} units` : '—'}</div>
-                    </div>
-                    <div>
-                      <div className="text-blue-900 font-medium">Your RRP</div>
-                      <div className="text-blue-800">{currentState?.productData?.[product.id]?.rrp ? currency(Number(currentState.productData[product.id].rrp)) : '—'}</div>
-                    </div>
-                  </div>
-                )}
               </CardContent>
             </Card>
           );
