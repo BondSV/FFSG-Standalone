@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -9,9 +9,10 @@ import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { ShoppingCart, Calculator, Palette, Truck, PoundSterling, History } from "lucide-react";
+import { ShoppingCart, Calculator, Palette, Truck, PoundSterling, History, Lock, Trash2 } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Slider } from "@/components/ui/slider";
 
 interface ProcurementProps {
   gameSession: any;
@@ -39,6 +40,10 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const queryClient = useQueryClient();
   const { data: gameConstants } = useQuery({ queryKey: ["/api/game/constants"], retry: false });
   
+  const productData = currentState?.productData || {};
+  const designLockedAll = ['jacket', 'dress', 'pants'].every((p) => productData?.[p]?.designLocked);
+  const currentWeek = currentState?.weekNumber || 1;
+
   // Initialize form data from current state
   const [contractData, setContractData] = useState<ContractData>({
     type: currentState?.procurementContracts?.type || null,
@@ -72,7 +77,21 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     return (currentState?.procurementContracts?.gmcCommitments as Record<string, number>) || {};
   });
 
-  // Load existing procurement data when component mounts or currentState changes
+  // Align print options to design per material when locked (auto-check & disable)
+  useEffect(() => {
+    const next: Record<string, boolean> = { ...printOptions };
+    ['jacket', 'dress', 'pants'].forEach((p) => {
+      const fabric = productData?.[p]?.fabric;
+      const hasPrint = !!productData?.[p]?.hasPrint;
+      if (fabric) {
+        next[fabric] = hasPrint;
+      }
+    });
+    setPrintOptions(next);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [productData?.jacket?.fabric, productData?.dress?.fabric, productData?.pants?.fabric, productData?.jacket?.hasPrint, productData?.dress?.hasPrint, productData?.pants?.hasPrint]);
+
+  // Load existing procurement data
   useEffect(() => {
     if (currentState?.procurementContracts) {
       const contracts = currentState.procurementContracts;
@@ -83,34 +102,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         totalCommitment: contracts.totalCommitment || 0,
         discount: contracts.discount || 0,
       });
-      
-      if (contracts.supplier) {
-        setSelectedSupplier(contracts.supplier);
-      }
-
-      // Reconstruct material quantities and print options from saved data
-      if (contracts.materialQuantities) {
-        setMaterialQuantities(contracts.materialQuantities);
-      } else if (contracts.orders && contracts.orders.length > 0) {
-        const quantities: Record<string, number> = {
-          selvedgeDenim: 0,
-          standardDenim: 0,
-          egyptianCotton: 0,
-          polyesterBlend: 0,
-          fineWaleCorduroy: 0,
-          wideWaleCorduroy: 0,
-        };
-        
-        contracts.orders.forEach((order: MaterialOrder) => {
-          quantities[order.material] = order.quantity;
-        });
-        
-        setMaterialQuantities(quantities);
-      }
-
-      if (contracts.printOptions) {
-        setPrintOptions(contracts.printOptions);
-      }
+      if (contracts.supplier) setSelectedSupplier(contracts.supplier);
+      if (contracts.materialQuantities) setMaterialQuantities(contracts.materialQuantities);
+      if (contracts.printOptions) setPrintOptions(contracts.printOptions);
     }
   }, [currentState]);
 
@@ -131,7 +125,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       fineWaleCorduroy: 11,
       wideWaleCorduroy: 7,
     },
-  };
+  } as const;
 
   // Print surcharges for both suppliers
   const printSurcharges = {
@@ -150,39 +144,35 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       fineWaleCorduroy: 2,
       wideWaleCorduroy: 2,
     },
-  };
+  } as const;
 
-  // Get materials relevant to the current design choices
-  const getRelevantMaterials = () => {
-    const productData = currentState?.productData || {};
-    const relevantMaterials = new Set<string>();
-    
-    // Add materials based on design choices
-    Object.values(productData).forEach((product: any) => {
-      if (product?.fabric) {
-        relevantMaterials.add(product.fabric);
-      }
+  // Selected fabrics per design and locked print map
+  const selectedFabrics = useMemo(() => {
+    const set = new Set<string>();
+    ['jacket', 'dress', 'pants'].forEach((p) => {
+      const f = productData?.[p]?.fabric;
+      if (f) set.add(f);
     });
-    
-    // If no design choices made yet, show all materials
-    if (relevantMaterials.size === 0) {
-      return Object.keys(supplierPrices[selectedSupplier]);
-    }
-    
-    return Array.from(relevantMaterials).filter(material => 
-      supplierPrices[selectedSupplier][material as keyof typeof supplierPrices.supplier1] !== undefined
-    );
+    return set;
+  }, [productData]);
+  const printLockedByMaterial = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    ['jacket', 'dress', 'pants'].forEach((p) => {
+      const f = productData?.[p]?.fabric;
+      const pr = !!productData?.[p]?.hasPrint;
+      if (f && pr) map[f] = true;
+    });
+    return map;
+  }, [productData]);
+
+  // Helper: supplier basket counts (number of materials with qty > 0 for that supplier)
+  const getSupplierBasketCount = (supplier: 'supplier1' | 'supplier2') => {
+    return Object.keys(supplierPrices[supplier]).reduce((count, material) => {
+      return count + ((materialQuantities[material] || 0) > 0 ? 1 : 0);
+    }, 0);
   };
 
-  // Calculate volume discount
-  const calculateDiscount = (totalVolume: number, supplier: string) => {
-    if (totalVolume >= 500000) return supplier === 'supplier1' ? 0.12 : 0.12;
-    if (totalVolume >= 300000) return 0.07;
-    if (totalVolume >= 100000) return 0.03;
-    return 0;
-  };
-
-  // Calculate total cost and commitment
+  // Calculate totals
   useEffect(() => {
     const orders: MaterialOrder[] = [];
     let totalVolume = 0;
@@ -190,19 +180,13 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
 
     Object.entries(materialQuantities).forEach(([material, quantity]) => {
       if (quantity > 0) {
-        const basePrice = supplierPrices[selectedSupplier][material as keyof typeof supplierPrices.supplier1];
-        const printSurcharge = printOptions[material] ? 
-          (printSurcharges[selectedSupplier][material as keyof typeof printSurcharges.supplier1] || 0) : 0;
-        
+        const basePrice = (supplierPrices as any)[selectedSupplier]?.[material];
+        const printSurcharge = (printOptions as any)[material]
+          ? (printSurcharges as any)[selectedSupplier]?.[material] || 0
+          : 0;
         if (basePrice !== undefined) {
           const unitPrice = basePrice + printSurcharge;
-          const order: MaterialOrder = {
-            supplier: selectedSupplier,
-            material,
-            quantity,
-            unitPrice,
-            totalCost: quantity * unitPrice,
-          };
+          const order: MaterialOrder = { supplier: selectedSupplier, material, quantity, unitPrice, totalCost: quantity * unitPrice };
           orders.push(order);
           totalVolume += quantity;
           totalCost += order.totalCost;
@@ -210,64 +194,38 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       }
     });
 
-    // Determine single-supplier bonus eligibility (Week 1 and cover full seasonal need)
-    const seasonNeed = (gameConstants?.PRODUCTS?.jacket?.forecast || 0)
-      + (gameConstants?.PRODUCTS?.dress?.forecast || 0)
-      + (gameConstants?.PRODUCTS?.pants?.forecast || 0);
-    const isWeek1 = (currentState?.weekNumber || 1) === 1;
+    const seasonNeed = (gameConstants?.PRODUCTS?.jacket?.forecast || 0) + (gameConstants?.PRODUCTS?.dress?.forecast || 0) + (gameConstants?.PRODUCTS?.pants?.forecast || 0);
+    const isWeek1 = currentWeek === 1;
     const singleSupplierBonusEligible = isWeek1 && totalVolume >= seasonNeed;
     const supplierMax = selectedSupplier === 'supplier1' ? 0.15 : 0.10;
 
-    const tierDiscount = calculateDiscount(totalVolume, selectedSupplier);
+    const tierDiscount = (totalVolume >= 500000) ? 0.12 : (totalVolume >= 300000) ? 0.07 : (totalVolume >= 100000) ? 0.03 : 0;
     const appliedDiscount = singleSupplierBonusEligible ? supplierMax : tierDiscount;
     const discountedCost = totalCost * (1 - appliedDiscount);
 
-    setContractData(prev => ({
-      ...prev,
-      orders,
-      totalCommitment: discountedCost,
-      discount: appliedDiscount * 100,
-    }));
-  }, [materialQuantities, printOptions, selectedSupplier, gameConstants, currentState?.weekNumber]);
+    setContractData(prev => ({ ...prev, orders, totalCommitment: discountedCost, discount: appliedDiscount * 100 }));
+  }, [materialQuantities, printOptions, selectedSupplier, gameConstants, currentWeek]);
 
   // Save procurement data mutation
   const updateStateMutation = useMutation({
-    mutationFn: async (updates: any) => {
-      await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, updates);
-    },
+    mutationFn: async (updates: any) => { await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/update`, updates); },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
       queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession?.id, 'weeks'] });
-      toast({
-        title: "Materials Purchased Successfully!",
-        description: `£${contractData.totalCommitment.toLocaleString()} charged. Materials arrive Week ${(currentState?.weekNumber || 1) + (contractData.type === 'spot' ? 1 : contractData.type === 'fvc' ? 3 : 2)}.`,
-      });
+      toast({ title: "Materials Purchased Successfully!", description: `£${contractData.totalCommitment.toLocaleString()} charged. Materials arrive Week ${currentWeek + (contractData.type === 'spot' ? 1 : contractData.type === 'fvc' ? 3 : 2)}.` });
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
+        toast({ title: "Unauthorized", description: "You are logged out. Logging in again...", variant: "destructive" });
+        setTimeout(() => { window.location.href = "/api/login"; }, 500);
         return;
       }
-      toast({
-        title: "Error",
-        description: "Failed to save procurement data. Please try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Error", description: "Failed to save procurement data. Please try again.", variant: "destructive" });
     },
   });
 
   const handleContractSelect = (contractType: 'fvc' | 'gmc' | 'spot') => {
-    setContractData(prev => ({
-      ...prev,
-      type: contractType,
-    }));
+    setContractData(prev => ({ ...prev, type: contractType }));
   };
 
   const handleMaterialQuantityChange = (material: string, quantity: number) => {
@@ -278,26 +236,16 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     } else {
       setQuantityErrors(prev => { const { [material]: _, ...rest } = prev; return rest; });
     }
-    setMaterialQuantities(prev => ({
-      ...prev,
-      [material]: safeQuantity,
-    }));
+    setMaterialQuantities(prev => ({ ...prev, [material]: safeQuantity }));
   };
 
   const handlePrintOptionChange = (material: string, hasPrint: boolean) => {
-    setPrintOptions(prev => ({
-      ...prev,
-      [material]: hasPrint,
-    }));
+    setPrintOptions(prev => ({ ...prev, [material]: hasPrint }));
   };
 
   const handleBuyMaterials = () => {
     if (contractData.orders.length === 0) {
-      toast({
-        title: "No Materials Selected",
-        description: "Please select materials and quantities before purchasing.",
-        variant: "destructive",
-      });
+      toast({ title: "No Materials Selected", description: "Please select materials and quantities before purchasing.", variant: "destructive" });
       return;
     }
     if (Object.keys(quantityErrors).length > 0) {
@@ -306,16 +254,10 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     }
 
     // Calculate shipment arrival week based on contract type and current week
-    const currentWeek = currentState?.weekNumber || 1;
     let shipmentWeek = currentWeek + 1; // Default: next week
-    
-    if (contractData.type === 'spot') {
-      shipmentWeek = currentWeek + 1; // Spot orders arrive next week
-    } else if (contractData.type === 'fvc') {
-      shipmentWeek = currentWeek + 3; // Forward contracts arrive in 3 weeks
-    } else if (contractData.type === 'gmc') {
-      shipmentWeek = currentWeek + 2; // GMC contracts arrive in 2 weeks
-    }
+    if (contractData.type === 'spot') shipmentWeek = currentWeek + 1;
+    else if (contractData.type === 'fvc') shipmentWeek = currentWeek + 3;
+    else if (contractData.type === 'gmc') shipmentWeek = currentWeek + 2;
 
     const materialPurchase = {
       ...contractData,
@@ -327,71 +269,55 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       timestamp: new Date().toISOString(),
       status: 'ordered',
       totalUnits: Object.values(materialQuantities).reduce((s: number, v: any) => s + (Number(v) || 0), 0),
+      canDelete: true,
     };
 
     const updates: any = {
-      materialPurchases: [
-        ...(currentState?.materialPurchases || []),
-        materialPurchase
-      ]
+      materialPurchases: [ ...(currentState?.materialPurchases || []), materialPurchase ]
     };
-    if (contractData.type === 'gmc') {
-      updates.gmcCommitments = gmcCommitments;
-    }
-
+    if (contractData.type === 'gmc') updates.gmcCommitments = gmcCommitments;
     updateStateMutation.mutate(updates);
-    
-    // Show success message
-    toast({
-      title: "Materials Purchased!",
-      description: `Materials ordered from ${selectedSupplier === 'supplier1' ? 'Supplier A' : 'Supplier B'}. Shipment arrives Week ${shipmentWeek}.`,
-      variant: "default",
-    });
 
-    // Reset form after successful purchase
-    setMaterialQuantities({
-      selvedgeDenim: 0,
-      standardDenim: 0,
-      egyptianCotton: 0,
-      polyesterBlend: 0,
-      fineWaleCorduroy: 0,
-      wideWaleCorduroy: 0,
-    });
-    setPrintOptions({
-      selvedgeDenim: false,
-      standardDenim: false,
-      egyptianCotton: false,
-      polyesterBlend: false,
-      fineWaleCorduroy: false,
-      wideWaleCorduroy: false,
-    });
+    toast({ title: "Materials Purchased!", description: `Materials ordered from ${selectedSupplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'}. Shipment arrives Week ${shipmentWeek}.` });
+
+    // Reset basket
+    setMaterialQuantities({ selvedgeDenim: 0, standardDenim: 0, egyptianCotton: 0, polyesterBlend: 0, fineWaleCorduroy: 0, wideWaleCorduroy: 0 });
   };
 
-  const formatCurrency = (value: number) => {
-    return new Intl.NumberFormat('en-GB', {
-      style: 'currency',
-      currency: 'GBP',
-      minimumFractionDigits: 0,
-      maximumFractionDigits: 0,
-    }).format(value);
+  const handleRemovePurchase = async (timestamp: string) => {
+    const newList = (currentState?.materialPurchases || []).filter((p: any) => p.timestamp !== timestamp);
+    try {
+      await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/update`, { materialPurchases: newList });
+      queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      toast({ title: 'Removed', description: 'Order removed from this week.' });
+    } catch (e) {
+      if (isUnauthorizedError(e)) {
+        toast({ title: 'Unauthorized', description: 'You are logged out. Logging in again...', variant: 'destructive' });
+        setTimeout(() => { window.location.href = '/api/login'; }, 500); return;
+      }
+      toast({ title: 'Error', description: 'Failed to remove order. Try again.', variant: 'destructive' });
+    }
   };
 
-  const canPlaceOrders = currentState?.weekNumber <= 6;  // Can only order in development phase
+  const formatCurrency = (value: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+  const canPlaceOrders = currentWeek <= 6;
   const batchSize = (gameConstants?.BATCH_SIZE as number) || 25000;
   const totalUnits = Object.values(materialQuantities).reduce((s, v) => s + (Number(v) || 0), 0);
-  const tierLabel = (() => {
-    if (contractData.discount >= 15) return 'Single Supplier Bonus';
-    if (totalUnits >= 500000) return 'Tier 3 (12%)';
-    if (totalUnits >= 300000) return 'Tier 2 (7%)';
-    if (totalUnits >= 100000) return 'Tier 1 (3%)';
-    return 'No Discount';
-  })();
-  const downPaymentNow = (() => {
-    if (!contractData.type) return 0;
-    if (contractData.type === 'fvc') return contractData.totalCommitment * 0.25;
-    if (contractData.type === 'gmc') return contractData.totalCommitment * 0.40;
-    return 0; // Spot pays on delivery
-  })();
+  const tierLabel = contractData.discount >= 15 ? 'Single Supplier Bonus' : totalUnits >= 500000 ? 'Tier 3 (12%)' : totalUnits >= 300000 ? 'Tier 2 (7%)' : totalUnits >= 100000 ? 'Tier 1 (3%)' : 'No Discount';
+  const downPaymentNow = !contractData.type ? 0 : contractData.type === 'fvc' ? contractData.totalCommitment * 0.25 : contractData.type === 'gmc' ? contractData.totalCommitment * 0.40 : 0;
+
+  // Season need and 70% marker for GMC
+  const seasonNeed = (gameConstants?.PRODUCTS?.jacket?.forecast || 0) + (gameConstants?.PRODUCTS?.dress?.forecast || 0) + (gameConstants?.PRODUCTS?.pants?.forecast || 0);
+  const minGmcUnits = Math.round(seasonNeed * 0.7);
+  const currentGmc = gmcCommitments[selectedSupplier] || 0;
+
+  // Estimate avg unit price for penalty preview (avg across selected fabrics available from supplier; fallback to supplier avg)
+  const selectedForSupplier = Array.from(selectedFabrics).filter((m) => (supplierPrices as any)[selectedSupplier][m] !== undefined);
+  const avgUnit = selectedForSupplier.length > 0
+    ? selectedForSupplier.reduce((s, m) => s + ((supplierPrices as any)[selectedSupplier][m] + ((printLockedByMaterial as any)[m] ? ((printSurcharges as any)[selectedSupplier][m] || 0) : 0)), 0) / selectedForSupplier.length
+    : Object.values((supplierPrices as any)[selectedSupplier]).reduce((s: number, v: any) => s + Number(v || 0), 0) / Object.values((supplierPrices as any)[selectedSupplier]).length;
+  const maxPenalty = Math.round(currentGmc * avgUnit * 0.2);
+
   return (
     <div className="p-6">
       <div className="mb-6">
@@ -580,7 +506,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         </Card>
       </div>
 
-      {/* Contract & Ordering Flow - Redesigned */}
+      {/* Procurement Planner */}
       <Card className="border border-gray-100 mb-8">
         <CardHeader>
           <CardTitle>Procurement Planner</CardTitle>
@@ -592,8 +518,14 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             <div className="border rounded-lg p-4">
               <h3 className="font-semibold mb-3">Supplier</h3>
               <div className="grid grid-cols-2 gap-2">
-                <Button variant={selectedSupplier === 'supplier1' ? 'default' : 'outline'} onClick={() => setSelectedSupplier('supplier1')} className="justify-start">Supplier-1</Button>
-                <Button variant={selectedSupplier === 'supplier2' ? 'default' : 'outline'} onClick={() => setSelectedSupplier('supplier2')} className="justify-start">Supplier-2</Button>
+                <Button variant={selectedSupplier === 'supplier1' ? 'default' : 'outline'} onClick={() => setSelectedSupplier('supplier1')} className="justify-between">
+                  <span>Supplier-1</span>
+                  <Badge variant="secondary">{getSupplierBasketCount('supplier1')}</Badge>
+                </Button>
+                <Button variant={selectedSupplier === 'supplier2' ? 'default' : 'outline'} onClick={() => setSelectedSupplier('supplier2')} className="justify-between">
+                  <span>Supplier-2</span>
+                  <Badge variant="secondary">{getSupplierBasketCount('supplier2')}</Badge>
+                </Button>
               </div>
             </div>
             {/* Contract picker */}
@@ -602,23 +534,40 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <div className="space-y-2">
                 <Button variant={contractData.type === 'fvc' ? 'default' : 'outline'} className="w-full justify-start" onClick={() => handleContractSelect('fvc')}>FVC (30% now, 70% in 8w)</Button>
                 <Button variant={contractData.type === 'gmc' ? 'default' : 'outline'} className="w-full justify-start" onClick={() => handleContractSelect('gmc')}>GMC (2w settlement per batch)</Button>
-                <Button variant={contractData.type === 'spot' ? 'default' : 'outline'} className="w-full justify-start" disabled={currentState?.weekNumber <= 2} onClick={() => currentState?.weekNumber > 2 && handleContractSelect('spot')}>SPT (pay on delivery)</Button>
+                <Button variant={contractData.type === 'spot' ? 'default' : 'outline'} className="w-full justify-start" disabled={currentWeek <= 2} onClick={() => currentWeek > 2 && handleContractSelect('spot')}>SPT (pay on delivery)</Button>
               </div>
             </div>
             {/* GMC commitment */}
             <div className="border rounded-lg p-4">
-              <h3 className="font-semibold mb-3">GMC Commitment</h3>
+              <div className="flex items-center justify-between mb-2">
+                <h3 className="font-semibold">GMC Commitment</h3>
+                {contractData.type !== 'gmc' && (<span className="text-xs text-gray-500">Activate GMC to set commitment</span>)}
+              </div>
               <p className="text-xs text-gray-600 mb-2">Total season units with this supplier. Counts for discounts. Min 70% of season need.</p>
-              <Input
-                type="number"
-                value={gmcCommitments[selectedSupplier] || 0}
-                onChange={(e) => setGmcCommitments(prev => ({ ...prev, [selectedSupplier]: Number(e.target.value || 0) }))}
-                placeholder={`0 (x ${((gameConstants?.BATCH_SIZE as number) || 25000).toLocaleString()})`}
-                disabled={contractData.type !== 'gmc'}
-              />
+              <div className="space-y-2">
+                <Slider
+                  value={[currentGmc]}
+                  onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, [selectedSupplier]: Number(v[0] || 0) }))}
+                  min={0}
+                  max={seasonNeed}
+                  step={batchSize}
+                  disabled={contractData.type !== 'gmc'}
+                />
+                <div className="flex items-center gap-2">
+                  <Input
+                    type="number"
+                    value={currentGmc || 0}
+                    onChange={(e) => setGmcCommitments(prev => ({ ...prev, [selectedSupplier]: Math.max(0, Number(e.target.value || 0)) }))}
+                    disabled={contractData.type !== 'gmc'}
+                    className="w-40"
+                  />
+                  <span className="text-xs text-gray-600">Batch size {batchSize.toLocaleString()}</span>
+                </div>
+                <div className="text-xs text-gray-600">Min recommended: {minGmcUnits.toLocaleString()} units (70% of {seasonNeed.toLocaleString()})</div>
+              </div>
               {contractData.type === 'gmc' && (
-                <div className="text-xs text-gray-600 mt-2">
-                  Commitment for {selectedSupplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'}: {(gmcCommitments[selectedSupplier] || 0).toLocaleString()} units
+                <div className="mt-3 p-2 rounded-md border border-amber-200 bg-amber-50 text-amber-800 text-xs">
+                  Potential penalty at W15 for undelivered units: up to {formatCurrency(maxPenalty)} (20% of undelivered value; est. £{Math.round(avgUnit)} per unit)
                 </div>
               )}
             </div>
@@ -634,9 +583,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <ShoppingCart size={20} />
               Material Orders
             </CardTitle>
-            <p className="text-sm text-gray-600">
-              Specify quantities for each material type from your selected supplier
-            </p>
+            <p className="text-sm text-gray-600">Specify quantities for each material type from your selected supplier</p>
           </CardHeader>
           <CardContent>
             {/* Supplier Selection */}
@@ -646,92 +593,72 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <Button
                   variant={selectedSupplier === 'supplier1' ? 'default' : 'outline'}
                   onClick={() => setSelectedSupplier('supplier1')}
-                  className="justify-start"
+                  className="justify-between"
                 >
-                  Supplier-1 (Premium) - 0% Defects
+                  <span>Supplier-1 (Premium) - 0% Defects</span>
+                  <Badge variant="secondary">{getSupplierBasketCount('supplier1')}</Badge>
                 </Button>
                 <Button
                   variant={selectedSupplier === 'supplier2' ? 'default' : 'outline'}
                   onClick={() => setSelectedSupplier('supplier2')}
-                  className="justify-start"
+                  className="justify-between"
                 >
-                  Supplier-2 (Standard) - Up to 5% Defects
+                  <span>Supplier-2 (Standard) - Up to 5% Defects</span>
+                  <Badge variant="secondary">{getSupplierBasketCount('supplier2')}</Badge>
                 </Button>
               </div>
             </div>
 
-            {/* Material Quantity Inputs */}
+            {/* Material Quantity Inputs with design constraints */}
             <div className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {getRelevantMaterials().map((material) => {
-                  const basePrice = supplierPrices[selectedSupplier][material as keyof typeof supplierPrices.supplier1];
-                  const printSurcharge = printSurcharges[selectedSupplier][material as keyof typeof printSurcharges.supplier1] || 0;
-                  const finalPrice = basePrice + (printOptions[material] ? printSurcharge : 0);
-                  
+                {Object.keys(supplierPrices[selectedSupplier]).map((material) => {
+                  const basePrice = (supplierPrices as any)[selectedSupplier][material];
+                  const printSurcharge = (printSurcharges as any)[selectedSupplier][material] || 0;
+                  const isSelected = selectedFabrics.has(material);
+                  const isDisabled = designLockedAll && !isSelected;
+                  const isPrintForced = designLockedAll && !!printLockedByMaterial[material];
+                  const finalChecked = isPrintForced ? true : !!printOptions[material];
+                  const finalPrice = basePrice + (finalChecked ? printSurcharge : 0);
+
                   return (
-                    <div key={material} className="border border-gray-200 rounded-lg p-4">
-                      <Label className="text-sm font-medium capitalize">
-                        {material.replace(/([A-Z])/g, ' $1').trim()}
-                      </Label>
-                      <div className="text-xs text-gray-500 mb-2">
-                        Base Price: {formatCurrency(basePrice)}
-                        {printSurcharge > 0 && (
-                          <span className="ml-1">
-                            (Print: +{formatCurrency(printSurcharge)})
-                          </span>
+                    <div key={material} className={`border border-gray-200 rounded-lg p-4 ${isDisabled ? 'opacity-50' : ''}`}>
+                      <div className="flex items-center justify-between">
+                        <Label className="text-sm font-medium capitalize">{material.replace(/([A-Z])/g, ' $1').trim()}</Label>
+                        {isDisabled && designLockedAll && (
+                          <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-500"><Lock size={10}/> Not in Design</span>
                         )}
                       </div>
-                      
-                      {/* Print Option */}
-                      <div className="flex items-center space-x-2 mb-3">
-                        <Checkbox
-                          id={`print-${material}`}
-                          checked={printOptions[material] || false}
-                          onCheckedChange={(checked) => handlePrintOptionChange(material, !!checked)}
-                        />
-                        <Label 
-                          htmlFor={`print-${material}`} 
-                          className="text-xs text-gray-600 cursor-pointer flex items-center gap-1"
-                        >
-                          <Palette size={12} />
-                          Add Print (+{formatCurrency(printSurcharge)})
-                        </Label>
+                      <div className="text-xs text-gray-500 mb-2">
+                        Base Price: {formatCurrency(basePrice)}{printSurcharge > 0 && (<span className="ml-1">(Print: +{formatCurrency(printSurcharge)})</span>)}
                       </div>
 
-                      <Input
-                        type="number"
-                        min="0"
-                        step={(gameConstants?.BATCH_SIZE as number) || 25000}
-                        value={materialQuantities[material] || ''}
-                        onChange={(e) => handleMaterialQuantityChange(material, parseInt(e.target.value) || 0)}
-                        placeholder={`0 (x ${((gameConstants?.BATCH_SIZE as number) || 25000).toLocaleString()})`}
-                        className="mb-2"
-                      />
-                      {quantityErrors[material] && (
-                        <div className="text-xs text-red-600 mb-1">{quantityErrors[material]}</div>
-                      )}
+                      {/* Print Option */}
+                      <div className="flex items-center space-x-2 mb-3">
+                        <Checkbox id={`print-${material}`} checked={finalChecked} onCheckedChange={(checked) => !isPrintForced && !isDisabled && handlePrintOptionChange(material, !!checked)} disabled={isPrintForced || isDisabled} />
+                        <Label htmlFor={`print-${material}`} className={`text-xs text-gray-600 flex items-center gap-1 ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}>
+                          <Palette size={12} /> Add Print (+{formatCurrency(printSurcharge)})
+                        </Label>
+                        {isPrintForced && (
+                          <span className="ml-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-500"><Lock size={10}/> Locked</span>
+                        )}
+                      </div>
+
+                      <Input type="number" min="0" step={batchSize} value={materialQuantities[material] || ''} onChange={(e) => !isDisabled && handleMaterialQuantityChange(material, parseInt(e.target.value) || 0)} placeholder={`0 (x ${batchSize.toLocaleString()})`} className="mb-2" disabled={isDisabled} />
+                      {quantityErrors[material] && (<div className="text-xs text-red-600 mb-1">{quantityErrors[material]}</div>)}
                       <div className="text-xs text-gray-600">
                         <div>Unit Price: {formatCurrency(finalPrice)}</div>
-                        <div className="font-medium">
-                          Total: {formatCurrency((materialQuantities[material] || 0) * finalPrice)}
-                        </div>
+                        <div className="font-medium">Total: {formatCurrency((materialQuantities[material] || 0) * finalPrice)}</div>
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              {/* Show message if no materials are available based on design choices */}
-              {getRelevantMaterials().length === 0 && (
-                <div className="text-center p-6 bg-blue-50 border border-blue-200 rounded-lg">
-                  <Palette className="mx-auto mb-2 text-blue-500" size={24} />
-                  <p className="text-sm text-blue-800 font-medium mb-1">
-                    Complete your product designs first
-                  </p>
-                  <p className="text-xs text-blue-600">
-                    Visit the Design tab to select materials for your products. 
-                    Only selected materials will appear here for procurement.
-                  </p>
+              {/* Message when design locked and no materials for this supplier */}
+              {designLockedAll && Array.from(selectedFabrics).filter((m) => (supplierPrices as any)[selectedSupplier][m] === undefined).length > 0 && (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-md p-2">
+                  Some selected fabrics are not available from this supplier.
                 </div>
               )}
             </div>
@@ -739,42 +666,20 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             {/* Order Summary */}
             {contractData.orders.length > 0 && (
               <div className="mt-6 bg-gray-50 rounded-lg p-4">
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2">
-                  <Calculator size={16} />
-                  Order Summary
-                </h4>
+                <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2"><Calculator size={16} /> Order Summary</h4>
                 <div className="space-y-2">
                   {contractData.orders.map((order, index) => (
                     <div key={index} className="flex justify-between items-center text-sm">
-                      <span className="capitalize">
-                        {order.material.replace(/([A-Z])/g, ' $1').trim()}: {order.quantity.toLocaleString()} units
-                      </span>
+                      <span className="capitalize">{order.material.replace(/([A-Z])/g, ' $1').trim()}: {order.quantity.toLocaleString()} units</span>
                       <span className="font-mono">{formatCurrency(order.totalCost)}</span>
                     </div>
                   ))}
-                    <div className="border-t border-gray-200 pt-2 mt-2">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-gray-600">Total Units</span>
-                        <span className="font-mono text-sm">{totalUnits.toLocaleString()}</span>
-                      </div>
-                    <div className="flex justify-between items-center font-medium">
-                      <span>Subtotal:</span>
-                      <span className="font-mono">{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0))}</span>
-                    </div>
-                      {contractData.discount > 0 && (
-                      <div className="flex justify-between items-center text-green-600">
-                        <span>{tierLabel} ({contractData.discount.toFixed(1)}%):</span>
-                        <span className="font-mono">-{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0) * (contractData.discount / 100))}</span>
-                      </div>
-                    )}
-                      <div className="flex justify-between items-center text-sm text-gray-700">
-                        <span>{contractData.type === 'fvc' ? 'FVC: 30% due now; 70% at W+8' : contractData.type === 'gmc' ? 'GMC: each batch settles at W+2' : 'SPT: pay on delivery (defects not billed)'}</span>
-                        <span className="font-mono">{contractData.type === 'fvc' ? formatCurrency(downPaymentNow) : ''}</span>
-                      </div>
-                    <div className="flex justify-between items-center font-bold text-lg border-t border-gray-300 pt-2 mt-2">
-                      <span>Total Commitment:</span>
-                      <span className="font-mono">{formatCurrency(contractData.totalCommitment)}</span>
-                    </div>
+                  <div className="border-t border-gray-200 pt-2 mt-2">
+                    <div className="flex justify-between items-center"><span className="text-sm text-gray-600">Total Units</span><span className="font-mono text-sm">{totalUnits.toLocaleString()}</span></div>
+                    <div className="flex justify-between items-center font-medium"><span>Subtotal:</span><span className="font-mono">{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0))}</span></div>
+                    {contractData.discount > 0 && (<div className="flex justify-between items-center text-green-600"><span>{tierLabel} ({contractData.discount.toFixed(1)}%):</span><span className="font-mono">-{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0) * (contractData.discount / 100))}</span></div>)}
+                    <div className="flex justify-between items-center text-sm text-gray-700"><span>{contractData.type === 'fvc' ? 'FVC: 30% due now; 70% at W+8' : contractData.type === 'gmc' ? 'GMC: each batch settles at W+2' : 'SPT: pay on delivery (defects not billed)'}</span><span className="font-mono">{contractData.type === 'fvc' ? formatCurrency(downPaymentNow) : ''}</span></div>
+                    <div className="flex justify-between items-center font-bold text-lg border-t border-gray-300 pt-2 mt-2"><span>Total Commitment:</span><span className="font-mono">{formatCurrency(contractData.totalCommitment)}</span></div>
                   </div>
                 </div>
               </div>
@@ -782,61 +687,10 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
 
             {/* Action Buttons */}
             <div className="flex justify-end gap-4 mt-6">
-              <Button
-                onClick={handleBuyMaterials}
-                disabled={contractData.orders.length === 0 || updateStateMutation.isPending || !canPlaceOrders}
-                className="flex items-center gap-2 bg-green-600 hover:bg-green-700"
-              >
-                {updateStateMutation.isPending ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <ShoppingCart size={16} />
-                    Buy Materials
-                  </>
-                )}
+              <Button onClick={handleBuyMaterials} disabled={contractData.orders.length === 0 || updateStateMutation.isPending || !canPlaceOrders} className="flex items-center gap-2 bg-green-600 hover:bg-green-700">
+                {updateStateMutation.isPending ? (<><div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>Processing...</>) : (<><ShoppingCart size={16} />Buy Materials</>)}
               </Button>
             </div>
-
-            {/* Shipment Timeline Info */}
-            {contractData.orders.length > 0 && (
-              <div className="mt-4 bg-blue-50 border border-blue-200 rounded-lg p-4">
-                <h4 className="font-medium text-blue-900 mb-2">Shipment Timeline</h4>
-                <div className="text-sm text-blue-800 space-y-1">
-                  <div>• Current Week: {currentState?.weekNumber || 1}</div>
-                  <div>• Contract Type: {
-                    contractData.type === 'spot' ? 'Spot Order' : 
-                    contractData.type === 'fvc' ? 'Forward Contract' : 
-                    'GMC Contract'
-                  }</div>
-                  <div>• Materials will arrive in: <span className="font-medium">
-                    Week {(currentState?.weekNumber || 1) + (
-                      contractData.type === 'spot' ? 1 : 
-                      contractData.type === 'fvc' ? 3 : 2
-                    )}
-                  </span></div>
-                  <div className="text-xs text-blue-600 mt-2">
-                    {contractData.type === 'spot' 
-                      ? 'Spot orders arrive the following week' 
-                      : contractData.type === 'fvc'
-                      ? 'Forward contracts take 3 weeks to fulfill'
-                      : 'GMC contracts take 2 weeks to fulfill'}
-                  </div>
-                  <div className="text-xs text-blue-600">Batch Size: {batchSize.toLocaleString()} units</div>
-                </div>
-              </div>
-            )}
-
-            {!canPlaceOrders && (
-              <div className="mt-4 p-3 bg-yellow-50 border border-yellow-200 rounded-lg">
-                <p className="text-sm text-yellow-800">
-                  Material ordering is only available during the Strategy and Development phases (Weeks 1-6).
-                </p>
-              </div>
-            )}
           </CardContent>
         </Card>
       )}
@@ -861,9 +715,14 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     const delivery = p.purchaseWeek + (p.type === 'fvc' ? 3 : p.type === 'spot' ? 1 : 2);
                     return (
                       <div key={idx} className="border rounded-md p-3 text-sm">
-                        <div className="flex justify-between">
+                        <div className="flex justify-between items-center">
                           <div className="font-medium">{p.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {p.type?.toUpperCase()}</div>
-                          <div className="text-gray-600 flex items-center gap-1"><Truck size={14}/> Arrives W{delivery}</div>
+                          <div className="flex items-center gap-2">
+                            <div className="text-gray-600 flex items-center gap-1"><Truck size={14}/> Arrives W{delivery}</div>
+                            <Button variant="outline" size="sm" onClick={() => handleRemovePurchase(p.timestamp)} disabled={currentState?.isCommitted || !p.canDelete} className="h-7 px-2">
+                              <Trash2 size={14}/> Remove
+                            </Button>
+                          </div>
                         </div>
                         <div className="mt-1 text-gray-700">
                           {(p.orders || []).map((o: any, i: number) => (
@@ -890,29 +749,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     const committed = Number(c.units || 0);
                     return (
                       <div key={idx} className="border rounded-md p-3 text-sm">
-                        <div className="flex justify-between">
-                          <div className="font-medium">{c.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {c.type}</div>
-                          <div className="text-gray-600">Material: <span className="capitalize">{String(c.material).replace(/([A-Z])/g, ' $1').trim()}</span></div>
-                        </div>
-                        <div className="mt-1 grid grid-cols-2 md:grid-cols-4 gap-2">
-                          <div>Committed: <span className="font-mono">{committed.toLocaleString()}</span></div>
-                          <div>Delivered: <span className="font-mono">{delivered.toLocaleString()}</span></div>
-                          <div>Outstanding: <span className="font-mono">{Math.max(0, committed - delivered).toLocaleString()}</span></div>
-                          <div>Signed W{c.weekSigned}</div>
-                        </div>
-                        {deliveries.length > 0 && (
-                          <div className="mt-2 text-gray-700">
-                            <div className="font-medium mb-1">Deliveries</div>
-                            <div className="space-y-1">
-                              {deliveries.map((d: any, i: number) => (
-                                <div key={i} className="flex items-center justify-between">
-                                  <span>W{d.week}: {Number(d.units).toLocaleString()} units</span>
-                                  <span className="flex items-center gap-1 text-gray-600"><PoundSterling size={14}/>{formatCurrency((Number(d.units) || 0) * Number(d.unitPrice || 0))}</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
+                        <div className="flex justify-between"><div className="font-medium">{c.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {c.type}</div><div className="text-gray-600">Material: <span className="capitalize">{String(c.material).replace(/([A-Z])/g, ' $1').trim()}</span></div></div>
+                        <div className="mt-1 grid grid-cols-2 md:grid-cols-4 gap-2"><div>Committed: <span className="font-mono">{committed.toLocaleString()}</span></div><div>Delivered: <span className="font-mono">{delivered.toLocaleString()}</span></div><div>Outstanding: <span className="font-mono">{Math.max(0, committed - delivered).toLocaleString()}</span></div><div>Signed W{c.weekSigned}</div></div>
+                        {deliveries.length > 0 && (<div className="mt-2 text-gray-700"><div className="font-medium mb-1">Deliveries</div><div className="space-y-1">{deliveries.map((d: any, i: number) => (<div key={i} className="flex items-center justify-between"><span>W{d.week}: {Number(d.units).toLocaleString()} units</span><span className="flex items-center gap-1 text-gray-600"><PoundSterling size={14}/>{formatCurrency((Number(d.units) || 0) * Number(d.unitPrice || 0))}</span></div>))}</div></div>)}
                       </div>
                     );
                   })}

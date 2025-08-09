@@ -9,7 +9,8 @@ import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { Palette, Shirt, AlertCircle } from "lucide-react";
+import { Palette, AlertCircle, Users, PoundSterling, Tag } from "lucide-react";
+import { ProductIcon } from "@/components/ui/product-icon";
 
 interface DesignProps {
   gameSession: any;
@@ -158,36 +159,69 @@ export default function Design({ gameSession, currentState }: DesignProps) {
     mutationFn: async (updates: any) => {
       await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, updates);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
-      toast({
-        title: "Saved",
-        description: "Your design decisions have been saved.",
+    onSuccess: (_data, variables) => {
+      // Optimistic: ensure cache reflects locked design
+      queryClient.setQueryData(['/api/game/current'], (old: any) => {
+        if (!old) return old;
+        return {
+          ...old,
+          currentState: {
+            ...old.currentState,
+            productData: {
+              ...old.currentState?.productData,
+              ...variables.productData,
+            },
+          },
+        };
       });
+      queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      toast({ title: "Locked", description: "Your design choices have been locked." });
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
+        toast({ title: "Unauthorized", description: "You are logged out. Logging in again...", variant: "destructive" });
         setTimeout(() => { window.location.href = "/api/login"; }, 500);
         return;
       }
-      toast({ title: "Error", description: "Failed to save design data. Please try again.", variant: "destructive" });
+      toast({ title: "Error", description: "Failed to lock design. Please try again.", variant: "destructive" });
     },
   });
 
+  const writeSelectionToCache = (productId: string, changes: Partial<{ fabric: string; hasPrint: boolean }>) => {
+    queryClient.setQueryData(['/api/game/current'], (old: any) => {
+      if (!old) return old;
+      return {
+        ...old,
+        currentState: {
+          ...old.currentState,
+          productData: {
+            ...old.currentState?.productData,
+            [productId]: {
+              ...old.currentState?.productData?.[productId],
+              ...changes,
+            },
+          },
+        },
+      };
+    });
+  };
+
   const handleFabricChange = (productId: string, fabric: string) => {
     setDesignData((prev: any) => ({ ...prev, [productId]: { ...prev[productId], fabric } }));
+    writeSelectionToCache(productId, { fabric });
   };
   const handlePrintChange = (productId: string, hasPrint: boolean) => {
     setDesignData((prev: any) => ({ ...prev, [productId]: { ...prev[productId], hasPrint } }));
+    writeSelectionToCache(productId, { hasPrint });
   };
 
-  const handleSave = () => {
-    // Persist selected fabric/print and a reference confirmedMaterialCost (avg base + print surcharge)
+  const handleLockDesign = () => {
+    // Validate each product has fabric choice
+    const allChosen = products.every(p => (designData as any)[p.id]?.fabric);
+    if (!allChosen) {
+      toast({ title: "Select fabrics", description: "Please choose a fabric for each SKU before locking.", variant: "destructive" });
+      return;
+    }
     const updates = {
       productData: {
         ...currentState?.productData,
@@ -204,6 +238,7 @@ export default function Design({ gameSession, currentState }: DesignProps) {
                 fabric: sel.fabric || '',
                 hasPrint: !!sel.hasPrint,
                 confirmedMaterialCost,
+                designLocked: true,
               },
             ];
           })
@@ -213,7 +248,8 @@ export default function Design({ gameSession, currentState }: DesignProps) {
     updateStateMutation.mutate(updates);
   };
 
-  const isLocked = currentState?.weekNumber > 1;
+  const designLockedAll = ['jacket', 'dress', 'pants'].every((p) => currentState?.productData?.[p]?.designLocked);
+  const isLocked = designLockedAll || (currentState?.weekNumber > 1);
 
   return (
     <div className="p-6">
@@ -226,7 +262,7 @@ export default function Design({ gameSession, currentState }: DesignProps) {
         {isLocked && (
           <div className="mt-3 p-3 bg-yellow-50 border border-yellow-200 rounded-lg flex items-center gap-2">
             <AlertCircle size={16} className="text-yellow-600" />
-            <span className="text-sm text-yellow-800">Design decisions are locked after Week 1. Current designs are final.</span>
+            <span className="text-sm text-yellow-800">Design choices are locked.</span>
           </div>
         )}
       </div>
@@ -241,17 +277,40 @@ export default function Design({ gameSession, currentState }: DesignProps) {
 
           return (
             <Card key={product.id} className="border border-gray-100">
-              <CardHeader>
-                <CardTitle className="flex items-start justify-between">
-                  <span className="flex items-center gap-2"><Shirt size={20} /> {product.name}</span>
-                  <div className="text-right">
-                    <div className="text-sm text-gray-900 font-medium">Projected demand: {projected != null ? `${projected.toLocaleString()} units` : '—'}</div>
-                    <div className="text-xs text-gray-600">Ref material cost: {sel.fabric ? `${currency(base)}${surcharge ? ` + ${currency(surcharge)}` : ''}` : '—'}</div>
-                    <div className="text-xs text-gray-600">Locked RRP: {rrpVal ? currency(Number(rrpVal)) : '—'}</div>
-                  </div>
+              <CardHeader className="pb-3">
+                <CardTitle className="flex items-center gap-2 mb-3">
+                  <ProductIcon productId={product.id} size={22} /> {product.name}
                 </CardTitle>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-gray-600 uppercase">
+                      <Users size={14} /> Projected demand
+                    </div>
+                    <div className="mt-1 text-2xl font-bold text-slate-900">
+                      {projected != null ? `${projected.toLocaleString()} units` : '—'}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                    <TooltipWrapper content="Reference material cost is the average of base spot prices across suppliers. Actual cost can change with supplier choice and volume discounts.">
+                      <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-gray-600 uppercase cursor-help">
+                        <PoundSterling size={14} /> Ref material cost
+                      </div>
+                    </TooltipWrapper>
+                    <div className="mt-1 text-2xl font-bold text-slate-900">
+                      {sel.fabric ? `${currency(base)}${surcharge ? ` + ${currency(surcharge)}` : ''}` : '—'}
+                    </div>
+                  </div>
+                  <div className="rounded-lg border border-gray-200 bg-white p-3">
+                    <div className="flex items-center gap-2 text-xs font-semibold tracking-wide text-gray-600 uppercase">
+                      <Tag size={14} /> Locked RRP
+                    </div>
+                    <div className="mt-1 text-2xl font-bold text-slate-900">
+                      {rrpVal ? currency(Number(rrpVal)) : '—'}
+                    </div>
+                  </div>
+                </div>
               </CardHeader>
-              <CardContent className="space-y-6">
+              <CardContent className="space-y-6 pt-0">
                 {/* Fabric Selection */}
                 <div className="space-y-3">
                   <Label className="text-base font-medium">Fabric Choice</Label>
@@ -311,18 +370,23 @@ export default function Design({ gameSession, currentState }: DesignProps) {
         })}
       </div>
 
-      {/* Save Button */}
+      {/* Lock Button */}
       <div className="flex justify-end mt-8">
-        <Button onClick={handleSave} disabled={updateStateMutation.isPending || isLocked} className="flex items-center gap-2">
+        <Button
+          onClick={handleLockDesign}
+          disabled={updateStateMutation.isPending || isLocked}
+          className={`flex items-center gap-2 ${isLocked ? 'opacity-60 cursor-not-allowed' : ''}`}
+          variant={isLocked ? 'secondary' : undefined}
+        >
           {updateStateMutation.isPending ? (
             <>
               <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
-              Saving...
+              Locking...
             </>
           ) : (
             <>
               <Palette size={16} />
-              Save Design Choices
+              Lock Design
             </>
           )}
         </Button>

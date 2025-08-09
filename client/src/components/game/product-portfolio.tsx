@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Shirt, User, Zap } from "lucide-react";
+import { ProductIcon } from "@/components/ui/product-icon";
 
 interface ProductPortfolioProps {
   currentState: any;
@@ -10,7 +10,6 @@ const products = [
   {
     id: 'jacket',
     name: 'Vintage Denim Jacket',
-    icon: Shirt,
     forecast: 100000,
     hmPrice: 80,
     highEndRange: '£300-550',
@@ -19,7 +18,6 @@ const products = [
   {
     id: 'dress',
     name: 'Floral Print Dress',
-    icon: User,
     forecast: 150000,
     hmPrice: 50,
     highEndRange: '£180-210',
@@ -28,7 +26,6 @@ const products = [
   {
     id: 'pants',
     name: 'Corduroy Pants',
-    icon: Zap,
     forecast: 120000,
     hmPrice: 60,
     highEndRange: '£190-220',
@@ -70,14 +67,13 @@ export default function ProductPortfolio({ currentState }: ProductPortfolioProps
       <CardContent>
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {products.map((product) => {
-            const ProductIcon = product.icon;
             const status = getProductStatus(product.id);
             const productInfo = productData[product.id] || {};
 
             return (
               <div key={product.id} className="border border-gray-200 rounded-lg p-4">
                 <div className="w-full h-32 bg-gray-100 rounded-lg mb-4 flex items-center justify-center">
-                  <ProductIcon className="text-gray-400" size={48} />
+                  <ProductIcon productId={product.id} size={56} />
                 </div>
                 
                 <h3 className="font-semibold text-gray-900 mb-2">{product.name}</h3>
