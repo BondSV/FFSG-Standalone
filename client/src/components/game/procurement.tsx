@@ -246,6 +246,123 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         <p className="text-gray-600">Secure fabrics from suppliers with optimal contract terms</p>
       </div>
 
+      {/* Supplier Overview (restored large cards) */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Supplier-1 Card */}
+        <Card className="border border-gray-100">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Supplier-1 (Premium)</CardTitle>
+              <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">0% Defects</Badge>
+            </div>
+            <p className="text-sm text-gray-600">Premium quality, higher cost, 2-week lead time</p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+              <div>
+                <div className="text-gray-600">Quality:</div>
+                <div className="font-medium">Premium (0% defects)</div>
+              </div>
+              <div>
+                <div className="text-gray-600">Lead Time:</div>
+                <div className="font-medium">2 weeks</div>
+              </div>
+              <div>
+                <div className="text-gray-600">Max Discount:</div>
+                <div className="font-medium">15%</div>
+              </div>
+              <div>
+                <div className="text-gray-600">Single Supplier Deal:</div>
+                <div className="font-medium">+2% extra (locks other supplier)</div>
+              </div>
+            </div>
+            <div className="mb-2 font-semibold">Material Prices (per unit)</div>
+            <div className="text-sm font-mono text-gray-800 space-y-1">
+              {Object.entries(supplierPrices.supplier1).map(([mat, price]) => (
+                <div key={mat} className="flex justify-between">
+                  <span className="font-sans text-gray-700 capitalize">{mat.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                  <span>{formatCurrency(price as number)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 mt-4">
+              <Button
+                variant={selectedSupplier === 'supplier1' ? 'default' : 'outline'}
+                onClick={() => setSelectedSupplier('supplier1')}
+                disabled={isSupplierDisabledByDeal('supplier1')}
+              >
+                Use Supplier-1
+              </Button>
+              {!singleSupplierDeal && (
+                <Button variant="outline" onClick={() => setDealDialog({ open: true, supplier: 'supplier1' })}>
+                  Sign Single Supplier Deal
+                </Button>
+              )}
+              {singleSupplierDeal === 'supplier1' && (
+                <Badge variant="secondary" className="ml-auto"><Lock size={12} className="mr-1"/> Deal signed</Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Supplier-2 Card */}
+        <Card className="border border-gray-100">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle>Supplier-2 (Standard)</CardTitle>
+              <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">Up to 5% Defects</Badge>
+            </div>
+            <p className="text-sm text-gray-600">Standard quality, lower cost, 2-week lead time</p>
+          </CardHeader>
+          <CardContent>
+            <div className="grid grid-cols-2 gap-4 text-sm mb-4">
+              <div>
+                <div className="text-gray-600">Quality:</div>
+                <div className="font-medium">Standard (up to 5% defects)</div>
+              </div>
+              <div>
+                <div className="text-gray-600">Lead Time:</div>
+                <div className="font-medium">2 weeks</div>
+              </div>
+              <div>
+                <div className="text-gray-600">Max Discount:</div>
+                <div className="font-medium">10%</div>
+              </div>
+              <div>
+                <div className="text-gray-600">Single Supplier Deal:</div>
+                <div className="font-medium">+2% extra (locks other supplier)</div>
+              </div>
+            </div>
+            <div className="mb-2 font-semibold">Material Prices (per unit)</div>
+            <div className="text-sm font-mono text-gray-800 space-y-1">
+              {Object.entries(supplierPrices.supplier2).map(([mat, price]) => (
+                <div key={mat} className="flex justify-between">
+                  <span className="font-sans text-gray-700 capitalize">{mat.replace(/([A-Z])/g, ' $1').trim()}:</span>
+                  <span>{formatCurrency(price as number)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex items-center gap-2 mt-4">
+              <Button
+                variant={selectedSupplier === 'supplier2' ? 'default' : 'outline'}
+                onClick={() => setSelectedSupplier('supplier2')}
+                disabled={isSupplierDisabledByDeal('supplier2')}
+              >
+                Use Supplier-2
+              </Button>
+              {!singleSupplierDeal && (
+                <Button variant="outline" onClick={() => setDealDialog({ open: true, supplier: 'supplier2' })}>
+                  Sign Single Supplier Deal
+                </Button>
+              )}
+              {singleSupplierDeal === 'supplier2' && (
+                <Badge variant="secondary" className="ml-auto"><Lock size={12} className="mr-1"/> Deal signed</Badge>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Procurement Planner */}
       <Card className="border border-gray-100 mb-8">
         <CardHeader>
@@ -262,7 +379,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
-            {/* Supplier choice with basket count and single-supplier deal */}
+            {/* Supplier choice with basket count */}
             <div className="border rounded-lg p-4">
               <h3 className="font-semibold mb-3">Supplier</h3>
               <div className="grid grid-cols-2 gap-2">
@@ -284,25 +401,6 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                   <span>Supplier-2</span>
                   <Badge variant="secondary">{getSupplierBasketCount('supplier2')}</Badge>
                 </Button>
-              </div>
-              <div className="mt-3 flex items-center justify-between text-xs text-gray-600">
-                <div>
-                  {singleSupplierDeal ? (
-                    <span className="inline-flex items-center gap-1"><Lock size={12}/> Single Supplier Deal: {singleSupplierDeal === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} (extra +2% discount)</span>
-                  ) : (
-                    <span>Optional: sign a Single Supplier Deal to get +2% extra discount.</span>
-                  )}
-                </div>
-                {!singleSupplierDeal && (
-                  <div className="flex gap-2">
-                    <Button variant="outline" size="sm" onClick={() => setDealDialog({ open: true, supplier: 'supplier1' })}>
-                      Sign with Supplier-1
-                    </Button>
-                    <Button variant="outline" size="sm" onClick={() => setDealDialog({ open: true, supplier: 'supplier2' })}>
-                      Sign with Supplier-2
-                    </Button>
-                  </div>
-                )}
               </div>
             </div>
 
