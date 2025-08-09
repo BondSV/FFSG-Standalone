@@ -229,9 +229,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <p>Choose your contract strategy: <strong>SPT</strong> (spot purchase): pay on delivery for good units; flexible but fewer discounts. <strong>GMC</strong> (guaranteed minimum): sign a season commitment with a supplier; batch order weekly, settle each batch at W+2; qualifies you for stronger volume discounts but introduces commitment risk.</p>
             </div>
             <div className="text-xs text-gray-600">Projected season demand (reference): {projectedSeasonDemand.toLocaleString()} units.</div>
-            {overCommitUnits > 0 && (
-              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">Over‑commitment risk: your total commitment exceeds projected demand by {overCommitUnits.toLocaleString()} units (>3%). Potential penalty ≈ {formatCurrency(potentialPenalty)}.</div>
-            )}
+              {overCommitUnits > 0 && (
+              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">Over‑commitment risk: your total commitment exceeds projected demand by {overCommitUnits.toLocaleString()} units (&gt;3%). Potential penalty ≈ {formatCurrency(potentialPenalty)}.</div>
+              )}
           </div>
         </CardHeader>
         <CardContent>
