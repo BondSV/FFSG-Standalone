@@ -219,9 +219,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const avgUnitForPenalty = (() => { const sup1Vals = Object.values(supplierPrices.supplier1) as number[]; const sup2Vals = Object.values(supplierPrices.supplier2) as number[]; return Math.round((sup1Vals.reduce((a, b) => a + b, 0) / sup1Vals.length + sup2Vals.reduce((a, b) => a + b, 0) / sup2Vals.length) / 2); })();
   const potentialPenalty = overCommitUnits > 0 ? Math.round(overCommitUnits * avgUnitForPenalty * 0.2) : 0;
 
-  // derive single supplier deal from state
-  const singleSupplierDeal: 'supplier1' | 'supplier2' | undefined = (currentState?.procurementContracts as any)?.singleSupplierDeal;
-  const isSupplierDisabledByDeal = (sup: 'supplier1' | 'supplier2') => singleSupplierDeal && singleSupplierDeal !== sup;
+  // derive single supplier deal from state (moved earlier; remove duplicate definitions below)
 
   // Saved GMC commitments in state (used to decide Signed/Not signed and locking)
   const savedGmcCommitments: Record<string, number> = (currentState?.procurementContracts?.gmcCommitments as any) || {};
@@ -634,7 +632,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       <Label className={`text-sm font-medium capitalize ${isDisabled ? '' : 'text-blue-900'}`}>{material.replace(/([A-Z])/g, ' $1').trim()}</Label>
                       {isDisabled && (
                         <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide bg-gray-200 text-gray-700 px-2 py-0.5 rounded"><Lock size={10}/> Not in Design</span>
-                      )}
+                        )}
                       </div>
                     <div className={`text-xs mb-2 ${isDisabled ? 'text-gray-500' : 'text-blue-900'}`}>Base Price: {formatCurrency(basePrice)}{printSurcharge > 0 && (<span className="ml-1">(Print: +{formatCurrency(printSurcharge)})</span>)}</div>
                       
