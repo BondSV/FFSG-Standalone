@@ -85,10 +85,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const projectedSeasonDemand = useMemo(() => {
     if (!gameConstants) return 0;
     const base = gameConstants.PRODUCTS || {};
-    const baselineSpend = gameConstants.BASELINE_MARKETING_SPEND || 1;
-    const totalSpend = Number(marketingPlan?.totalSpend ?? 0);
-    // If no plan is set yet, apply baseline promotion (1.0) to align with Design tab
-    const promoLift = hasMarketingPlan ? Math.max(0.2, totalSpend / baselineSpend) : 1.0;
+    // Temporarily exclude marketing from the calculation to match Design tab exactly
+    const promoLift = 1.0;
     const products: Array<'jacket' | 'dress' | 'pants'> = ['jacket', 'dress', 'pants'];
     let total = 0;
     products.forEach((p) => {
@@ -105,7 +103,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       total += Math.round(clamp(units, 0, info.forecast * 2));
     });
      return total;
-  }, [gameConstants, productData, hasMarketingPlan, marketingPlan?.totalSpend]);
+  }, [gameConstants, productData]);
 
   // Totals and discounts (based on current basket)
   useEffect(() => {
@@ -500,10 +498,16 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             {/* GMC — Supplier 1 */}
             <div className="border rounded-lg p-4">
               <div className="flex items-center justify-between mb-2"><h3 className="font-semibold">GMC — Supplier‑1</h3><Badge variant={isLocked('supplier1') ? 'default' : 'secondary'}>{isLocked('supplier1') ? 'Signed' : 'Not signed'}</Badge></div>
-              {isLocked('supplier1') ? (
+              {isLocked('supplier1') || (singleSupplierDeal && singleSupplierDeal !== 'supplier1') ? (
                 <div className="space-y-2">
-                  <div className="text-sm text-gray-700">Agreed: <span className="font-mono font-semibold">{(savedGmcCommitments['supplier1'] || 0).toLocaleString()}</span> units</div>
-                  <div className="text-sm text-gray-700">Ordered so far: <span className="font-mono font-semibold">{getGmcOrderedUnitsForSupplier('supplier1').toLocaleString()}</span> units</div>
+                  {isLocked('supplier1') ? (
+                    <>
+                      <div className="text-sm text-gray-700">Agreed: <span className="font-mono font-semibold">{(savedGmcCommitments['supplier1'] || 0).toLocaleString()}</span> units</div>
+                      <div className="text-sm text-gray-700">Ordered so far: <span className="font-mono font-semibold">{getGmcOrderedUnitsForSupplier('supplier1').toLocaleString()}</span> units</div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-gray-600">Locked due to Single Supplier Deal with the other supplier.</div>
+                  )}
                   <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
                     <div className="h-full bg-primary" style={{ width: `${Math.min(100, (getGmcOrderedUnitsForSupplier('supplier1') / Math.max(1, Number(savedGmcCommitments['supplier1'] || 0))) * 100)}%` }} />
                   </div>
@@ -522,10 +526,16 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             {/* GMC — Supplier 2 */}
             <div className="border rounded-lg p-4">
               <div className="flex items-center justify-between mb-2"><h3 className="font-semibold">GMC — Supplier‑2</h3><Badge variant={isLocked('supplier2') ? 'default' : 'secondary'}>{isLocked('supplier2') ? 'Signed' : 'Not signed'}</Badge></div>
-              {isLocked('supplier2') ? (
+              {isLocked('supplier2') || (singleSupplierDeal && singleSupplierDeal !== 'supplier2') ? (
                 <div className="space-y-2">
-                  <div className="text-sm text-gray-700">Agreed: <span className="font-mono font-semibold">{(savedGmcCommitments['supplier2'] || 0).toLocaleString()}</span> units</div>
-                  <div className="text-sm text-gray-700">Ordered so far: <span className="font-mono font-semibold">{getGmcOrderedUnitsForSupplier('supplier2').toLocaleString()}</span> units</div>
+                  {isLocked('supplier2') ? (
+                    <>
+                      <div className="text-sm text-gray-700">Agreed: <span className="font-mono font-semibold">{(savedGmcCommitments['supplier2'] || 0).toLocaleString()}</span> units</div>
+                      <div className="text-sm text-gray-700">Ordered so far: <span className="font-mono font-semibold">{getGmcOrderedUnitsForSupplier('supplier2').toLocaleString()}</span> units</div>
+                    </>
+                  ) : (
+                    <div className="text-sm text-gray-600">Locked due to Single Supplier Deal with the other supplier.</div>
+                  )}
                   <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
                     <div className="h-full bg-primary" style={{ width: `${Math.min(100, (getGmcOrderedUnitsForSupplier('supplier2') / Math.max(1, Number(savedGmcCommitments['supplier2'] || 0))) * 100)}%` }} />
               </div>
@@ -589,7 +599,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 const finalPrice = basePrice + (finalChecked ? printSurcharge : 0);
                   
                   return (
-                  <div key={material} className={`border border-gray-200 rounded-lg p-4 ${isDisabled ? 'opacity-50' : ''}`}>
+                  <div key={material} className={`border rounded-lg p-4 ${isDisabled ? 'border-gray-200 opacity-60 bg-gray-50' : 'border-primary/20 bg-primary/5'}`}>
                     <div className="flex items-center justify-between">
                       <Label className="text-sm font-medium capitalize">{material.replace(/([A-Z])/g, ' $1').trim()}</Label>
                       {isDisabled && (<span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-500"><Lock size={10}/> Not in Design</span>)}
