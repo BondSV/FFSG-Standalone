@@ -42,7 +42,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const { data: gameConstants } = useQuery({ queryKey: ["/api/game/constants"], retry: false });
   
   const productData = currentState?.productData || {};
-  const marketingPlan = (currentState as any)?.marketingPlan || { totalSpend: 0 };
+  // Use best-available marketing info; fallback to baseline promotion if unset
+  const marketingPlan = (currentState as any)?.marketingPlan || { totalSpend: (currentState as any)?.marketingSpend ?? 0 };
   const currentWeek = currentState?.weekNumber || 1;
 
   const [contractData, setContractData] = useState<ContractData>({ type: null, supplier: currentState?.procurementContracts?.supplier || 'supplier1', orders: [], totalCommitment: 0, discount: 0 });
@@ -82,7 +83,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const projectedSeasonDemand = useMemo(() => {
     if (!gameConstants) return 0;
     const base = gameConstants.PRODUCTS || {};
-    const promoLift = Math.max(0.2, (marketingPlan.totalSpend || 0) / (gameConstants.BASELINE_MARKETING_SPEND || 1));
+    const baselineSpend = gameConstants.BASELINE_MARKETING_SPEND || 1;
+    const totalSpend = Number(marketingPlan.totalSpend || 0);
+    const promoLift = Math.max(0.2, totalSpend / baselineSpend);
     const products: Array<'jacket' | 'dress' | 'pants'> = ['jacket', 'dress', 'pants'];
     let total = 0;
     products.forEach((p) => {
@@ -97,8 +100,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       const units = Number(info.forecast) * priceEffect * posEffect * promoLift * designEffect;
       total += Math.round(clamp(units, 0, info.forecast * 2));
     });
-    return total;
-  }, [gameConstants, productData, marketingPlan]);
+     return total;
+  }, [gameConstants, productData, marketingPlan.totalSpend]);
 
   // Totals and discounts (based on current basket)
   useEffect(() => {
@@ -247,7 +250,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       </div>
 
       {/* Supplier Overview (restored large cards) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6 mb-8">
         {/* Supplier-1 Card */}
         <Card className="border border-gray-100 relative">
           <CardHeader>
@@ -267,7 +270,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="text-gray-600">Lead Time:</div>
                 <div className="font-medium">2 weeks</div>
               </div>
-              <div>
+              <div className="col-span-2">
                 <div className="font-semibold">Single Supplier Deal: +2% extra (locks other supplier)</div>
               </div>
             </div>
@@ -277,12 +280,12 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
                   {/* Desktop (3 columns) – only at lg and above */}
-                  <div className="hidden lg:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
+                  <div className="hidden 2xl:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
                     <div className="whitespace-nowrap">Fabric</div>
                     <div className="text-right whitespace-nowrap">Price</div>
                     <div className="text-right whitespace-nowrap">Add Print</div>
                   </div>
-                  <div className="hidden lg:block">
+                  <div className="hidden 2xl:block">
                     {Object.keys(supplierPrices.supplier1).map((mat) => (
                       <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
                         <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
@@ -292,7 +295,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     ))}
                   </div>
                   {/* Mobile/tablet (2 columns): Price (+Print) */}
-                  <div className="lg:hidden">
+                  <div className="2xl:hidden">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 font-medium text-gray-600 mb-1">
                       <div>Fabric</div>
                       <div className="text-right">Price (+Print)</div>
@@ -302,12 +305,12 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                         <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
                         <div className="text-right font-mono whitespace-nowrap">
                           {formatCurrency((supplierPrices as any).supplier1[mat])} <span className="text-gray-600">(+{formatCurrency(((printSurcharges as any).supplier1[mat] || 0))})</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               </div>
+            </div>
+                    ))}
+                </div>
+                </div>
+                </div>
               {/* Right: discount tiers for Supplier-1 */}
               <div>
                 <div className="mb-2 font-semibold">Discount Tiers</div>
@@ -323,7 +326,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     <div key={i} className="grid grid-cols-[1fr_auto] gap-x-4">
                       <span className="whitespace-nowrap">{t.max===Infinity ? `${t.min.toLocaleString()}+ units` : `${t.min.toLocaleString()} – ${t.max.toLocaleString()} units`}</span>
                       <span className="font-medium text-right whitespace-nowrap tabular-nums font-mono">{Math.round(t.discount*100)}%</span>
-                    </div>
+                </div>
                   ))}
                 </div>
               </div>
@@ -361,7 +364,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="font-medium">2 weeks</div>
               </div>
               
-              <div>
+              <div className="col-span-2">
                 <div className="font-semibold">Single Supplier Deal: +2% extra (locks other supplier)</div>
               </div>
             </div>
@@ -371,12 +374,12 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
                   {/* Desktop (3 columns) – only at lg and above */}
-                  <div className="hidden lg:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
+                  <div className="hidden 2xl:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
                     <div className="whitespace-nowrap">Fabric</div>
                     <div className="text-right whitespace-nowrap">Price</div>
                     <div className="text-right whitespace-nowrap">Add Print</div>
                   </div>
-                  <div className="hidden lg:block">
+                  <div className="hidden 2xl:block">
                     {Object.keys(supplierPrices.supplier2).map((mat) => (
                       <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
                         <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
@@ -386,7 +389,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     ))}
                   </div>
                   {/* Mobile/tablet (2 columns): Price (+Print) */}
-                  <div className="lg:hidden">
+                  <div className="2xl:hidden">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 font-medium text-gray-600 mb-1">
                       <div>Fabric</div>
                       <div className="text-right">Price (+Print)</div>
@@ -396,12 +399,12 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                         <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
                         <div className="text-right font-mono whitespace-nowrap">
                           {formatCurrency((supplierPrices as any).supplier2[mat])} <span className="text-gray-600">(+{formatCurrency(((printSurcharges as any).supplier2[mat] || 0))})</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
               </div>
+            </div>
+                    ))}
+                </div>
+                </div>
+                </div>
               {/* Right: discount tiers for Supplier-2 */}
               <div>
                 <div className="mb-2 font-semibold">Discount Tiers</div>
@@ -417,7 +420,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     <div key={i} className="grid grid-cols-[1fr_auto] gap-x-4">
                       <span className="whitespace-nowrap">{t.max===Infinity ? `${t.min.toLocaleString()}+ units` : `${t.min.toLocaleString()} – ${t.max.toLocaleString()} units`}</span>
                       <span className="font-medium text-right whitespace-nowrap tabular-nums font-mono">{Math.round(t.discount*100)}%</span>
-                    </div>
+                </div>
                   ))}
                 </div>
               </div>
@@ -444,7 +447,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             <div className="flex items-start gap-2 text-sm text-gray-700">
               <Info size={14} className="mt-0.5 text-gray-500" />
               <p>
-                Set optional GMC volumes with either supplier. GMC can unlock stronger volume discounts. Orders are still placed weekly in batches and each batch settles at W+2. If by Week 15 your delivered units are below your GMC, a shortfall penalty applies to the value of the gap.
+                A Guaranteed Minimum Commitment (GMC) is a promise to buy at least a stated number of units over the season. In exchange, the supplier plans capacity for you and typically offers sharper pricing through volume tiers and more reliable availability. You still place orders week‑by‑week in batches; each batch invoice is due two weeks after shipment (a two‑week settlement period).
+                <br/>
+                The risk: if demand falls short and by the end of Week 15 your total delivered units are below your commitment, you pay a shortfall fee of <strong>20% of the value of the missing units</strong> (undelivered units × contracted unit price). Choose a GMC only if you’re confident about demand and supply needs.
               </p>
             </div>
             <div className="rounded-lg bg-blue-50/70 border border-blue-200 p-3 flex items-center justify-between">
@@ -457,20 +462,20 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-2">
+          <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6 mb-2">
 
             {/* GMC — Supplier 1 */}
             <div className="border rounded-lg p-4">
               <div className="flex items-center justify-between mb-2"><h3 className="font-semibold">GMC — Supplier‑1</h3><Badge variant={gmcCommitments['supplier1'] ? 'default' : 'secondary'}>{gmcCommitments['supplier1'] ? 'Signed' : 'Not signed'}</Badge></div>
-              <Slider value={[gmcCommitments['supplier1'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier1: Number(v[0] || 0) }))} min={0} max={projectedSeasonDemand * 2 || 1000000} step={1000} />
-              <div className="flex items-center gap-2 mt-2"><Input type="number" value={gmcCommitments['supplier1'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier1: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" /><Button variant="outline" onClick={() => handleSaveGmc('supplier1')}>Save Commitment</Button></div>
+              <Slider value={[gmcCommitments['supplier1'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier1: Number(v[0] || 0) }))} min={0} max={5000000} step={10000} />
+              <div className="flex items-center gap-2 mt-2"><Input type="number" step={10000} value={gmcCommitments['supplier1'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier1: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" /><Button variant="outline" onClick={() => handleSaveGmc('supplier1')}>Save Commitment</Button></div>
             </div>
 
             {/* GMC — Supplier 2 */}
             <div className="border rounded-lg p-4">
               <div className="flex items-center justify-between mb-2"><h3 className="font-semibold">GMC — Supplier‑2</h3><Badge variant={gmcCommitments['supplier2'] ? 'default' : 'secondary'}>{gmcCommitments['supplier2'] ? 'Signed' : 'Not signed'}</Badge></div>
-              <Slider value={[gmcCommitments['supplier2'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier2: Number(v[0] || 0) }))} min={0} max={projectedSeasonDemand * 2 || 1000000} step={1000} />
-              <div className="flex items-center gap-2 mt-2"><Input type="number" value={gmcCommitments['supplier2'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier2: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" /><Button variant="outline" onClick={() => handleSaveGmc('supplier2')}>Save Commitment</Button></div>
+              <Slider value={[gmcCommitments['supplier2'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier2: Number(v[0] || 0) }))} min={0} max={5000000} step={10000} />
+              <div className="flex items-center gap-2 mt-2"><Input type="number" step={10000} value={gmcCommitments['supplier2'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier2: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" /><Button variant="outline" onClick={() => handleSaveGmc('supplier2')}>Save Commitment</Button></div>
             </div>
           </div>
         </CardContent>
