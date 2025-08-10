@@ -93,8 +93,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     let total = 0;
     products.forEach((p) => {
       const info = base[p]; if (!info) return;
-      const rrp = Number((productData as any)[p]?.rrp || 0); if (!rrp) return;
       const refPrice = Number(info.hmPrice) * 1.2;
+      // Use locked RRP; if missing, assume reference price to avoid undercounting
+      const rrp = Number((productData as any)[p]?.rrp ?? refPrice);
       const priceEffect = Math.pow(rrp / refPrice, UNIFIED_ELASTICITY);
       const posEffect = computePositionEffect(rrp, refPrice);
       const material = (productData as any)[p]?.fabric || '';
