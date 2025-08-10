@@ -109,6 +109,10 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     }
     return { discount: 0, tierIndex: null };
   };
+
+  // Single Supplier Deal (must be defined before any effects that use it)
+  const singleSupplierDeal: 'supplier1' | 'supplier2' | undefined = (currentState?.procurementContracts as any)?.singleSupplierDeal;
+  const isSupplierDisabledByDeal = (sup: 'supplier1' | 'supplier2') => singleSupplierDeal && singleSupplierDeal !== sup;
   const projectedSeasonDemand = useMemo(() => {
     if (!gameConstants) return 0;
     const base = gameConstants.PRODUCTS || {};

@@ -129,8 +129,8 @@ export default function Dashboard() {
     );
   }
 
-  const gameSession = (gameData as any)?.gameSession;
-  const currentState = (gameData as any)?.currentState;
+  const gameSession = (gameData as any)?.gameSession || null;
+  const currentState = (gameData as any)?.currentState || null;
 
   const renderTabContent = () => {
     switch (activeTab) {
