@@ -44,6 +44,8 @@ export default function Dashboard() {
   const { data: gameData, isLoading, error } = useQuery({
     queryKey: ['/api/game/current'],
     retry: false,
+    refetchOnWindowFocus: false,
+    staleTime: 10_000,
   });
 
   // Start new game mutation
@@ -104,8 +106,8 @@ export default function Dashboard() {
     );
   }
 
-  // Show start game screen if no active game
-  if (!gameData || !(gameData as any)?.gameSession) {
+  // If the current game failed to load (e.g., 404) or no active session, show start screen
+  if (error || !gameData || !(gameData as any)?.gameSession) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center max-w-md">
@@ -113,9 +115,7 @@ export default function Dashboard() {
             <ArrowRight className="text-white" size={32} />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Ready to Start?</h1>
-          <p className="text-gray-600 mb-8">
-            Launch your Vintage Revival collection and manage it through 15 weeks of strategic decisions.
-          </p>
+          <p className="text-gray-600 mb-8">Launch your Vintage Revival collection and manage it through 15 weeks of strategic decisions.</p>
           <Button 
             onClick={() => startGameMutation.mutate()}
             disabled={startGameMutation.isPending}
