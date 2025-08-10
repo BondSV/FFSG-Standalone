@@ -268,7 +268,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="font-medium">2 weeks</div>
               </div>
               <div>
-                <div className="font-semibold">Single Supplier Deal:<br/>+2% extra (locks other supplier)</div>
+                <div className="font-semibold">Single Supplier Deal: +2% extra (locks other supplier)</div>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -276,13 +276,13 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <div>
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
-                  {/* Desktop/tablet (3 columns) */}
-                  <div className="hidden md:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
+                  {/* Desktop (3 columns) – only at lg and above */}
+                  <div className="hidden lg:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
                     <div className="whitespace-nowrap">Fabric</div>
                     <div className="text-right whitespace-nowrap">Price</div>
                     <div className="text-right whitespace-nowrap">Add Print</div>
                   </div>
-                  <div className="hidden md:block">
+                  <div className="hidden lg:block">
                     {Object.keys(supplierPrices.supplier1).map((mat) => (
                       <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
                         <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
@@ -291,8 +291,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       </div>
                     ))}
                   </div>
-                  {/* Mobile (2 columns): Price (+Print) */}
-                  <div className="md:hidden">
+                  {/* Mobile/tablet (2 columns): Price (+Print) */}
+                  <div className="lg:hidden">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 font-medium text-gray-600 mb-1">
                       <div>Fabric</div>
                       <div className="text-right">Price (+Print)</div>
@@ -362,7 +362,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               </div>
               
               <div>
-                <div className="font-semibold">Single Supplier Deal:<br/>+2% extra (locks other supplier)</div>
+                <div className="font-semibold">Single Supplier Deal: +2% extra (locks other supplier)</div>
               </div>
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
@@ -370,18 +370,36 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <div>
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
-                  <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
+                  {/* Desktop (3 columns) – only at lg and above */}
+                  <div className="hidden lg:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
                     <div className="whitespace-nowrap">Fabric</div>
                     <div className="text-right whitespace-nowrap">Price</div>
                     <div className="text-right whitespace-nowrap">Add Print</div>
                   </div>
-                  {Object.keys(supplierPrices.supplier2).map((mat) => (
-                    <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
-                      <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
-                      <div className="text-right font-mono whitespace-nowrap">{formatCurrency((supplierPrices as any).supplier2[mat])}</div>
-                      <div className="text-right font-mono text-gray-700 whitespace-nowrap">+{formatCurrency(((printSurcharges as any).supplier2[mat] || 0))}</div>
+                  <div className="hidden lg:block">
+                    {Object.keys(supplierPrices.supplier2).map((mat) => (
+                      <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
+                        <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
+                        <div className="text-right font-mono whitespace-nowrap">{formatCurrency((supplierPrices as any).supplier2[mat])}</div>
+                        <div className="text-right font-mono text-gray-700 whitespace-nowrap">+{formatCurrency(((printSurcharges as any).supplier2[mat] || 0))}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Mobile/tablet (2 columns): Price (+Print) */}
+                  <div className="lg:hidden">
+                    <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 font-medium text-gray-600 mb-1">
+                      <div>Fabric</div>
+                      <div className="text-right">Price (+Print)</div>
                     </div>
-                  ))}
+                    {Object.keys(supplierPrices.supplier2).map((mat) => (
+                      <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 py-0.5">
+                        <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
+                        <div className="text-right font-mono whitespace-nowrap">
+                          {formatCurrency((supplierPrices as any).supplier2[mat])} <span className="text-gray-600">(+{formatCurrency(((printSurcharges as any).supplier2[mat] || 0))})</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
               {/* Right: discount tiers for Supplier-2 */}
@@ -418,22 +436,28 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         </Card>
       </div>
 
-      {/* Procurement Planner */}
+      {/* Guaranteed Minimum Commitments (GMC) */}
       <Card className="border border-gray-100 mb-8">
         <CardHeader>
-          <CardTitle>Procurement Planner</CardTitle>
-          <div className="text-sm text-gray-700 space-y-2 mt-1">
-            <div className="flex items-start gap-2"><Info size={14} className="mt-0.5 text-gray-500" />
-              <p>Choose your contract strategy: <strong>SPT</strong> (spot purchase): pay on delivery for good units; flexible but fewer discounts. <strong>GMC</strong> (guaranteed minimum): sign a season commitment with a supplier; batch order weekly, settle each batch at W+2; qualifies you for stronger volume discounts but introduces commitment risk.</p>
+          <CardTitle>Guaranteed Minimum Commitments (GMC)</CardTitle>
+          <div className="space-y-3 mt-1">
+            <div className="flex items-start gap-2 text-sm text-gray-700">
+              <Info size={14} className="mt-0.5 text-gray-500" />
+              <p>
+                Set optional GMC volumes with either supplier. GMC can unlock stronger volume discounts. Orders are still placed weekly in batches and each batch settles at W+2. If by Week 15 your delivered units are below your GMC, a shortfall penalty applies to the value of the gap.
+              </p>
             </div>
-            <div className="text-xs text-gray-600">Projected season demand (reference): {projectedSeasonDemand.toLocaleString()} units.</div>
-              {overCommitUnits > 0 && (
+            <div className="rounded-lg bg-blue-50/70 border border-blue-200 p-3 flex items-center justify-between">
+              <div className="text-sm font-medium text-blue-900">Projected season demand (reference)</div>
+              <div className="text-2xl font-bold text-blue-900 font-mono">{projectedSeasonDemand.toLocaleString()} units</div>
+            </div>
+            {overCommitUnits > 0 && (
               <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">Over‑commitment risk: your total commitment exceeds projected demand by {overCommitUnits.toLocaleString()} units (&gt;3%). Potential penalty ≈ {formatCurrency(potentialPenalty)}.</div>
-              )}
+            )}
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-2">
 
             {/* GMC — Supplier 1 */}
             <div className="border rounded-lg p-4">
@@ -448,17 +472,6 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <Slider value={[gmcCommitments['supplier2'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier2: Number(v[0] || 0) }))} min={0} max={projectedSeasonDemand * 2 || 1000000} step={1000} />
               <div className="flex items-center gap-2 mt-2"><Input type="number" value={gmcCommitments['supplier2'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier2: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" /><Button variant="outline" onClick={() => handleSaveGmc('supplier2')}>Save Commitment</Button></div>
             </div>
-              </div>
-
-          {/* Discounts & Tiers */}
-          <div className="border rounded-lg p-4">
-            <h3 className="font-semibold mb-2">Discounts & Tiers (per supplier)</h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-              <div className="rounded-md bg-gray-50 p-3"><div className="font-medium">Tier 1</div><div className="text-gray-600">100,000 – 299,999 units → 3%</div></div>
-              <div className="rounded-md bg-gray-50 p-3"><div className="font-medium">Tier 2</div><div className="text-gray-600">300,000 – 499,999 units → 7%</div></div>
-              <div className="rounded-md bg-gray-50 p-3"><div className="font-medium">Tier 3</div><div className="text-gray-600">500,000+ units → 12%</div></div>
-            </div>
-            <div className="text-xs text-gray-600 mt-2">Optional Single‑Supplier Deal: +2% extra discount on all future orders from your chosen supplier (on top of volume tiers). Signing the deal locks the other supplier.</div>
           </div>
         </CardContent>
       </Card>

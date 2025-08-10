@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -28,6 +28,7 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [showCommitModal, setShowCommitModal] = useState(false);
+  const mainScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Get current game data
   const { data: gameData, isLoading, error } = useQuery({
@@ -149,6 +150,18 @@ export default function Dashboard() {
     }
   };
 
+  // Always reset scroll to top when switching tabs
+  useEffect(() => {
+    // Scroll main container
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+    // Also scroll window (mobile Safari/edge cases)
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+  }, [activeTab]);
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header currentState={currentState} onCommitWeek={() => setShowCommitModal(true)} />
@@ -160,7 +173,7 @@ export default function Dashboard() {
           currentState={currentState}
         />
         
-        <main className="flex-1 overflow-y-auto">
+        <main ref={mainScrollRef} className="flex-1 overflow-y-auto">
           {renderTabContent()}
           {gameSession?.isCompleted && (
             <FinalDashboard gameId={gameSession.id} />
