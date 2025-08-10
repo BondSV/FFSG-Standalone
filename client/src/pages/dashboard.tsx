@@ -30,6 +30,16 @@ export default function Dashboard() {
   const [showCommitModal, setShowCommitModal] = useState(false);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
 
+  // Always reset scroll to top when switching tabs (must run before any conditional returns)
+  useEffect(() => {
+    if (mainScrollRef.current) {
+      mainScrollRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    }
+  }, [activeTab]);
+
   // Get current game data
   const { data: gameData, isLoading, error } = useQuery({
     queryKey: ['/api/game/current'],
@@ -150,17 +160,6 @@ export default function Dashboard() {
     }
   };
 
-  // Always reset scroll to top when switching tabs
-  useEffect(() => {
-    // Scroll main container
-    if (mainScrollRef.current) {
-      mainScrollRef.current.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    }
-    // Also scroll window (mobile Safari/edge cases)
-    if (typeof window !== 'undefined') {
-      window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
-    }
-  }, [activeTab]);
 
   return (
     <div className="min-h-screen bg-gray-50">
