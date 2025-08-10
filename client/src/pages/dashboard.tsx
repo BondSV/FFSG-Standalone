@@ -20,6 +20,7 @@ import FinalDashboard from "@/components/game/final-dashboard";
 import CommitWeekModal from "@/components/game/commit-week-modal";
 import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
+import { ErrorBoundary } from "@/components/ui/error-boundary";
 
 type Tab = 'overview' | 'pricing' | 'design' | 'procurement' | 'production' | 'logistics' | 'marketing' | 'analytics';
 
@@ -173,10 +174,12 @@ export default function Dashboard() {
         />
         
         <main ref={mainScrollRef} className="flex-1 overflow-y-auto">
-          {renderTabContent()}
-          {gameSession?.isCompleted && (
-            <FinalDashboard gameId={gameSession.id} />
-          )}
+          <ErrorBoundary>
+            {renderTabContent()}
+            {gameSession?.isCompleted && (
+              <FinalDashboard gameId={gameSession.id} />
+            )}
+          </ErrorBoundary>
         </main>
       </div>
 

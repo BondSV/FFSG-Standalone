@@ -58,8 +58,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const gameSession = await storage.getUserActiveGameSession(userId);
       
+      // Return an explicit empty payload instead of 404 so the client can render a start screen gracefully
       if (!gameSession) {
-        return res.status(404).json({ message: "No active game session" });
+        return res.status(200).json({ gameSession: null, currentState: null });
       }
       
       const latestState = await storage.getLatestWeeklyState(gameSession.id);
