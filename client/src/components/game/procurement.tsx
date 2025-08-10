@@ -42,8 +42,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const { data: gameConstants } = useQuery({ queryKey: ["/api/game/constants"], retry: false });
   
   const productData = currentState?.productData || {};
-  // Use best-available marketing info; fallback to baseline promotion if unset
-  const marketingPlan = (currentState as any)?.marketingPlan || { totalSpend: (currentState as any)?.marketingSpend ?? 0 };
+  // Use best-available marketing info
+  const marketingPlan = (currentState as any)?.marketingPlan || { totalSpend: (currentState as any)?.marketingSpend };
+  const hasMarketingPlan = marketingPlan && typeof marketingPlan.totalSpend === 'number' && !Number.isNaN(marketingPlan.totalSpend);
   const currentWeek = currentState?.weekNumber || 1;
 
   const [contractData, setContractData] = useState<ContractData>({ type: null, supplier: currentState?.procurementContracts?.supplier || 'supplier1', orders: [], totalCommitment: 0, discount: 0 });
@@ -54,6 +55,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const [quantityErrors, setQuantityErrors] = useState<Record<string, string>>({});
   const [gmcCommitments, setGmcCommitments] = useState<Record<string, number>>(() => { return (currentState?.procurementContracts?.gmcCommitments as Record<string, number>) || {} });
   const [dealDialog, setDealDialog] = useState<{ open: boolean; supplier: 'supplier1' | 'supplier2' | null }>({ open: false, supplier: null });
+  const [gmcConfirm, setGmcConfirm] = useState<{ open: boolean; supplier: 'supplier1' | 'supplier2' | null }>({ open: false, supplier: null });
 
   // Prices and surcharges
   const supplierPrices = { supplier1: { selvedgeDenim: 16, standardDenim: 10, egyptianCotton: 12, polyesterBlend: 7, fineWaleCorduroy: 14, wideWaleCorduroy: 9 }, supplier2: { selvedgeDenim: 13, egyptianCotton: 10, polyesterBlend: 6, fineWaleCorduroy: 11, wideWaleCorduroy: 7 } } as const;
@@ -84,8 +86,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     if (!gameConstants) return 0;
     const base = gameConstants.PRODUCTS || {};
     const baselineSpend = gameConstants.BASELINE_MARKETING_SPEND || 1;
-    const totalSpend = Number(marketingPlan.totalSpend || 0);
-    const promoLift = Math.max(0.2, totalSpend / baselineSpend);
+    const totalSpend = Number(marketingPlan?.totalSpend ?? 0);
+    // If no plan is set yet, apply baseline promotion (1.0) to align with Design tab
+    const promoLift = hasMarketingPlan ? Math.max(0.2, totalSpend / baselineSpend) : 1.0;
     const products: Array<'jacket' | 'dress' | 'pants'> = ['jacket', 'dress', 'pants'];
     let total = 0;
     products.forEach((p) => {
@@ -101,7 +104,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       total += Math.round(clamp(units, 0, info.forecast * 2));
     });
      return total;
-  }, [gameConstants, productData, marketingPlan.totalSpend]);
+  }, [gameConstants, productData, hasMarketingPlan, marketingPlan?.totalSpend]);
 
   // Totals and discounts (based on current basket)
   useEffect(() => {
@@ -198,6 +201,18 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const singleSupplierDeal: 'supplier1' | 'supplier2' | undefined = (currentState?.procurementContracts as any)?.singleSupplierDeal;
   const isSupplierDisabledByDeal = (sup: 'supplier1' | 'supplier2') => singleSupplierDeal && singleSupplierDeal !== sup;
 
+  // Saved GMC commitments in state (used to decide Signed/Not signed and locking)
+  const savedGmcCommitments: Record<string, number> = (currentState?.procurementContracts?.gmcCommitments as any) || {};
+  const isLocked = (sup: 'supplier1' | 'supplier2') => Number(savedGmcCommitments[sup] || 0) > 0;
+
+  // Helper: cumulative GMC orders placed with a supplier (for infographic)
+  const getGmcOrderedUnitsForSupplier = (sup: 'supplier1' | 'supplier2') => {
+    const contracts = (currentState?.procurementContracts?.contracts || []) as any[];
+    return contracts
+      .filter((c) => c.type === 'GMC' && c.supplier === sup)
+      .reduce((sum, c) => sum + (c.gmcOrders || []).reduce((s: number, o: any) => s + Number(o.units || o.quantity || 0), 0), 0);
+  };
+
   // If a deal is signed, force selection to that supplier
   useEffect(() => {
     if (singleSupplierDeal && selectedSupplier !== singleSupplierDeal) {
@@ -220,6 +235,25 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       toast({ title: 'Error', description: 'Failed to sign deal. Please try again.', variant: 'destructive' });
     } finally {
       setDealDialog({ open: false, supplier: null });
+    }
+  };
+
+  // Confirm and save GMC commitment; locks the supplier pane
+  const confirmAndSaveGmc = async (supplier: 'supplier1' | 'supplier2') => {
+    try {
+      const updates: any = { gmcCommitments: { ...(currentState?.procurementContracts?.gmcCommitments || {}), [supplier]: gmcCommitments[supplier] || 0 } };
+      await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/update`, updates);
+      queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      toast({ title: 'GMC Signed', description: `${supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} commitment signed at ${(gmcCommitments[supplier] || 0).toLocaleString()} units.` });
+    } catch (e) {
+      if (isUnauthorizedError(e)) {
+        toast({ title: 'Unauthorized', description: 'You are logged out. Logging in again...', variant: 'destructive' });
+        setTimeout(() => { window.location.href = '/api/login'; }, 500);
+        return;
+      }
+      toast({ title: 'Error', description: 'Failed to sign GMC. Please try again.', variant: 'destructive' });
+    } finally {
+      setGmcConfirm({ open: false, supplier: null });
     }
   };
 
@@ -250,7 +284,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       </div>
 
       {/* Supplier Overview (restored large cards) */}
-      <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-8">
         {/* Supplier-1 Card */}
         <Card className="border border-gray-100 relative">
           <CardHeader>
@@ -280,12 +314,12 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
                   {/* Desktop (3 columns) – only at lg and above */}
-                  <div className="hidden 2xl:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
+                  <div className="hidden xl:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
                     <div className="whitespace-nowrap">Fabric</div>
                     <div className="text-right whitespace-nowrap">Price</div>
                     <div className="text-right whitespace-nowrap">Add Print</div>
                   </div>
-                  <div className="hidden 2xl:block">
+                  <div className="hidden xl:block">
                     {Object.keys(supplierPrices.supplier1).map((mat) => (
                       <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
                         <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
@@ -295,7 +329,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     ))}
                   </div>
                   {/* Mobile/tablet (2 columns): Price (+Print) */}
-                  <div className="2xl:hidden">
+                  <div className="xl:hidden">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 font-medium text-gray-600 mb-1">
                       <div>Fabric</div>
                       <div className="text-right">Price (+Print)</div>
@@ -374,12 +408,12 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="mb-2 font-semibold">Material Prices (per unit)</div>
                 <div className="text-sm text-gray-800">
                   {/* Desktop (3 columns) – only at lg and above */}
-                  <div className="hidden 2xl:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
+                  <div className="hidden xl:grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 font-medium text-gray-600 mb-1">
                     <div className="whitespace-nowrap">Fabric</div>
                     <div className="text-right whitespace-nowrap">Price</div>
                     <div className="text-right whitespace-nowrap">Add Print</div>
                   </div>
-                  <div className="hidden 2xl:block">
+                  <div className="hidden xl:block">
                     {Object.keys(supplierPrices.supplier2).map((mat) => (
                       <div key={mat} className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-x-6 py-0.5">
                         <div className="capitalize whitespace-nowrap">{mat.replace(/([A-Z])/g, ' $1').trim()}</div>
@@ -389,7 +423,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     ))}
                   </div>
                   {/* Mobile/tablet (2 columns): Price (+Print) */}
-                  <div className="2xl:hidden">
+                  <div className="xl:hidden">
                     <div className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 font-medium text-gray-600 mb-1">
                       <div>Fabric</div>
                       <div className="text-right">Price (+Print)</div>
@@ -456,26 +490,54 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <div className="text-sm font-medium text-blue-900">Projected season demand (reference)</div>
               <div className="text-2xl font-bold text-blue-900 font-mono">{projectedSeasonDemand.toLocaleString()} units</div>
             </div>
-            {overCommitUnits > 0 && (
-              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">Over‑commitment risk: your total commitment exceeds projected demand by {overCommitUnits.toLocaleString()} units (&gt;3%). Potential penalty ≈ {formatCurrency(potentialPenalty)}.</div>
-            )}
+            {/* Over‑commitment warning temporarily disabled */}
           </div>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 2xl:grid-cols-2 gap-6 mb-2">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 mb-2">
 
             {/* GMC — Supplier 1 */}
             <div className="border rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2"><h3 className="font-semibold">GMC — Supplier‑1</h3><Badge variant={gmcCommitments['supplier1'] ? 'default' : 'secondary'}>{gmcCommitments['supplier1'] ? 'Signed' : 'Not signed'}</Badge></div>
-              <Slider value={[gmcCommitments['supplier1'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier1: Number(v[0] || 0) }))} min={0} max={5000000} step={10000} />
-              <div className="flex items-center gap-2 mt-2"><Input type="number" step={10000} value={gmcCommitments['supplier1'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier1: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" /><Button variant="outline" onClick={() => handleSaveGmc('supplier1')}>Save Commitment</Button></div>
+              <div className="flex items-center justify-between mb-2"><h3 className="font-semibold">GMC — Supplier‑1</h3><Badge variant={isLocked('supplier1') ? 'default' : 'secondary'}>{isLocked('supplier1') ? 'Signed' : 'Not signed'}</Badge></div>
+              {isLocked('supplier1') ? (
+                <div className="space-y-2">
+                  <div className="text-sm text-gray-700">Agreed: <span className="font-mono font-semibold">{(savedGmcCommitments['supplier1'] || 0).toLocaleString()}</span> units</div>
+                  <div className="text-sm text-gray-700">Ordered so far: <span className="font-mono font-semibold">{getGmcOrderedUnitsForSupplier('supplier1').toLocaleString()}</span> units</div>
+                  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-primary" style={{ width: `${Math.min(100, (getGmcOrderedUnitsForSupplier('supplier1') / Math.max(1, Number(savedGmcCommitments['supplier1'] || 0))) * 100)}%` }} />
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <Slider value={[gmcCommitments['supplier1'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier1: Number(v[0] || 0) }))} min={0} max={5000000} step={10000} />
+                  <div className="flex items-center gap-2 mt-2">
+                    <Input type="number" step={10000} value={gmcCommitments['supplier1'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier1: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" />
+                    <Button variant="outline" onClick={() => setGmcConfirm({ open: true, supplier: 'supplier1' })}>Sign Commitment</Button>
+              </div>
+                </>
+              )}
             </div>
 
             {/* GMC — Supplier 2 */}
             <div className="border rounded-lg p-4">
-              <div className="flex items-center justify-between mb-2"><h3 className="font-semibold">GMC — Supplier‑2</h3><Badge variant={gmcCommitments['supplier2'] ? 'default' : 'secondary'}>{gmcCommitments['supplier2'] ? 'Signed' : 'Not signed'}</Badge></div>
-              <Slider value={[gmcCommitments['supplier2'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier2: Number(v[0] || 0) }))} min={0} max={5000000} step={10000} />
-              <div className="flex items-center gap-2 mt-2"><Input type="number" step={10000} value={gmcCommitments['supplier2'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier2: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" /><Button variant="outline" onClick={() => handleSaveGmc('supplier2')}>Save Commitment</Button></div>
+              <div className="flex items-center justify-between mb-2"><h3 className="font-semibold">GMC — Supplier‑2</h3><Badge variant={isLocked('supplier2') ? 'default' : 'secondary'}>{isLocked('supplier2') ? 'Signed' : 'Not signed'}</Badge></div>
+              {isLocked('supplier2') ? (
+                <div className="space-y-2">
+                  <div className="text-sm text-gray-700">Agreed: <span className="font-mono font-semibold">{(savedGmcCommitments['supplier2'] || 0).toLocaleString()}</span> units</div>
+                  <div className="text-sm text-gray-700">Ordered so far: <span className="font-mono font-semibold">{getGmcOrderedUnitsForSupplier('supplier2').toLocaleString()}</span> units</div>
+                  <div className="w-full h-2 bg-gray-200 rounded-full overflow-hidden">
+                    <div className="h-full bg-primary" style={{ width: `${Math.min(100, (getGmcOrderedUnitsForSupplier('supplier2') / Math.max(1, Number(savedGmcCommitments['supplier2'] || 0))) * 100)}%` }} />
+              </div>
+            </div>
+              ) : (
+                <>
+                  <Slider value={[gmcCommitments['supplier2'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier2: Number(v[0] || 0) }))} min={0} max={5000000} step={10000} />
+                  <div className="flex items-center gap-2 mt-2">
+                    <Input type="number" step={10000} value={gmcCommitments['supplier2'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier2: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" />
+                    <Button variant="outline" onClick={() => setGmcConfirm({ open: true, supplier: 'supplier2' })}>Sign Commitment</Button>
+              </div>
+                </>
+              )}
             </div>
           </div>
         </CardContent>
@@ -582,6 +644,21 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
 
       {/* Contracts / Orders Ledger */}
       {renderDealDialog()}
+      {/* GMC confirmation dialog */}
+      <Dialog open={gmcConfirm.open} onOpenChange={(open) => setGmcConfirm({ open, supplier: open ? gmcConfirm.supplier : null })}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Sign GMC?</DialogTitle>
+            <DialogDescription>
+              This will lock the commitment with {gmcConfirm.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} at {(gmcCommitments[gmcConfirm.supplier || 'supplier1'] || 0).toLocaleString()} units. You can no longer adjust the slider afterwards.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGmcConfirm({ open: false, supplier: null })}>Cancel</Button>
+            <Button onClick={() => gmcConfirm.supplier && confirmAndSaveGmc(gmcConfirm.supplier)}>Confirm</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <Card className="border border-gray-100">
         <CardHeader>
           <CardTitle className="flex items-center gap-2"><History size={18}/> Contracts & Orders</CardTitle>
