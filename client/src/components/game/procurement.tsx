@@ -82,6 +82,33 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const computePositionEffect = (price: number, ref: number) => { const d = Math.abs(price / ref - 1); const ceil = 0.95, p = 3, s = 0.21; const base = 1 - Math.exp(-Math.pow(d / s, p)); const bump = 40 * (d * d) * Math.exp(-Math.pow(d / 0.08, 2)); const mag = Math.min(1, ceil * base + bump); const raw = 1 + ((price < ref) ? mag : -mag); return clamp(raw, 0, 2); };
   const fabricLift: Record<string, number> = { selvedgeDenim: 0.06, standardDenim: 0.0, egyptianCotton: 0.05, polyesterBlend: -0.02, fineWaleCorduroy: 0.04, wideWaleCorduroy: 0.0 };
   const printLift = 0.03;
+  // Supplier-specific volume discount tiers
+  const SUPPLIER_TIERS: Record<'supplier1'|'supplier2', { min: number; max: number; discount: number }[]> = {
+    supplier1: [
+      { min: 130000, max: 169999, discount: 0.03 },
+      { min: 170000, max: 219999, discount: 0.05 },
+      { min: 220000, max: 289999, discount: 0.07 },
+      { min: 290000, max: 349999, discount: 0.09 },
+      { min: 350000, max: 499999, discount: 0.12 },
+      { min: 500000, max: Infinity, discount: 0.15 },
+    ],
+    supplier2: [
+      { min: 100000, max: 149999, discount: 0.02 },
+      { min: 150000, max: 199999, discount: 0.03 },
+      { min: 200000, max: 249999, discount: 0.04 },
+      { min: 250000, max: 299999, discount: 0.05 },
+      { min: 300000, max: 399999, discount: 0.07 },
+      { min: 400000, max: Infinity, discount: 0.09 },
+    ],
+  };
+  const computeTierForSupplier = (supplier: 'supplier1' | 'supplier2', units: number): { discount: number; tierIndex: number | null } => {
+    const tiers = SUPPLIER_TIERS[supplier];
+    for (let i = 0; i < tiers.length; i++) {
+      const t = tiers[i];
+      if (units >= t.min && units <= t.max) return { discount: t.discount, tierIndex: i + 1 };
+    }
+    return { discount: 0, tierIndex: null };
+  };
   const projectedSeasonDemand = useMemo(() => {
     if (!gameConstants) return 0;
     const base = gameConstants.PRODUCTS || {};
@@ -120,12 +147,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         }
       }
     });
-    const seasonNeed = (gameConstants?.PRODUCTS?.jacket?.forecast || 0) + (gameConstants?.PRODUCTS?.dress?.forecast || 0) + (gameConstants?.PRODUCTS?.pants?.forecast || 0);
-    const isWeek1 = currentWeek === 1;
-    const supplierMax = selectedSupplier === 'supplier1' ? 0.15 : 0.10;
-    const singleSupplierBonusEligible = isWeek1 && totalVolume >= seasonNeed;
-    const tierDiscount = (totalVolume >= 500000) ? 0.12 : (totalVolume >= 300000) ? 0.07 : (totalVolume >= 100000) ? 0.03 : 0;
-    const appliedDiscount = singleSupplierBonusEligible ? supplierMax : tierDiscount;
+    const { discount: tierDiscount } = computeTierForSupplier(selectedSupplier, totalVolume);
+    const extra = singleSupplierDeal === selectedSupplier ? 0.02 : 0;
+    const appliedDiscount = tierDiscount + extra;
     const discountedCost = totalCost * (1 - appliedDiscount);
     setContractData(prev => ({ ...prev, orders, totalCommitment: discountedCost, discount: appliedDiscount * 100 }));
   }, [materialQuantities, printOptions, selectedSupplier, gameConstants, currentWeek]);
@@ -182,13 +206,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const batchSize = (gameConstants?.BATCH_SIZE as number) || 25000;
   const totalUnits = Object.values(materialQuantities).reduce((s, v) => s + (Number(v) || 0), 0);
 
-  const tierName = (() => {
-    if (contractData.discount >= 15) return 'Single Supplier Bonus';
-    if (totalUnits >= 500000) return 'Tier 3';
-    if (totalUnits >= 300000) return 'Tier 2';
-    if (totalUnits >= 100000) return 'Tier 1';
-    return '';
-  })();
+  const { tierIndex: currTierIndex } = computeTierForSupplier(selectedSupplier, totalUnits);
+  const extraSSD = singleSupplierDeal === selectedSupplier ? 0.02 : 0;
 
   // Projected demand and penalty preview
   const totalCommitted = (gmcCommitments['supplier1'] || 0) + (gmcCommitments['supplier2'] || 0);
@@ -599,17 +618,26 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 const finalPrice = basePrice + (finalChecked ? printSurcharge : 0);
                   
                   return (
-                  <div key={material} className={`border rounded-lg p-4 ${isDisabled ? 'border-gray-200 opacity-60 bg-gray-50' : 'border-primary/20 bg-primary/5'}`}>
+                  <div
+                    key={material}
+                    className={`border rounded-lg p-4 transition-colors ${
+                      isDisabled
+                        ? 'bg-gray-50 border-gray-200 opacity-70'
+                        : 'bg-blue-50 border-blue-200 hover:bg-blue-100'
+                    }`}
+                  >
                     <div className="flex items-center justify-between">
-                      <Label className="text-sm font-medium capitalize">{material.replace(/([A-Z])/g, ' $1').trim()}</Label>
-                      {isDisabled && (<span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-500"><Lock size={10}/> Not in Design</span>)}
+                      <Label className={`text-sm font-medium capitalize ${isDisabled ? '' : 'text-blue-900'}`}>{material.replace(/([A-Z])/g, ' $1').trim()}</Label>
+                      {isDisabled && (
+                        <span className="inline-flex items-center gap-1 text-[10px] uppercase tracking-wide bg-gray-200 text-gray-700 px-2 py-0.5 rounded"><Lock size={10}/> Not in Design</span>
+                      )}
                       </div>
-                    <div className="text-xs text-gray-500 mb-2">Base Price: {formatCurrency(basePrice)}{printSurcharge > 0 && (<span className="ml-1">(Print: +{formatCurrency(printSurcharge)})</span>)}</div>
+                    <div className={`text-xs mb-2 ${isDisabled ? 'text-gray-500' : 'text-blue-900'}`}>Base Price: {formatCurrency(basePrice)}{printSurcharge > 0 && (<span className="ml-1">(Print: +{formatCurrency(printSurcharge)})</span>)}</div>
                       
                       {/* Print Option */}
                       <div className="flex items-center space-x-2 mb-3">
                       <Checkbox id={`print-${material}`} checked={finalChecked} onCheckedChange={(checked) => handlePrintOptionChange(material, !!checked)} disabled={isPrintForced || isDisabled} />
-                      <Label htmlFor={`print-${material}`} className={`text-xs text-gray-600 flex items-center gap-1 ${isDisabled ? 'cursor-not-allowed' : 'cursor-pointer'}`}><Palette size={12} /> Add Print (+{formatCurrency(printSurcharge)})</Label>
+                      <Label htmlFor={`print-${material}`} className={`text-xs flex items-center gap-1 ${isDisabled ? 'text-gray-600 cursor-not-allowed' : 'text-blue-900 cursor-pointer'}`}><Palette size={12} /> Add Print (+{formatCurrency(printSurcharge)})</Label>
                       {isPrintForced && (<span className="ml-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-500"><Lock size={10}/> Locked</span>)}
                       </div>
 
@@ -635,7 +663,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                   <div className="flex justify-between items-center font-medium"><span>Subtotal:</span><span className="font-mono">{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0))}</span></div>
                     {contractData.discount > 0 && (
                       <div className="flex justify-between items-center text-green-600">
-                      <span>Discount {tierName ? `(${tierName})` : ''} ({contractData.discount.toFixed(1)}%):</span>
+                      <span>Discount {currTierIndex ? `(Tier ${currTierIndex})` : ''}{extraSSD ? ' (+2% Single Supplier Deal)' : ''} ({contractData.discount.toFixed(1)}%):</span>
                         <span className="font-mono">-{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0) * (contractData.discount / 100))}</span>
                       </div>
                     )}
