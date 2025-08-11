@@ -163,31 +163,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const currentWeek = Number(weeklyState.weekNumber);
           const purchases = (updates.materialPurchases as any[]) || [];
 
-          // Track deletions: if some timestamps were removed this week, also remove canonical orders/contracts created from them
-          const existingPurchasesList: any[] = ((weeklyState as any).materialPurchases || []);
-          const existingTimestamps = new Set(existingPurchasesList.map((p: any) => p.timestamp).filter(Boolean));
-          const nextTimestamps = new Set(purchases.map((p: any) => p.timestamp).filter(Boolean));
-          const removedTimestamps: string[] = Array.from(existingTimestamps).filter(ts => !nextTimestamps.has(ts)) as string[];
+          // Only run deletion/diff logic when purchases are explicitly provided in the update payload
+          if (Array.isArray(updates.materialPurchases)) {
+            const existingPurchasesList: any[] = ((weeklyState as any).materialPurchases || []);
+            const existingTimestamps = new Set(existingPurchasesList.map((p: any) => p.timestamp).filter(Boolean));
+            const nextTimestamps = new Set(purchases.map((p: any) => p.timestamp).filter(Boolean));
+            const removedTimestamps: string[] = Array.from(existingTimestamps).filter(ts => !nextTimestamps.has(ts)) as string[];
 
-          if (removedTimestamps.length > 0) {
-            // Remove GMC order lines and SPT contracts derived from these timestamps
-            for (const c of contracts) {
-              if ((c as any).type === 'GMC') {
-                const prev = (c as any).gmcOrders || [];
-                (c as any).gmcOrders = prev.filter((o: any) => !removedTimestamps.some(ts => String(o.orderId || '').startsWith(ts)));
+            if (removedTimestamps.length > 0) {
+              // Remove GMC order lines and SPT contracts derived from these timestamps
+              for (const c of contracts) {
+                if ((c as any).type === 'GMC') {
+                  const prev = (c as any).gmcOrders || [];
+                  (c as any).gmcOrders = prev.filter((o: any) => !removedTimestamps.some(ts => String(o.orderId || '').startsWith(ts)));
+                }
               }
-            }
-            // Remove SPT contracts that originated from removed timestamps (id starts with timestamp)
-            const remainingContracts: any[] = [];
-            for (const c of contracts) {
-              if ((c as any).type === 'SPT' && removedTimestamps.some(ts => String((c as any).id || '').startsWith(ts))) {
-                // skip -> removed
-                continue;
+              // Remove SPT contracts that originated from removed timestamps (id starts with timestamp)
+              const remainingContracts: any[] = [];
+              for (const c of contracts) {
+                if ((c as any).type === 'SPT' && removedTimestamps.some(ts => String((c as any).id || '').startsWith(ts))) {
+                  // skip -> removed
+                  continue;
+                }
+                remainingContracts.push(c);
               }
-              remainingContracts.push(c);
+              while (contracts.length) contracts.pop();
+              for (const rc of remainingContracts) contracts.push(rc);
             }
-            while (contracts.length) contracts.pop();
-            for (const rc of remainingContracts) contracts.push(rc);
           }
 
           // Helper: compute per-supplier tier discount from constants
@@ -295,17 +297,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (updates.gmcCommitments && typeof updates.gmcCommitments === 'object') {
             Object.assign(gmcCommitments, updates.gmcCommitments);
           }
-          // Merge purchases into existing state (do not drop previous orders for this week)
-          // Merge and de-duplicate purchases by timestamp
-          const existingPurchases: any[] = ((weeklyState as any).materialPurchases || []);
-          const mergedMap = new Map<string, any>();
-          for (const p of existingPurchases) {
-            if (p?.timestamp) mergedMap.set(p.timestamp, p);
-          }
-          for (const p of purchases) {
-            if (p?.timestamp) mergedMap.set(p.timestamp, p);
-          }
-          const mergedPurchases = Array.from(mergedMap.values());
+          // Replace this week's purchases with the provided list (de-duped by timestamp)
+          const mergedPurchases = Array.from(
+            new Map((purchases || []).filter((x: any) => !!x?.timestamp).map((x: any) => [x.timestamp, x])).values()
+          );
           weeklyState = await storage.updateWeeklyState(weeklyState.id, {
             procurementContracts: { contracts, gmcCommitments, singleSupplierDeal },
             materialPurchases: mergedPurchases,

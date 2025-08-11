@@ -9,7 +9,7 @@ import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { ShoppingCart, Calculator, Palette, Truck, PoundSterling, History, Lock, Trash2, Info } from "lucide-react";
+import { ShoppingCart, Calculator, Palette, Truck, PoundSterling, History, Lock, Trash2, Info, Receipt } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
@@ -391,7 +391,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     { min:500000, max:Infinity, discount:0.15 },
                   ]).map((t:any, i:number)=> (
                     <div key={i} className="grid grid-cols-[1fr_auto] gap-x-4">
-                      <span className="whitespace-nowrap">{Number.isFinite(t.max) ? `${Number(t.min ?? 0).toLocaleString()} – ${Number(t.max ?? 0).toLocaleString()} units` : `${Number(t.min ?? 0).toLocaleString()}+ units`}</span>
+                      <span className="whitespace-nowrap">{(t.max && Math.abs(t.max) >= 9_000_000_000_000_000) ? `${Number(t.min ?? 0).toLocaleString()}+ units` : `${Number(t.min ?? 0).toLocaleString()} – ${Number(t.max ?? 0).toLocaleString()} units`}</span>
                       <span className="font-medium text-right whitespace-nowrap tabular-nums font-mono">{Math.round(t.discount*100)}%</span>
                 </div>
                   ))}
@@ -485,7 +485,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     { min:400000, max:Infinity, discount:0.09 },
                   ]).map((t:any, i:number)=> (
                     <div key={i} className="grid grid-cols-[1fr_auto] gap-x-4">
-                      <span className="whitespace-nowrap">{Number.isFinite(t.max) ? `${Number(t.min ?? 0).toLocaleString()} – ${Number(t.max ?? 0).toLocaleString()} units` : `${Number(t.min ?? 0).toLocaleString()}+ units`}</span>
+                      <span className="whitespace-nowrap">{(t.max && Math.abs(t.max) >= 9_000_000_000_000_000) ? `${Number(t.min ?? 0).toLocaleString()}+ units` : `${Number(t.min ?? 0).toLocaleString()} – ${Number(t.max ?? 0).toLocaleString()} units`}</span>
                       <span className="font-medium text-right whitespace-nowrap tabular-nums font-mono">{Math.round(t.discount*100)}%</span>
                 </div>
                   ))}
@@ -727,7 +727,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             const keyed = new Map<string, any>();
             for (const p of flatRaw) { if (p?.timestamp) keyed.set(p.timestamp, p); }
             const flat = Array.from(keyed.values());
-            flat.sort((a: any, b: any) => (Number(a.weekNumber) - Number(b.weekNumber)) || String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
+            // Sort newest first: week desc, then timestamp desc
+            flat.sort((a: any, b: any) => (Number(b.weekNumber) - Number(a.weekNumber)) || String(b.timestamp || '').localeCompare(String(a.timestamp || '')));
             if (!flat || flat.length === 0) return <div className="text-sm text-gray-600">No orders yet.</div>;
 
             return (
@@ -743,23 +744,23 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                         <div className="font-medium">W{p.purchaseWeek} • {p.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {p.type?.toUpperCase()}</div>
                         <div className="flex items-center gap-2">
                           <div className="text-gray-600 flex items-center gap-1"><Truck size={14}/> Arrives W{delivery}</div>
-                          <div className="text-gray-600">Invoice Due W{dueWeek}</div>
+                          <div className="text-gray-600 flex items-center gap-1"><Receipt size={14}/> Invoice Due W{dueWeek}</div>
                           <Button variant="outline" size="sm" onClick={() => handleRemovePurchase(p.timestamp)} disabled={!allowRemove} className="h-7 px-2"><Trash2 size={14}/> Remove</Button>
-                        </div>
-                      </div>
+              </div>
+            </div>
                       <div className="mt-1 text-gray-700">
                         {(p.orders || []).map((o: any, i: number) => {
-                          const lineAfter = Number(o.effectiveLineTotal ?? o.totalCost ?? 0);
+                          const lineAfter = Number(o.effectiveLineTotal ?? 0);
                           const qty = Number(o.quantity ?? o.units ?? 0);
                           return (
                             <div key={i} className="flex justify-between">
                               <span className="capitalize">{o.material.replace(/([A-Z])/g, ' $1').trim()} — {qty.toLocaleString()} units</span>
                               <span className="font-mono">{formatCurrency(lineAfter)}</span>
-                            </div>
+              </div>
                           );
                         })}
-                      </div>
-                    </div>
+            </div>
+              </div>
                   );
                 })}
               </div>
