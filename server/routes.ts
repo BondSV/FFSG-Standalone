@@ -195,6 +195,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 }
                 contract.gmcOrders = contract.gmcOrders || [];
                 contract.gmcOrders.push({ week: currentWeek, units: order.quantity });
+                // Ensure the stored gmcCommitments also reflect the explicit commitment value per supplier
+                if (p.gmcCommitmentUnits) {
+                  gmcCommitments[p.supplier] = p.gmcCommitmentUnits;
+                }
               } else if (p.type === 'spot') {
                 contracts.push({
                   ...contractBase,
@@ -208,7 +212,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (updates.gmcCommitments && typeof updates.gmcCommitments === 'object') {
             Object.assign(gmcCommitments, updates.gmcCommitments);
           }
-          const processedUpdates = { procurementContracts: { contracts, gmcCommitments, singleSupplierDeal } } as any;
+          const processedUpdates = {
+            procurementContracts: { contracts, gmcCommitments, singleSupplierDeal },
+            // Keep a simple front-end history of orders for the current week so the UI can render immediately
+            materialPurchases: purchases,
+          } as any;
           weeklyState = await storage.updateWeeklyState(weeklyState.id, processedUpdates);
         } 
         // Process production schedule if it exists in updates

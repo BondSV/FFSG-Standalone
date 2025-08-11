@@ -61,17 +61,26 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const supplierPrices = { supplier1: { selvedgeDenim: 16, standardDenim: 10, egyptianCotton: 12, polyesterBlend: 7, fineWaleCorduroy: 14, wideWaleCorduroy: 9 }, supplier2: { selvedgeDenim: 13, egyptianCotton: 10, polyesterBlend: 6, fineWaleCorduroy: 11, wideWaleCorduroy: 7 } } as const;
   const printSurcharges = { supplier1: { selvedgeDenim: 3, standardDenim: 3, egyptianCotton: 2, polyesterBlend: 2, fineWaleCorduroy: 3, wideWaleCorduroy: 3 }, supplier2: { selvedgeDenim: 2, egyptianCotton: 1, polyesterBlend: 1, fineWaleCorduroy: 2, wideWaleCorduroy: 2 } } as const;
 
-  // Selected fabrics and print locks
+  // Selected fabrics and print locks derived from Design
   const selectedFabrics = useMemo(() => { const set = new Set<string>(); ['jacket', 'dress', 'pants'].forEach((p) => { const f = productData?.[p]?.fabric; if (f) set.add(f); }); return set; }, [productData]);
-  const printForcedMaterials = useMemo(() => { const set = new Set<string>(); ['jacket', 'dress', 'pants'].forEach((p) => { const f = productData?.[p]?.fabric; const locked = !!productData?.[p]?.designLocked; const pr = !!productData?.[p]?.hasPrint; if (f && locked && pr) set.add(f); }); return set; }, [productData]);
+  const designPrintLocks = useMemo(() => {
+    const map: Record<string, boolean> = {};
+    ['jacket', 'dress', 'pants'].forEach((p) => {
+      const f = (productData as any)?.[p]?.fabric;
+      const locked = !!(productData as any)?.[p]?.designLocked;
+      const hp = !!(productData as any)?.[p]?.hasPrint;
+      if (f && locked) map[f] = hp; // lock to the exact hasPrint chosen in Design
+    });
+    return map;
+  }, [productData]);
 
-  // Sync print options with design locks on load/change
+  // Sync print options with design locks on load/change (lock both true and false per Design)
   useEffect(() => {
     const next: Record<string, boolean> = { ...printOptions };
-    printForcedMaterials.forEach((mat) => { next[mat] = true; });
+    Object.entries(designPrintLocks).forEach(([mat, hasPrint]) => { next[mat] = !!hasPrint; });
     setPrintOptions(next);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [printForcedMaterials]);
+  }, [designPrintLocks]);
 
   // Helper: supplier basket counts
   const getSupplierBasketCount = (supplier: 'supplier1' | 'supplier2') => Object.keys(supplierPrices[supplier]).reduce((count, material) => count + ((materialQuantities[material] || 0) > 0 ? 1 : 0), 0);
@@ -156,7 +165,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     const appliedDiscount = tierDiscount + extra;
     const discountedCost = totalCost * (1 - appliedDiscount);
     setContractData(prev => ({ ...prev, orders, totalCommitment: discountedCost, discount: appliedDiscount * 100 }));
-  }, [materialQuantities, printOptions, selectedSupplier, gameConstants, currentWeek]);
+  }, [materialQuantities, printOptions, selectedSupplier, gameConstants, currentWeek, singleSupplierDeal]);
 
   const updateStateMutation = useMutation({
     mutationFn: async (updates: any) => { await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/update`, updates); },
@@ -195,9 +204,14 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     const materialPurchase = { ...contractData, type: orderType, supplier: selectedSupplier, printOptions, materialQuantities, purchaseWeek: currentWeek, shipmentWeek, timestamp: new Date().toISOString(), status: 'ordered', totalUnits: Object.values(materialQuantities).reduce((s: number, v: any) => s + (Number(v) || 0), 0), canDelete: true };
     const updates: any = { materialPurchases: [ ...(currentState?.materialPurchases || []), materialPurchase ] };
     if (orderType === 'gmc') updates.gmcCommitments = gmcCommitments;
-    updateStateMutation.mutate(updates);
-    toast({ title: "Fabrics Purchased!", description: `Fabrics ordered from ${selectedSupplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'}. Shipment arrives Week ${shipmentWeek}.` });
-    setMaterialQuantities({ selvedgeDenim: 0, standardDenim: 0, egyptianCotton: 0, polyesterBlend: 0, fineWaleCorduroy: 0, wideWaleCorduroy: 0 });
+    updateStateMutation.mutate(updates, {
+      onSuccess: () => {
+        toast({ title: "Fabrics Purchased!", description: `Fabrics ordered from ${selectedSupplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'}. Shipment arrives Week ${shipmentWeek}.` });
+        // Clear basket optimistically
+        setMaterialQuantities({ selvedgeDenim: 0, standardDenim: 0, egyptianCotton: 0, polyesterBlend: 0, fineWaleCorduroy: 0, wideWaleCorduroy: 0 });
+        setContractData((prev) => ({ ...prev, orders: [], totalCommitment: 0, discount: 0 }));
+      }
+    });
   };
 
   const handleRemovePurchase = async (timestamp: string) => {
@@ -615,8 +629,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 const printSurcharge = (printSurcharges as any)[selectedSupplier][material] || 0;
                 const isSelected = selectedFabrics.has(material);
                 const isDisabled = !!productData && Object.keys(productData).length > 0 && !isSelected;
-                const isPrintForced = printForcedMaterials.has(material);
-                const finalChecked = isPrintForced ? true : !!printOptions[material];
+                const designLockedForMat = Object.prototype.hasOwnProperty.call(designPrintLocks, material);
+                const isPrintForced = designLockedForMat; // lock regardless of true/false
+                const finalChecked = designLockedForMat ? !!designPrintLocks[material] : !!printOptions[material];
                 const finalPrice = basePrice + (finalChecked ? printSurcharge : 0);
                   
                   return (
@@ -638,9 +653,9 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       
                       {/* Print Option */}
                       <div className="flex items-center space-x-2 mb-3">
-                      <Checkbox id={`print-${material}`} checked={finalChecked} onCheckedChange={(checked) => handlePrintOptionChange(material, !!checked)} disabled={isPrintForced || isDisabled} />
+                      <Checkbox id={`print-${material}`} checked={finalChecked} onCheckedChange={(checked) => handlePrintOptionChange(material, !!checked)} disabled={designLockedForMat || isDisabled} />
                       <Label htmlFor={`print-${material}`} className={`text-xs flex items-center gap-1 ${isDisabled ? 'text-gray-600 cursor-not-allowed' : 'text-blue-900 cursor-pointer'}`}><Palette size={12} /> Add Print (+{formatCurrency(printSurcharge)})</Label>
-                      {isPrintForced && (<span className="ml-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-500"><Lock size={10}/> Locked</span>)}
+                      {designLockedForMat && (<span className="ml-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-500"><Lock size={10}/> Locked</span>)}
                       </div>
 
                     <Input type="number" min="0" step={batchSize} value={materialQuantities[material] || ''} onChange={(e) => !isDisabled && handleMaterialQuantityChange(material, parseInt(e.target.value) || 0)} placeholder={`0 (x ${batchSize.toLocaleString()})`} className="mb-2" disabled={isDisabled} />
@@ -669,7 +684,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                         <span className="font-mono">-{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0) * (contractData.discount / 100))}</span>
                       </div>
                     )}
-                  <div className="flex justify-between items-center text-sm text-gray-700"><span>{(gmcCommitments[selectedSupplier] || 0) > 0 ? 'GMC: each batch settles at W+2' : 'SPT: pay on delivery (defects not billed)'}</span><span className="font-mono"></span></div>
+                  <div className="flex justify-between items-center text-sm text-gray-700"><span>{(gmcCommitments[selectedSupplier] || 0) > 0 ? 'GMC: each invoice is due two weeks after shipment' : 'SPT: pay on delivery (defects not billed)'}</span><span className="font-mono"></span></div>
                   <div className="flex justify-between items-center font-bold text-lg border-t border-gray-300 pt-2 mt-2"><span>Total Commitment:</span><span className="font-mono">{formatCurrency(contractData.totalCommitment)}</span></div>
                   </div>
                 </div>
