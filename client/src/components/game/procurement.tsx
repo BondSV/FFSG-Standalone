@@ -40,6 +40,11 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: gameConstants } = useQuery({ queryKey: ["/api/game/constants"], retry: false });
+  const { data: weeksData } = useQuery({
+    queryKey: ["/api/game", gameSession?.id, "weeks"],
+    enabled: !!gameSession?.id,
+    retry: false,
+  });
   
   const productData = currentState?.productData || {};
   // Use best-available marketing info
@@ -245,9 +250,14 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   // Helper: cumulative GMC orders placed with a supplier (for infographic)
   const getGmcOrderedUnitsForSupplier = (sup: 'supplier1' | 'supplier2') => {
     const contracts = (currentState?.procurementContracts?.contracts || []) as any[];
-    return contracts
+    const fromContracts = contracts
       .filter((c) => c.type === 'GMC' && c.supplier === sup)
       .reduce((sum, c) => sum + (c.gmcOrders || []).reduce((s: number, o: any) => s + Number(o.units || o.quantity || 0), 0), 0);
+    // Also include same-week pre-commit GMC purchases for this supplier to reflect immediate UI changes
+    const fromPurchases = (currentState?.materialPurchases || [])
+      .filter((p: any) => p.type === 'gmc' && p.supplier === sup)
+      .reduce((sum: number, p: any) => sum + Number(p.totalUnits || 0), 0);
+    return fromContracts + fromPurchases;
   };
 
   // If a deal is signed, force selection to that supplier
@@ -688,7 +698,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       </div>
                     )}
                   <div className="flex justify-between items-center text-sm text-gray-700"><span>{(gmcCommitments[selectedSupplier] || 0) > 0 ? 'GMC: each invoice is due two weeks after shipment' : 'SPT: pay on delivery (defects not billed)'}</span><span className="font-mono"></span></div>
-                  <div className="flex justify-between items-center font-bold text-lg border-t border-gray-300 pt-2 mt-2"><span>Total Commitment:</span><span className="font-mono">{formatCurrency(contractData.totalCommitment)}</span></div>
+                  <div className="flex justify-between items-center font-bold text-lg border-t border-gray-300 pt-2 mt-2"><span>Order Total:</span><span className="font-mono">{formatCurrency(contractData.totalCommitment)}</span></div>
                   </div>
                 </div>
               </div>
@@ -725,42 +735,43 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         </CardHeader>
         <CardContent>
           {(() => {
-            const { data: weeksData } = useQuery({
-              queryKey: ['/api/game', gameSession?.id, 'weeks'],
-              enabled: !!gameSession?.id,
-              retry: false,
-            });
-            const allOrders = useMemo(() => {
-              const weeks = (weeksData as any)?.weeks || [];
-              const flat = weeks.flatMap((w: any) => (w.materialPurchases || []).map((p: any) => ({ ...p, weekNumber: w.weekNumber })));
-              flat.sort((a: any, b: any) => (Number(a.weekNumber) - Number(b.weekNumber)) || String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
-              return flat;
-            }, [weeksData]);
-
-            if (!allOrders || allOrders.length === 0) {
-              return <div className="text-sm text-gray-600">No orders yet.</div>;
-            }
+            const weeks = (weeksData as any)?.weeks || [];
+            const flat = weeks.flatMap((w: any) => (w.materialPurchases || []).map((p: any) => ({ ...p, weekNumber: w.weekNumber })));
+            flat.sort((a: any, b: any) => (Number(a.weekNumber) - Number(b.weekNumber)) || String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
+            if (!flat || flat.length === 0) return <div className="text-sm text-gray-600">No orders yet.</div>;
 
             return (
               <div className="space-y-3">
-                {allOrders.map((p: any, idx: number) => {
-                  const delivery = p.purchaseWeek + (p.type === 'gmc' ? 2 : 1);
+                {flat.map((p: any, idx: number) => {
+                  const lead = Number((gameConstants as any)?.SUPPLIERS?.[p.supplier]?.leadTime || 2);
+                  const delivery = Number(p.purchaseWeek) + lead;
+                  const dueWeek = p.type === 'gmc' ? (delivery + 2) : delivery;
                   const allowRemove = p.purchaseWeek === currentWeek && p.canDelete && !currentState?.isCommitted;
+                  const unitsSum = Number(p.totalUnits || 0);
+                  const { discount: tierDisc } = computeTierForSupplier(p.supplier, unitsSum + Number(savedGmcCommitments[p.supplier] || 0));
+                  const extra = singleSupplierDeal === p.supplier ? 0.02 : 0;
+                  const effDisc = tierDisc + extra;
                   return (
                     <div key={`${p.timestamp}-${idx}`} className="border rounded-md p-3 text-sm">
                       <div className="flex justify-between items-center">
                         <div className="font-medium">W{p.purchaseWeek} • {p.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {p.type?.toUpperCase()}</div>
                         <div className="flex items-center gap-2">
                           <div className="text-gray-600 flex items-center gap-1"><Truck size={14}/> Arrives W{delivery}</div>
+                          <div className="text-gray-600">Invoice Due W{dueWeek}</div>
                           <Button variant="outline" size="sm" onClick={() => handleRemovePurchase(p.timestamp)} disabled={!allowRemove} className="h-7 px-2"><Trash2 size={14}/> Remove</Button>
                         </div>
                       </div>
-                      <div className="mt-1 text-gray-700">{(p.orders || []).map((o: any, i: number) => (
-                        <div key={i} className="flex justify-between">
-                          <span className="capitalize">{o.material.replace(/([A-Z])/g, ' $1').trim()} — {o.quantity.toLocaleString()} units</span>
-                          <span className="font-mono">{formatCurrency(o.totalCost)}</span>
-                        </div>
-                      ))}</div>
+                      <div className="mt-1 text-gray-700">
+                        {(p.orders || []).map((o: any, i: number) => {
+                          const lineAfter = Number(o.effectiveLineTotal ?? (Number(o.totalCost || 0) * (1 - effDisc)));
+                          return (
+                            <div key={i} className="flex justify-between">
+                              <span className="capitalize">{o.material.replace(/([A-Z])/g, ' $1').trim()} — {o.quantity.toLocaleString()} units</span>
+                              <span className="font-mono">{formatCurrency(lineAfter)}</span>
+                            </div>
+                          );
+                        })}
+                      </div>
                     </div>
                   );
                 })}

@@ -162,6 +162,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const singleSupplierDeal = (updates.procurementContracts && updates.procurementContracts.singleSupplierDeal) || (existing as any).singleSupplierDeal;
           const currentWeek = Number(weeklyState.weekNumber);
           const purchases = (updates.materialPurchases as any[]) || [];
+
+          // Build current supplier totals similar to engine (FVC + SPT + GMC commitments)
+          const supplierTotals: Record<string, number> = {};
+          for (const c of contracts) {
+            if (c.type === 'FVC' || c.type === 'SPT') {
+              supplierTotals[c.supplier] = (supplierTotals[c.supplier] || 0) + Number(c.units || 0);
+            }
+          }
+          for (const [sup, commit] of Object.entries(gmcCommitments)) {
+            supplierTotals[sup] = (supplierTotals[sup] || 0) + Number(commit || 0);
+          }
+          // Running additions within this update call
+          const pendingAddBySupplier: Record<string, number> = {};
           for (const p of purchases) {
             // One contract per material
             for (const order of (p.orders || [])) {
@@ -179,6 +192,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 printSurcharge: applyPrint ? surchargeCatalog : 0,
               };
 
+              // Compute effective discounted unit price at order time
+              const baseUnit = base + (applyPrint ? surchargeCatalog : 0);
+              const runningTotal = (supplierTotals[p.supplier] || 0) + (pendingAddBySupplier[p.supplier] || 0) + Number(order.quantity || 0);
+              // Use engine's generic tiers for now
+              let tierDisc = 0;
+              const tiers = (GAME_CONSTANTS as any).VOLUME_DISCOUNTS || [];
+              for (const t of tiers) {
+                if (runningTotal >= t.min && runningTotal <= t.max) { tierDisc = Number(t.discount || 0); break; }
+              }
+              const extraSSD = singleSupplierDeal === p.supplier ? 0.02 : 0;
+              const effDiscount = tierDisc + extraSSD;
+              const effectiveUnitPrice = baseUnit * (1 - effDiscount);
+              // annotate order lines for UI/logging
+              (order as any).effectiveUnitPrice = effectiveUnitPrice;
+              (order as any).effectiveLineTotal = effectiveUnitPrice * Number(order.quantity || 0);
+              pendingAddBySupplier[p.supplier] = (pendingAddBySupplier[p.supplier] || 0) + Number(order.quantity || 0);
+
               if (p.type === 'fvc') {
                 contracts.push({
                   ...contractBase,
@@ -194,7 +224,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   contracts.push(contract);
                 }
                 contract.gmcOrders = contract.gmcOrders || [];
-                contract.gmcOrders.push({ week: currentWeek, units: order.quantity });
+                contract.gmcOrders.push({ week: currentWeek, units: order.quantity, unitPrice: effectiveUnitPrice });
                 // Ensure the stored gmcCommitments also reflect the explicit commitment value per supplier
                 if (p.gmcCommitmentUnits) {
                   gmcCommitments[p.supplier] = p.gmcCommitmentUnits;
@@ -212,12 +242,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (updates.gmcCommitments && typeof updates.gmcCommitments === 'object') {
             Object.assign(gmcCommitments, updates.gmcCommitments);
           }
-          const processedUpdates = {
+          // Merge purchases into existing state (do not drop previous orders for this week)
+          const mergedPurchases = [
+            ...((weeklyState as any).materialPurchases || []),
+            ...purchases,
+          ];
+          weeklyState = await storage.updateWeeklyState(weeklyState.id, {
             procurementContracts: { contracts, gmcCommitments, singleSupplierDeal },
-            // Keep a simple front-end history of orders for the current week per supplier
-            materialPurchases: purchases,
-          } as any;
-          weeklyState = await storage.updateWeeklyState(weeklyState.id, processedUpdates);
+            materialPurchases: mergedPurchases,
+          } as any);
         } 
         // Process production schedule if it exists in updates
         else if (updates.productionSchedule) {
