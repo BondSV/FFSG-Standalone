@@ -243,10 +243,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
             Object.assign(gmcCommitments, updates.gmcCommitments);
           }
           // Merge purchases into existing state (do not drop previous orders for this week)
-          const mergedPurchases = [
-            ...((weeklyState as any).materialPurchases || []),
-            ...purchases,
-          ];
+          // Merge and de-duplicate purchases by timestamp
+          const existingPurchases: any[] = ((weeklyState as any).materialPurchases || []);
+          const mergedMap = new Map<string, any>();
+          for (const p of existingPurchases) {
+            if (p?.timestamp) mergedMap.set(p.timestamp, p);
+          }
+          for (const p of purchases) {
+            if (p?.timestamp) mergedMap.set(p.timestamp, p);
+          }
+          const mergedPurchases = Array.from(mergedMap.values());
           weeklyState = await storage.updateWeeklyState(weeklyState.id, {
             procurementContracts: { contracts, gmcCommitments, singleSupplierDeal },
             materialPurchases: mergedPurchases,

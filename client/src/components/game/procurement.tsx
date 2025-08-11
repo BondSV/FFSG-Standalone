@@ -736,7 +736,11 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         <CardContent>
           {(() => {
             const weeks = (weeksData as any)?.weeks || [];
-            const flat = weeks.flatMap((w: any) => (w.materialPurchases || []).map((p: any) => ({ ...p, weekNumber: w.weekNumber })));
+            const flatRaw = weeks.flatMap((w: any) => (w.materialPurchases || []).map((p: any) => ({ ...p, weekNumber: w.weekNumber })));
+            // De-duplicate by timestamp (last write wins)
+            const keyed = new Map<string, any>();
+            for (const p of flatRaw) { if (p?.timestamp) keyed.set(p.timestamp, p); }
+            const flat = Array.from(keyed.values());
             flat.sort((a: any, b: any) => (Number(a.weekNumber) - Number(b.weekNumber)) || String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
             if (!flat || flat.length === 0) return <div className="text-sm text-gray-600">No orders yet.</div>;
 
