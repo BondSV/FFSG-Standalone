@@ -65,11 +65,25 @@ export const GAME_CONSTANTS = {
     }
   },
   
-  VOLUME_DISCOUNTS: [
-    { min: 100000, max: 299999, discount: 0.03 },
-    { min: 300000, max: 499999, discount: 0.07 },
-    { min: 500000, max: Infinity, discount: 0.12 },
-  ],
+  // Supplier-specific volume discount tiers
+  VOLUME_DISCOUNTS: {
+    supplier1: [
+      { min: 130000, max: 169999, discount: 0.03 },
+      { min: 170000, max: 219999, discount: 0.05 },
+      { min: 220000, max: 289999, discount: 0.07 },
+      { min: 290000, max: 349999, discount: 0.09 },
+      { min: 350000, max: 499999, discount: 0.12 },
+      { min: 500000, max: Infinity, discount: 0.15 },
+    ],
+    supplier2: [
+      { min: 100000, max: 149999, discount: 0.02 },
+      { min: 150000, max: 199999, discount: 0.03 },
+      { min: 200000, max: 249999, discount: 0.04 },
+      { min: 250000, max: 299999, discount: 0.05 },
+      { min: 300000, max: 399999, discount: 0.07 },
+      { min: 400000, max: Infinity, discount: 0.09 },
+    ],
+  },
   
   MANUFACTURING: {
     jacket: { inHouseCost: 15, outsourceCost: 25, inHouseTime: 3, outsourceTime: 1 },
@@ -110,8 +124,9 @@ export class GameEngine {
   // --------------------
   // Procurement helpers
   // --------------------
-  private static computeSupplierVolumeDiscount(totalUnits: number): number {
-    for (const tier of GAME_CONSTANTS.VOLUME_DISCOUNTS) {
+  private static computeSupplierVolumeDiscount(supplier: SupplierKey, totalUnits: number): number {
+    const tiers = (GAME_CONSTANTS.VOLUME_DISCOUNTS as any)[supplier] || [];
+    for (const tier of tiers) {
       if (totalUnits >= tier.min && totalUnits <= tier.max) {
         return tier.discount;
       }
@@ -136,7 +151,11 @@ export class GameEngine {
   }
 
   private static computeContractUnitPrice(contract: any): number {
-    // Base + print surcharge less discount
+    // Prefer locked unit price if present (authoritative)
+    if (contract.lockedUnitPrice != null) {
+      return Number(contract.lockedUnitPrice);
+    }
+    // Fallback legacy calculation
     const base = Number(contract.unitBasePrice) || 0;
     const surcharge = Number(contract.printSurcharge) || 0;
     const discount = Number(contract.discountPercentApplied) || 0;
@@ -148,14 +167,16 @@ export class GameEngine {
     // If deliveries already exist, keep them. Otherwise create based on type and supplier lead times.
     if (contract.deliveries && contract.deliveries.length > 0) return contract;
     const lead = this.getSupplierLeadTime(contract.supplier);
-    const unitPrice = this.computeContractUnitPrice(contract);
+    const locked = contract.lockedUnitPrice != null ? Number(contract.lockedUnitPrice) : undefined;
+    const unitPrice = locked != null ? locked : this.computeContractUnitPrice(contract);
 
     if (contract.type === 'FVC') {
       // Deliver full quantity after supplier lead time
       contract.deliveries = [{ week: contract.weekSigned + lead, units: contract.units, unitPrice }];
     } else if (contract.type === 'GMC') {
-      // For GMC, deliveries are driven by iterative weekly orders, not pre-scheduled here.
-      contract.deliveries = contract.deliveries || [];
+      // For GMC, deliveries are driven by iterative weekly orders, map each order to a delivery with its own unit price
+      const orders = (contract as any).gmcOrders || [];
+      contract.deliveries = orders.map((o: any) => ({ week: this.toNumber(o.week) + lead, units: this.toNumber(o.units), unitPrice: this.toNumber(o.unitPrice) }));
     } else {
       // SPT: single shipment after lead
       contract.deliveries = [{ week: contract.weekSigned + lead, units: contract.units, unitPrice }];
@@ -216,29 +237,12 @@ export class GameEngine {
     let costInterest = 0;
     let operationalOutflows = 0; // Sum of all operating cash payments for the week
 
-    // 1) Process procurement: compute discounts once per contract if not set; schedule deliveries; pay deposits/instalments due this week
+    // 1) Process procurement: schedule deliveries; pay deposits/instalments due this week
     const contracts = state.procurementContracts.contracts || [];
-    // Compute supplier totals for discounts (FVC units + GMC commitments + SPT units)
-    const supplierTotals: Record<string, number> = {};
-    for (const c of contracts) {
-      if (c.type === 'FVC' || c.type === 'SPT') {
-        supplierTotals[c.supplier] = (supplierTotals[c.supplier] || 0) + this.toNumber(c.units);
-      }
-    }
     const gmcCommitmentsBySupplier: Record<string, number> = (state.procurementContracts as any)?.gmcCommitments || {};
-    for (const [sup, commit] of Object.entries(gmcCommitmentsBySupplier)) {
-      supplierTotals[sup] = (supplierTotals[sup] || 0) + this.toNumber(commit);
-    }
-
-    const singleSupplierDeal: SupplierKey | undefined = (state.procurementContracts as any)?.singleSupplierDeal;
 
     for (const c of contracts) {
-      // Recompute discount every commit based on current totals, so tiers reflect signed GMC regardless of batch size
-      {
-        const tier = this.computeSupplierVolumeDiscount(supplierTotals[c.supplier] || 0);
-        const extra = singleSupplierDeal && c.supplier === singleSupplierDeal ? 0.02 : 0;
-        c.discountPercentApplied = tier + extra;
-      }
+      // Do not recompute discounts; rely on lockedUnitPrice or per-order unitPrice
       if (c.unitBasePrice == null) {
         c.unitBasePrice = this.getMaterialBasePrice(c.supplier as SupplierKey, c.material as MaterialKey);
       }
@@ -268,11 +272,12 @@ export class GameEngine {
           c.paidSoFar += due;
         }
       } else if (c.type === 'GMC') {
-        // Payment per batch order with 2-week settlement; orders stored in c.gmcOrders
+        // Payment per batch order with 2-week settlement AFTER arrival; orders stored in c.gmcOrders
         const orders = (c as any).gmcOrders || [];
         for (const o of orders) {
-          if (week === this.toNumber(o.week) + 2) {
-            const due = this.toNumber(o.units) * unitPrice;
+          const leadForSupplier = this.getSupplierLeadTime(c.supplier as SupplierKey);
+          if (week === this.toNumber(o.week) + leadForSupplier + 2) {
+            const due = this.toNumber(o.units) * this.toNumber(o.unitPrice ?? unitPrice);
             operationalOutflows += due;
             costMaterials += due;
             c.paidSoFar += due;
@@ -301,7 +306,7 @@ export class GameEngine {
           const entry: any = state.rawMaterials[matKey] || { onHand: 0, allocated: 0, inTransit: [] };
           entry.onHand = this.toNumber(entry.onHand) + goodUnits;
           // Track simple moving average unit cost on-hand
-          const unitPrice = d.unitPrice ?? this.computeContractUnitPrice(c);
+          const unitPrice = this.toNumber(d.unitPrice ?? c.lockedUnitPrice ?? this.computeContractUnitPrice(c));
           entry.onHandValue = this.toNumber(entry.onHandValue) + goodUnits * unitPrice;
           state.rawMaterials[matKey] = entry;
           c.deliveredUnits += goodUnits;
@@ -920,8 +925,8 @@ export class GameEngine {
       for (const c of procurementContracts.contracts || []) {
         const unitBase = (GAME_CONSTANTS.SUPPLIERS as any)[c.supplier]?.materials?.[c.material]?.price || 0;
         const surcharge = (GAME_CONSTANTS.SUPPLIERS as any)[c.supplier]?.materials?.[c.material]?.printSurcharge || 0;
-        const discount = this.computeSupplierVolumeDiscount(Number(c.units || 0));
-        const unitPrice = (unitBase + surcharge) * (1 - discount);
+        const locked = this.toNumber((c as any).lockedUnitPrice);
+        const unitPrice = locked > 0 ? locked : (unitBase + surcharge);
         if (c.type === 'FVC') {
           if (c.weekSigned === weekNumber) immediatePayments += (Number(c.units || 0) * unitPrice) * 0.30;
           if ((c.weekSigned + 8) === weekNumber) immediatePayments += (Number(c.units || 0) * unitPrice) * 0.70;
@@ -929,7 +934,9 @@ export class GameEngine {
           const orders = (c as any).gmcOrders || [];
           for (const o of orders) {
             if (this.toNumber(o.week) + 2 === weekNumber) {
-              immediatePayments += this.toNumber(o.units) * unitPrice;
+              const ou = this.toNumber(o.units);
+              const op = this.toNumber(o.unitPrice ?? unitPrice);
+              immediatePayments += ou * op;
             }
           }
         } else if (c.type === 'SPT') {

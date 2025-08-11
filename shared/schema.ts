@@ -229,10 +229,21 @@ export interface ProcurementContract {
   weekSigned: number; // for SPT this is the order week
   unitBasePrice: number; // list price before discounts and surcharges
   printSurcharge: number; // per unit if applicable
-  discountPercentApplied: number; // dynamic volume discount applied
-  deliveries?: Array<{ week: number; units: number }>; // planned arrivals
+  // deprecated: dynamic discounts are no longer recomputed; kept for backward compatibility
+  discountPercentApplied?: number;
+  // authoritative locked unit price for SPT/FVC
+  lockedUnitPrice?: number;
+  // planned arrivals, each with a locked unit price
+  deliveries?: Array<{ week: number; units: number; unitPrice?: number }>; // planned arrivals
   paidSoFar?: number; // bookkeeping for payment waterfall
   deliveredUnits?: number; // track delivered
+}
+
+export interface GmcOrderLine {
+  orderId: string; // timestamp-supplier-material
+  week: number;
+  units: number;
+  unitPrice: number; // locked at order time
 }
 
 export interface MarketingPlan {

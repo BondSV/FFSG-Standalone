@@ -96,30 +96,13 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const computePositionEffect = (price: number, ref: number) => { const d = Math.abs(price / ref - 1); const ceil = 0.95, p = 3, s = 0.21; const base = 1 - Math.exp(-Math.pow(d / s, p)); const bump = 40 * (d * d) * Math.exp(-Math.pow(d / 0.08, 2)); const mag = Math.min(1, ceil * base + bump); const raw = 1 + ((price < ref) ? mag : -mag); return clamp(raw, 0, 2); };
   const fabricLift: Record<string, number> = { selvedgeDenim: 0.06, standardDenim: 0.0, egyptianCotton: 0.05, polyesterBlend: -0.02, fineWaleCorduroy: 0.04, wideWaleCorduroy: 0.0 };
   const printLift = 0.03;
-  // Supplier-specific volume discount tiers
-  const SUPPLIER_TIERS: Record<'supplier1'|'supplier2', { min: number; max: number; discount: number }[]> = {
-    supplier1: [
-      { min: 130000, max: 169999, discount: 0.03 },
-      { min: 170000, max: 219999, discount: 0.05 },
-      { min: 220000, max: 289999, discount: 0.07 },
-      { min: 290000, max: 349999, discount: 0.09 },
-      { min: 350000, max: 499999, discount: 0.12 },
-      { min: 500000, max: Infinity, discount: 0.15 },
-    ],
-    supplier2: [
-      { min: 100000, max: 149999, discount: 0.02 },
-      { min: 150000, max: 199999, discount: 0.03 },
-      { min: 200000, max: 249999, discount: 0.04 },
-      { min: 250000, max: 299999, discount: 0.05 },
-      { min: 300000, max: 399999, discount: 0.07 },
-      { min: 400000, max: Infinity, discount: 0.09 },
-    ],
-  };
+  // Supplier tiers from server constants
   const computeTierForSupplier = (supplier: 'supplier1' | 'supplier2', units: number): { discount: number; tierIndex: number | null } => {
-    const tiers = SUPPLIER_TIERS[supplier];
+    const tiers = (gameConstants?.VOLUME_DISCOUNTS as any)?.[supplier] || [];
     for (let i = 0; i < tiers.length; i++) {
       const t = tiers[i];
-      if (units >= t.min && units <= t.max) return { discount: t.discount, tierIndex: i + 1 };
+      const max = Number.isFinite(t.max) ? t.max : Number.MAX_SAFE_INTEGER;
+      if (units >= t.min && units <= max) return { discount: t.discount, tierIndex: i + 1 };
     }
     return { discount: 0, tierIndex: null };
   };
@@ -165,10 +148,13 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         }
       }
     });
-    // Include signed GMC commitment for this supplier when determining tier
+    // Determine discount for display based on type: SPOT uses basket-only, GMC uses commitment-only
+    const hasGmc = Number(savedGmcCommitments[selectedSupplier] || 0) > 0;
+    const isSpot = !hasGmc;
+    const basketUnits = totalVolume;
     const commitmentUnitsForSupplier = Number(savedGmcCommitments[selectedSupplier] || 0);
-    const effectiveUnitsForTier = totalVolume + commitmentUnitsForSupplier;
-    const { discount: tierDiscount } = computeTierForSupplier(selectedSupplier, effectiveUnitsForTier);
+    const unitsForTier = isSpot ? basketUnits : commitmentUnitsForSupplier;
+    const { discount: tierDiscount } = computeTierForSupplier(selectedSupplier, unitsForTier);
     const extra = singleSupplierDeal === selectedSupplier ? 0.02 : 0;
     const appliedDiscount = tierDiscount + extra;
     const discountedCost = totalCost * (1 - appliedDiscount);
@@ -207,7 +193,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
 
     const isGmcTerms = (gmcCommitments[selectedSupplier] || 0) > 0;
     const orderType: 'gmc' | 'spot' = isGmcTerms ? 'gmc' : 'spot';
-    const shipmentWeek = currentWeek + (orderType === 'spot' ? 1 : 2);
+    const lead = Number((gameConstants as any)?.SUPPLIERS?.[selectedSupplier]?.leadTime || 2);
+    const shipmentWeek = currentWeek + lead;
 
     const materialPurchase = { ...contractData, type: orderType, supplier: selectedSupplier, printOptions, materialQuantities, purchaseWeek: currentWeek, shipmentWeek, timestamp: new Date().toISOString(), status: 'ordered', totalUnits: Object.values(materialQuantities).reduce((s: number, v: any) => s + (Number(v) || 0), 0), canDelete: true, gmcCommitmentUnits: orderType === 'gmc' ? Number(savedGmcCommitments[selectedSupplier] || gmcCommitments[selectedSupplier] || 0) : undefined };
     const updates: any = { materialPurchases: [ ...(currentState?.materialPurchases || []), materialPurchase ] };
@@ -232,7 +219,10 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const batchSize = (gameConstants?.BATCH_SIZE as number) || 25000;
   const totalUnits = Object.values(materialQuantities).reduce((s, v) => s + (Number(v) || 0), 0);
 
-  const { tierIndex: currTierIndex } = computeTierForSupplier(selectedSupplier, totalUnits);
+  // For label only: use the same units basis as pricing preview
+  const hasGmcForSelected = Number(((currentState?.procurementContracts?.gmcCommitments as any) || {})[selectedSupplier] || 0) > 0;
+  const unitsForTierLabel = hasGmcForSelected ? Number(((currentState?.procurementContracts?.gmcCommitments as any) || {})[selectedSupplier] || 0) : totalUnits;
+  const { tierIndex: currTierIndex } = computeTierForSupplier(selectedSupplier, unitsForTierLabel);
   const extraSSD = singleSupplierDeal === selectedSupplier ? 0.02 : 0;
 
   // Projected demand and penalty preview
@@ -253,11 +243,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     const fromContracts = contracts
       .filter((c) => c.type === 'GMC' && c.supplier === sup)
       .reduce((sum, c) => sum + (c.gmcOrders || []).reduce((s: number, o: any) => s + Number(o.units || o.quantity || 0), 0), 0);
-    // Also include same-week pre-commit GMC purchases for this supplier to reflect immediate UI changes
-    const fromPurchases = (currentState?.materialPurchases || [])
-      .filter((p: any) => p.type === 'gmc' && p.supplier === sup)
-      .reduce((sum: number, p: any) => sum + Number(p.totalUnits || 0), 0);
-    return fromContracts + fromPurchases;
+    return fromContracts;
   };
 
   // If a deal is signed, force selection to that supplier
@@ -751,10 +737,6 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                   const delivery = Number(p.purchaseWeek) + lead;
                   const dueWeek = p.type === 'gmc' ? (delivery + 2) : delivery;
                   const allowRemove = p.purchaseWeek === currentWeek && p.canDelete && !currentState?.isCommitted;
-                  const unitsSum = Number(p.totalUnits || 0);
-                  const { discount: tierDisc } = computeTierForSupplier(p.supplier, unitsSum + Number(savedGmcCommitments[p.supplier] || 0));
-                  const extra = singleSupplierDeal === p.supplier ? 0.02 : 0;
-                  const effDisc = tierDisc + extra;
                   return (
                     <div key={`${p.timestamp}-${idx}`} className="border rounded-md p-3 text-sm">
                       <div className="flex justify-between items-center">
@@ -767,7 +749,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       </div>
                       <div className="mt-1 text-gray-700">
                         {(p.orders || []).map((o: any, i: number) => {
-                          const lineAfter = Number(o.effectiveLineTotal ?? (Number(o.totalCost || 0) * (1 - effDisc)));
+                          const lineAfter = Number(o.effectiveLineTotal ?? o.totalCost ?? 0);
                           return (
                             <div key={i} className="flex justify-between">
                               <span className="capitalize">{o.material.replace(/([A-Z])/g, ' $1').trim()} — {o.quantity.toLocaleString()} units</span>

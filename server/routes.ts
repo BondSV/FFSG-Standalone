@@ -163,18 +163,53 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const currentWeek = Number(weeklyState.weekNumber);
           const purchases = (updates.materialPurchases as any[]) || [];
 
-          // Build current supplier totals similar to engine (FVC + SPT + GMC commitments)
-          const supplierTotals: Record<string, number> = {};
-          for (const c of contracts) {
-            if (c.type === 'FVC' || c.type === 'SPT') {
-              supplierTotals[c.supplier] = (supplierTotals[c.supplier] || 0) + Number(c.units || 0);
+          // Track deletions: if some timestamps were removed this week, also remove canonical orders/contracts created from them
+          const existingPurchasesList: any[] = ((weeklyState as any).materialPurchases || []);
+          const existingTimestamps = new Set(existingPurchasesList.map((p: any) => p.timestamp).filter(Boolean));
+          const nextTimestamps = new Set(purchases.map((p: any) => p.timestamp).filter(Boolean));
+          const removedTimestamps: string[] = Array.from(existingTimestamps).filter(ts => !nextTimestamps.has(ts)) as string[];
+
+          if (removedTimestamps.length > 0) {
+            // Remove GMC order lines and SPT contracts derived from these timestamps
+            for (const c of contracts) {
+              if ((c as any).type === 'GMC') {
+                const prev = (c as any).gmcOrders || [];
+                (c as any).gmcOrders = prev.filter((o: any) => !removedTimestamps.some(ts => String(o.orderId || '').startsWith(ts)));
+              }
             }
+            // Remove SPT contracts that originated from removed timestamps (id starts with timestamp)
+            const remainingContracts: any[] = [];
+            for (const c of contracts) {
+              if ((c as any).type === 'SPT' && removedTimestamps.some(ts => String((c as any).id || '').startsWith(ts))) {
+                // skip -> removed
+                continue;
+              }
+              remainingContracts.push(c);
+            }
+            while (contracts.length) contracts.pop();
+            for (const rc of remainingContracts) contracts.push(rc);
           }
-          for (const [sup, commit] of Object.entries(gmcCommitments)) {
-            supplierTotals[sup] = (supplierTotals[sup] || 0) + Number(commit || 0);
+
+          // Helper: compute per-supplier tier discount from constants
+          const getTierDiscount = (supplier: keyof typeof GAME_CONSTANTS.SUPPLIERS, units: number) => {
+            const tiers: any[] = ((GAME_CONSTANTS as any).VOLUME_DISCOUNTS || {})[supplier] || [];
+            for (const t of tiers) {
+              if (units >= Number(t.min) && units <= Number(t.max)) return Number(t.discount || 0);
+            }
+            return 0;
+          };
+
+          // Existing orderIds to avoid duplicates when re-saving same purchases
+          const existingOrderIds = new Set<string>();
+          for (const c of contracts) {
+            if ((c as any).type === 'GMC') {
+              for (const o of ((c as any).gmcOrders || [])) {
+                if (o?.orderId) existingOrderIds.add(String(o.orderId));
+              }
+            }
+            // Also include SPT contract ids
+            if ((c as any).type === 'SPT' && (c as any).id) existingOrderIds.add(String((c as any).id));
           }
-          // Running additions within this update call
-          const pendingAddBySupplier: Record<string, number> = {};
           for (const p of purchases) {
             // One contract per material
             for (const order of (p.orders || [])) {
@@ -185,29 +220,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
               const applyPrint = Boolean(p.printOptions?.[order.material]);
 
               const contractBase: any = {
-                id: `${p.timestamp}-${order.material}`,
+                id: `${p.timestamp}-${p.supplier}-${order.material}`,
                 supplier: p.supplier,
                 material: order.material,
                 unitBasePrice: base,
                 printSurcharge: applyPrint ? surchargeCatalog : 0,
               };
 
-              // Compute effective discounted unit price at order time
+              // Compute effective discounted unit price at order time based on rules
               const baseUnit = base + (applyPrint ? surchargeCatalog : 0);
-              const runningTotal = (supplierTotals[p.supplier] || 0) + (pendingAddBySupplier[p.supplier] || 0) + Number(order.quantity || 0);
-              // Use engine's generic tiers for now
-              let tierDisc = 0;
-              const tiers = (GAME_CONSTANTS as any).VOLUME_DISCOUNTS || [];
-              for (const t of tiers) {
-                if (runningTotal >= t.min && runningTotal <= t.max) { tierDisc = Number(t.discount || 0); break; }
-              }
               const extraSSD = singleSupplierDeal === p.supplier ? 0.02 : 0;
+
+              // Determine discount per order type
+              let tierDisc = 0;
+              if (p.type === 'spot') {
+                // SPOT: discount solely from this basket total for this supplier
+                const basketTotal = (p.orders || []).reduce((s: number, o: any) => s + Number(o.quantity || 0), 0);
+                tierDisc = getTierDiscount(p.supplier, basketTotal);
+              } else if (p.type === 'gmc') {
+                // GMC: discount solely from signed commitment volume for this supplier
+                const committed = Number((updates.gmcCommitments && updates.gmcCommitments[p.supplier]) ?? gmcCommitments[p.supplier] ?? 0);
+                tierDisc = getTierDiscount(p.supplier, committed);
+              } else if (p.type === 'fvc') {
+                // FVC: keep prior behavior (use tier from commitment if present, else 0)
+                const committed = Number(gmcCommitments[p.supplier] || 0);
+                tierDisc = getTierDiscount(p.supplier, committed);
+              }
               const effDiscount = tierDisc + extraSSD;
               const effectiveUnitPrice = baseUnit * (1 - effDiscount);
               // annotate order lines for UI/logging
+              (order as any).orderId = `${p.timestamp}-${p.supplier}-${order.material}`;
               (order as any).effectiveUnitPrice = effectiveUnitPrice;
               (order as any).effectiveLineTotal = effectiveUnitPrice * Number(order.quantity || 0);
-              pendingAddBySupplier[p.supplier] = (pendingAddBySupplier[p.supplier] || 0) + Number(order.quantity || 0);
 
               if (p.type === 'fvc') {
                 contracts.push({
@@ -224,18 +268,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   contracts.push(contract);
                 }
                 contract.gmcOrders = contract.gmcOrders || [];
-                contract.gmcOrders.push({ week: currentWeek, units: order.quantity, unitPrice: effectiveUnitPrice });
+                const orderId = `${p.timestamp}-${p.supplier}-${order.material}`;
+                if (!existingOrderIds.has(orderId)) {
+                  contract.gmcOrders.push({ orderId, week: currentWeek, units: order.quantity, unitPrice: effectiveUnitPrice });
+                  existingOrderIds.add(orderId);
+                }
                 // Ensure the stored gmcCommitments also reflect the explicit commitment value per supplier
                 if (p.gmcCommitmentUnits) {
                   gmcCommitments[p.supplier] = p.gmcCommitmentUnits;
                 }
               } else if (p.type === 'spot') {
-                contracts.push({
-                  ...contractBase,
-                  type: 'SPT',
-                  units: order.quantity,
-                  weekSigned: currentWeek,
-                });
+                const sptId = `${p.timestamp}-${p.supplier}-${order.material}`;
+                if (!existingOrderIds.has(sptId)) {
+                  contracts.push({
+                    ...contractBase,
+                    type: 'SPT',
+                    units: order.quantity,
+                    weekSigned: currentWeek,
+                    lockedUnitPrice: effectiveUnitPrice,
+                  });
+                  existingOrderIds.add(sptId);
+                }
               }
             }
           }
