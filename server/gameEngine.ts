@@ -73,7 +73,7 @@ export const GAME_CONSTANTS = {
       { min: 220000, max: 289999, discount: 0.07 },
       { min: 290000, max: 349999, discount: 0.09 },
       { min: 350000, max: 499999, discount: 0.12 },
-      { min: 500000, max: Infinity, discount: 0.15 },
+      { min: 500000, max: Number.MAX_SAFE_INTEGER, discount: 0.15 },
     ],
     supplier2: [
       { min: 100000, max: 149999, discount: 0.02 },
@@ -81,7 +81,7 @@ export const GAME_CONSTANTS = {
       { min: 200000, max: 249999, discount: 0.04 },
       { min: 250000, max: 299999, discount: 0.05 },
       { min: 300000, max: 399999, discount: 0.07 },
-      { min: 400000, max: Infinity, discount: 0.09 },
+      { min: 400000, max: Number.MAX_SAFE_INTEGER, discount: 0.09 },
     ],
   },
   

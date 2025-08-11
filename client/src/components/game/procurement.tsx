@@ -170,13 +170,13 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   const handleSaveGmc = (supplier: 'supplier1' | 'supplier2') => {
     const updates: any = { gmcCommitments: { ...(currentState?.procurementContracts?.gmcCommitments || {}), [supplier]: gmcCommitments[supplier] || 0 } };
     updateStateMutation.mutate(updates);
-    toast({ title: 'GMC Updated', description: `${supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} commitment set to ${(gmcCommitments[supplier] || 0).toLocaleString()} units.` });
+    toast({ title: 'GMC Updated', description: `${supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} commitment set to ${Number(gmcCommitments[supplier] || 0).toLocaleString()} units.` });
   };
 
   const handleMaterialQuantityChange = (material: string, quantity: number) => {
     const safeQuantity = Math.max(0, quantity);
     const batchSize = (gameConstants?.BATCH_SIZE as number) || 25000;
-    if (safeQuantity % batchSize !== 0) { setQuantityErrors(prev => ({ ...prev, [material]: `Quantity must be a multiple of ${batchSize.toLocaleString()}` })); }
+    if (safeQuantity % batchSize !== 0) { setQuantityErrors(prev => ({ ...prev, [material]: `Quantity must be a multiple of ${Number(batchSize).toLocaleString()}` })); }
     else { setQuantityErrors(prev => { const { [material]: _, ...rest } = prev; return rest; }); }
     setMaterialQuantities(prev => ({ ...prev, [material]: safeQuantity }));
   };
@@ -277,7 +277,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       const updates: any = { gmcCommitments: { ...(currentState?.procurementContracts?.gmcCommitments || {}), [supplier]: gmcCommitments[supplier] || 0 } };
       await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/update`, updates);
       queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
-      toast({ title: 'GMC Signed', description: `${supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} commitment signed at ${(gmcCommitments[supplier] || 0).toLocaleString()} units.` });
+      toast({ title: 'GMC Signed', description: `${supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} commitment signed at ${Number(gmcCommitments[supplier] || 0).toLocaleString()} units.` });
     } catch (e) {
       if (isUnauthorizedError(e)) {
         toast({ title: 'Unauthorized', description: 'You are logged out. Logging in again...', variant: 'destructive' });
@@ -391,7 +391,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     { min:500000, max:Infinity, discount:0.15 },
                   ]).map((t:any, i:number)=> (
                     <div key={i} className="grid grid-cols-[1fr_auto] gap-x-4">
-                      <span className="whitespace-nowrap">{t.max===Infinity ? `${t.min.toLocaleString()}+ units` : `${t.min.toLocaleString()} – ${t.max.toLocaleString()} units`}</span>
+                      <span className="whitespace-nowrap">{Number.isFinite(t.max) ? `${Number(t.min ?? 0).toLocaleString()} – ${Number(t.max ?? 0).toLocaleString()} units` : `${Number(t.min ?? 0).toLocaleString()}+ units`}</span>
                       <span className="font-medium text-right whitespace-nowrap tabular-nums font-mono">{Math.round(t.discount*100)}%</span>
                 </div>
                   ))}
@@ -485,7 +485,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                     { min:400000, max:Infinity, discount:0.09 },
                   ]).map((t:any, i:number)=> (
                     <div key={i} className="grid grid-cols-[1fr_auto] gap-x-4">
-                      <span className="whitespace-nowrap">{t.max===Infinity ? `${t.min.toLocaleString()}+ units` : `${t.min.toLocaleString()} – ${t.max.toLocaleString()} units`}</span>
+                      <span className="whitespace-nowrap">{Number.isFinite(t.max) ? `${Number(t.min ?? 0).toLocaleString()} – ${Number(t.max ?? 0).toLocaleString()} units` : `${Number(t.min ?? 0).toLocaleString()}+ units`}</span>
                       <span className="font-medium text-right whitespace-nowrap tabular-nums font-mono">{Math.round(t.discount*100)}%</span>
                 </div>
                   ))}
@@ -521,7 +521,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             </div>
             <div className="rounded-lg bg-blue-50/70 border border-blue-200 p-3 flex items-center justify-between">
               <div className="text-sm font-medium text-blue-900">Projected season demand (reference)</div>
-              <div className="text-2xl font-bold text-blue-900 font-mono">{projectedSeasonDemand.toLocaleString()} units</div>
+              <div className="text-2xl font-bold text-blue-900 font-mono">{Number(projectedSeasonDemand || 0).toLocaleString()} units</div>
             </div>
             {/* Over‑commitment warning temporarily disabled */}
           </div>
@@ -536,8 +536,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="space-y-2">
                   {isLocked('supplier1') ? (
                     <>
-                      <div className="text-sm text-gray-700">Agreed: <span className="font-mono font-semibold">{(savedGmcCommitments['supplier1'] || 0).toLocaleString()}</span> units</div>
-                      <div className="text-sm text-gray-700">Ordered so far: <span className="font-mono font-semibold">{getGmcOrderedUnitsForSupplier('supplier1').toLocaleString()}</span> units</div>
+                      <div className="text-sm text-gray-700">Agreed: <span className="font-mono font-semibold">{Number(savedGmcCommitments['supplier1'] || 0).toLocaleString()}</span> units</div>
+                      <div className="text-sm text-gray-700">Ordered so far: <span className="font-mono font-semibold">{Number(getGmcOrderedUnitsForSupplier('supplier1') || 0).toLocaleString()}</span> units</div>
                     </>
                   ) : (
                     <div className="text-sm text-gray-600">Locked due to Single Supplier Deal with the other supplier.</div>
@@ -564,8 +564,8 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 <div className="space-y-2">
                   {isLocked('supplier2') ? (
                     <>
-                      <div className="text-sm text-gray-700">Agreed: <span className="font-mono font-semibold">{(savedGmcCommitments['supplier2'] || 0).toLocaleString()}</span> units</div>
-                      <div className="text-sm text-gray-700">Ordered so far: <span className="font-mono font-semibold">{getGmcOrderedUnitsForSupplier('supplier2').toLocaleString()}</span> units</div>
+                      <div className="text-sm text-gray-700">Agreed: <span className="font-mono font-semibold">{Number(savedGmcCommitments['supplier2'] || 0).toLocaleString()}</span> units</div>
+                      <div className="text-sm text-gray-700">Ordered so far: <span className="font-mono font-semibold">{Number(getGmcOrderedUnitsForSupplier('supplier2') || 0).toLocaleString()}</span> units</div>
                     </>
                   ) : (
                     <div className="text-sm text-gray-600">Locked due to Single Supplier Deal with the other supplier.</div>
@@ -657,7 +657,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       {designLockedForMat && (<span className="ml-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wide text-gray-500"><Lock size={10}/> Locked</span>)}
                       </div>
 
-                    <Input type="number" min="0" step={batchSize} value={materialQuantities[material] || ''} onChange={(e) => !isDisabled && handleMaterialQuantityChange(material, parseInt(e.target.value) || 0)} placeholder={`0 (x ${batchSize.toLocaleString()})`} className="mb-2" disabled={isDisabled} />
+                    <Input type="number" min="0" step={batchSize} value={materialQuantities[material] || ''} onChange={(e) => !isDisabled && handleMaterialQuantityChange(material, parseInt(e.target.value) || 0)} placeholder={`0 (x ${Number(batchSize).toLocaleString()})`} className="mb-2" disabled={isDisabled} />
                     {quantityErrors[material] && (<div className="text-xs text-red-600 mb-1">{quantityErrors[material]}</div>)}
                     <div className="text-xs text-gray-600"><div>Unit Price: {formatCurrency(finalPrice)}</div><div className="font-medium">Total: {formatCurrency((materialQuantities[material] || 0) * finalPrice)}</div></div>
                     </div>
@@ -672,10 +672,10 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <h4 className="font-medium text-gray-900 mb-3 flex items-center gap-2"><Calculator size={16} /> Order Summary</h4>
                 <div className="space-y-2">
                   {contractData.orders.map((order, index) => (
-                  <div key={index} className="flex justify-between items-center text-sm"><span className="capitalize">{order.material.replace(/([A-Z])/g, ' $1').trim()}: {order.quantity.toLocaleString()} units</span><span className="font-mono">{formatCurrency(order.totalCost)}</span></div>
+                  <div key={index} className="flex justify-between items-center text-sm"><span className="capitalize">{order.material.replace(/([A-Z])/g, ' $1').trim()}: {Number(order.quantity || 0).toLocaleString()} units</span><span className="font-mono">{formatCurrency(order.totalCost)}</span></div>
                   ))}
                   <div className="border-t border-gray-200 pt-2 mt-2">
-                  <div className="flex justify-between items-center"><span className="text-sm text-gray-600">Total Units</span><span className="font-mono text-sm">{totalUnits.toLocaleString()}</span></div>
+                  <div className="flex justify-between items-center"><span className="text-sm text-gray-600">Total Units</span><span className="font-mono text-sm">{Number(totalUnits || 0).toLocaleString()}</span></div>
                   <div className="flex justify-between items-center font-medium"><span>Subtotal:</span><span className="font-mono">{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0))}</span></div>
                     {contractData.discount > 0 && (
                       <div className="flex justify-between items-center text-green-600">
@@ -705,7 +705,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
           <DialogHeader>
             <DialogTitle>Sign GMC?</DialogTitle>
             <DialogDescription>
-              This will lock the commitment with {gmcConfirm.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} at {(gmcCommitments[gmcConfirm.supplier || 'supplier1'] || 0).toLocaleString()} units. You can no longer adjust the slider afterwards.
+              This will lock the commitment with {gmcConfirm.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} at {Number(gmcCommitments[gmcConfirm.supplier || 'supplier1'] || 0).toLocaleString()} units. You can no longer adjust the slider afterwards.
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
@@ -750,9 +750,10 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                       <div className="mt-1 text-gray-700">
                         {(p.orders || []).map((o: any, i: number) => {
                           const lineAfter = Number(o.effectiveLineTotal ?? o.totalCost ?? 0);
+                          const qty = Number(o.quantity ?? o.units ?? 0);
                           return (
                             <div key={i} className="flex justify-between">
-                              <span className="capitalize">{o.material.replace(/([A-Z])/g, ' $1').trim()} — {o.quantity.toLocaleString()} units</span>
+                              <span className="capitalize">{o.material.replace(/([A-Z])/g, ' $1').trim()} — {qty.toLocaleString()} units</span>
                               <span className="font-mono">{formatCurrency(lineAfter)}</span>
                             </div>
                           );
