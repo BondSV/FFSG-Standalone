@@ -160,7 +160,10 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
         }
       }
     });
-    const { discount: tierDiscount } = computeTierForSupplier(selectedSupplier, totalVolume);
+    // Include signed GMC commitment for this supplier when determining tier
+    const commitmentUnitsForSupplier = Number(savedGmcCommitments[selectedSupplier] || 0);
+    const effectiveUnitsForTier = totalVolume + commitmentUnitsForSupplier;
+    const { discount: tierDiscount } = computeTierForSupplier(selectedSupplier, effectiveUnitsForTier);
     const extra = singleSupplierDeal === selectedSupplier ? 0.02 : 0;
     const appliedDiscount = tierDiscount + extra;
     const discountedCost = totalCost * (1 - appliedDiscount);
@@ -201,7 +204,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     const orderType: 'gmc' | 'spot' = isGmcTerms ? 'gmc' : 'spot';
     const shipmentWeek = currentWeek + (orderType === 'spot' ? 1 : 2);
 
-    const materialPurchase = { ...contractData, type: orderType, supplier: selectedSupplier, printOptions, materialQuantities, purchaseWeek: currentWeek, shipmentWeek, timestamp: new Date().toISOString(), status: 'ordered', totalUnits: Object.values(materialQuantities).reduce((s: number, v: any) => s + (Number(v) || 0), 0), canDelete: true };
+    const materialPurchase = { ...contractData, type: orderType, supplier: selectedSupplier, printOptions, materialQuantities, purchaseWeek: currentWeek, shipmentWeek, timestamp: new Date().toISOString(), status: 'ordered', totalUnits: Object.values(materialQuantities).reduce((s: number, v: any) => s + (Number(v) || 0), 0), canDelete: true, gmcCommitmentUnits: orderType === 'gmc' ? Number(savedGmcCommitments[selectedSupplier] || gmcCommitments[selectedSupplier] || 0) : undefined };
     const updates: any = { materialPurchases: [ ...(currentState?.materialPurchases || []), materialPurchase ] };
     if (orderType === 'gmc') updates.gmcCommitments = gmcCommitments;
     updateStateMutation.mutate(updates, {

@@ -214,7 +214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           const processedUpdates = {
             procurementContracts: { contracts, gmcCommitments, singleSupplierDeal },
-            // Keep a simple front-end history of orders for the current week so the UI can render immediately
+            // Keep a simple front-end history of orders for the current week per supplier
             materialPurchases: purchases,
           } as any;
           weeklyState = await storage.updateWeeklyState(weeklyState.id, processedUpdates);
