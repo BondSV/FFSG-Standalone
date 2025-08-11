@@ -229,29 +229,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 printSurcharge: applyPrint ? surchargeCatalog : 0,
               };
 
-              // Compute effective discounted unit price at order time based on rules
+              // Identify if this order has already been converted to canonical records
+              const orderId = `${p.timestamp}-${p.supplier}-${order.material}`;
+              const isExisting = existingOrderIds.has(orderId);
+
+              if (isExisting) {
+                // Do not recompute or re-annotate existing orders; keep their original locked values
+                continue;
+              }
+
+              // Compute effective discounted unit price at order time based on rules (only for new orders)
               const baseUnit = base + (applyPrint ? surchargeCatalog : 0);
               const extraSSD = singleSupplierDeal === p.supplier ? 0.02 : 0;
 
-              // Determine discount per order type
               let tierDisc = 0;
               if (p.type === 'spot') {
-                // SPOT: discount solely from this basket total for this supplier
                 const basketTotal = (p.orders || []).reduce((s: number, o: any) => s + Number(o.quantity || 0), 0);
                 tierDisc = getTierDiscount(p.supplier, basketTotal);
               } else if (p.type === 'gmc') {
-                // GMC: discount solely from signed commitment volume for this supplier
                 const committed = Number((updates.gmcCommitments && updates.gmcCommitments[p.supplier]) ?? gmcCommitments[p.supplier] ?? 0);
                 tierDisc = getTierDiscount(p.supplier, committed);
               } else if (p.type === 'fvc') {
-                // FVC: keep prior behavior (use tier from commitment if present, else 0)
                 const committed = Number(gmcCommitments[p.supplier] || 0);
                 tierDisc = getTierDiscount(p.supplier, committed);
               }
               const effDiscount = tierDisc + extraSSD;
               const effectiveUnitPrice = baseUnit * (1 - effDiscount);
-              // annotate order lines for UI/logging
-              (order as any).orderId = `${p.timestamp}-${p.supplier}-${order.material}`;
+
+              // annotate and create canonical records for new orders only
+              (order as any).orderId = orderId;
               (order as any).effectiveUnitPrice = effectiveUnitPrice;
               (order as any).effectiveLineTotal = effectiveUnitPrice * Number(order.quantity || 0);
 
@@ -262,35 +268,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   units: order.quantity,
                   weekSigned: currentWeek,
                 });
+                existingOrderIds.add(orderId);
               } else if (p.type === 'gmc') {
-                // GMC: commitment lives on a contract, orders recorded per week
                 let contract = contracts.find((c: any) => c.type === 'GMC' && c.supplier === p.supplier && c.material === order.material);
                 if (!contract) {
                   contract = { ...contractBase, type: 'GMC', units: p.gmcCommitmentUnits || 0, weekSigned: 1, gmcOrders: [] };
                   contracts.push(contract);
                 }
                 contract.gmcOrders = contract.gmcOrders || [];
-                const orderId = `${p.timestamp}-${p.supplier}-${order.material}`;
-                if (!existingOrderIds.has(orderId)) {
-                  contract.gmcOrders.push({ orderId, week: currentWeek, units: order.quantity, unitPrice: effectiveUnitPrice });
-                  existingOrderIds.add(orderId);
-                }
-                // Ensure the stored gmcCommitments also reflect the explicit commitment value per supplier
+                contract.gmcOrders.push({ orderId, week: currentWeek, units: order.quantity, unitPrice: effectiveUnitPrice });
+                existingOrderIds.add(orderId);
                 if (p.gmcCommitmentUnits) {
                   gmcCommitments[p.supplier] = p.gmcCommitmentUnits;
                 }
               } else if (p.type === 'spot') {
-                const sptId = `${p.timestamp}-${p.supplier}-${order.material}`;
-                if (!existingOrderIds.has(sptId)) {
-                  contracts.push({
-                    ...contractBase,
-                    type: 'SPT',
-                    units: order.quantity,
-                    weekSigned: currentWeek,
-                    lockedUnitPrice: effectiveUnitPrice,
-                  });
-                  existingOrderIds.add(sptId);
-                }
+                contracts.push({
+                  ...contractBase,
+                  type: 'SPT',
+                  units: order.quantity,
+                  weekSigned: currentWeek,
+                  lockedUnitPrice: effectiveUnitPrice,
+                });
+                existingOrderIds.add(orderId);
               }
             }
           }
