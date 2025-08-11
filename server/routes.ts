@@ -297,10 +297,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (updates.gmcCommitments && typeof updates.gmcCommitments === 'object') {
             Object.assign(gmcCommitments, updates.gmcCommitments);
           }
-          // Replace this week's purchases with the provided list (de-duped by timestamp)
-          const mergedPurchases = Array.from(
-            new Map((purchases || []).filter((x: any) => !!x?.timestamp).map((x: any) => [x.timestamp, x])).values()
-          );
+          // Only replace purchases if an explicit list was provided; otherwise, keep existing
+          let mergedPurchases: any[];
+          if (Array.isArray(updates.materialPurchases)) {
+            mergedPurchases = Array.from(
+              new Map((purchases || []).filter((x: any) => !!x?.timestamp).map((x: any) => [x.timestamp, x])).values()
+            );
+          } else {
+            mergedPurchases = (weeklyState as any).materialPurchases || [];
+          }
           weeklyState = await storage.updateWeeklyState(weeklyState.id, {
             procurementContracts: { contracts, gmcCommitments, singleSupplierDeal },
             materialPurchases: mergedPurchases,

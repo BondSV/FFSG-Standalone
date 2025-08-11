@@ -211,7 +211,13 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
 
   const handleRemovePurchase = async (timestamp: string) => {
     const newList = (currentState?.materialPurchases || []).filter((p: any) => p.timestamp !== timestamp);
-    try { await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/update`, { materialPurchases: newList }); queryClient.invalidateQueries({ queryKey: ['/api/game/current'] }); toast({ title: 'Removed', description: 'Order removed from this week.' }); }
+    try {
+      await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/update`, { materialPurchases: newList });
+      // Refresh both current state and the weeks history used by Orders Log
+      queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      if (gameSession?.id) queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession.id, 'weeks'] });
+      toast({ title: 'Removed', description: 'Order removed from this week.' });
+    }
     catch (e) { if (isUnauthorizedError(e)) { toast({ title: 'Unauthorized', description: 'You are logged out. Logging in again...', variant: 'destructive' }); setTimeout(() => { window.location.href = '/api/login'; }, 500); return; } toast({ title: 'Error', description: 'Failed to remove order. Try again.', variant: 'destructive' }); }
   };
 
