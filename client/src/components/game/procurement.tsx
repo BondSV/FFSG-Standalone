@@ -718,53 +718,55 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Orders Log (full history) */}
       <Card className="border border-gray-100">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2"><History size={18}/> Contracts & Orders</CardTitle>
+          <CardTitle className="flex items-center gap-2"><History size={18}/> Orders Log</CardTitle>
         </CardHeader>
         <CardContent>
-          <Tabs defaultValue="week">
-            <TabsList><TabsTrigger value="week">This Week's Orders</TabsTrigger><TabsTrigger value="season">Season Commitments & History</TabsTrigger></TabsList>
-            <TabsContent value="week" className="mt-4">
-              {(currentState?.materialPurchases || []).filter((p: any) => p.purchaseWeek === currentWeek).length === 0 ? (<div className="text-sm text-gray-600">No orders placed this week.</div>) : (
-                <div className="space-y-3">
-                  {(currentState?.materialPurchases || []).filter((p: any) => p.purchaseWeek === currentWeek).map((p: any, idx: number) => {
-                    const delivery = p.purchaseWeek + (p.type === 'gmc' ? 2 : 1);
-                    return (
-                      <div key={idx} className="border rounded-md p-3 text-sm">
-                        <div className="flex justify-between items-center">
-                          <div className="font-medium">{p.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {p.type?.toUpperCase()}</div>
-                          <div className="flex items-center gap-2">
-                            <div className="text-gray-600 flex items-center gap-1"><Truck size={14}/> Arrives W{delivery}</div>
-                            <Button variant="outline" size="sm" onClick={() => handleRemovePurchase(p.timestamp)} disabled={currentState?.isCommitted || !p.canDelete} className="h-7 px-2"><Trash2 size={14}/> Remove</Button>
+          {(() => {
+            const { data: weeksData } = useQuery({
+              queryKey: ['/api/game', gameSession?.id, 'weeks'],
+              enabled: !!gameSession?.id,
+              retry: false,
+            });
+            const allOrders = useMemo(() => {
+              const weeks = (weeksData as any)?.weeks || [];
+              const flat = weeks.flatMap((w: any) => (w.materialPurchases || []).map((p: any) => ({ ...p, weekNumber: w.weekNumber })));
+              flat.sort((a: any, b: any) => (Number(a.weekNumber) - Number(b.weekNumber)) || String(a.timestamp || '').localeCompare(String(b.timestamp || '')));
+              return flat;
+            }, [weeksData]);
+
+            if (!allOrders || allOrders.length === 0) {
+              return <div className="text-sm text-gray-600">No orders yet.</div>;
+            }
+
+            return (
+              <div className="space-y-3">
+                {allOrders.map((p: any, idx: number) => {
+                  const delivery = p.purchaseWeek + (p.type === 'gmc' ? 2 : 1);
+                  const allowRemove = p.purchaseWeek === currentWeek && p.canDelete && !currentState?.isCommitted;
+                  return (
+                    <div key={`${p.timestamp}-${idx}`} className="border rounded-md p-3 text-sm">
+                      <div className="flex justify-between items-center">
+                        <div className="font-medium">W{p.purchaseWeek} • {p.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {p.type?.toUpperCase()}</div>
+                        <div className="flex items-center gap-2">
+                          <div className="text-gray-600 flex items-center gap-1"><Truck size={14}/> Arrives W{delivery}</div>
+                          <Button variant="outline" size="sm" onClick={() => handleRemovePurchase(p.timestamp)} disabled={!allowRemove} className="h-7 px-2"><Trash2 size={14}/> Remove</Button>
+                        </div>
+                      </div>
+                      <div className="mt-1 text-gray-700">{(p.orders || []).map((o: any, i: number) => (
+                        <div key={i} className="flex justify-between">
+                          <span className="capitalize">{o.material.replace(/([A-Z])/g, ' $1').trim()} — {o.quantity.toLocaleString()} units</span>
+                          <span className="font-mono">{formatCurrency(o.totalCost)}</span>
+                        </div>
+                      ))}</div>
+                    </div>
+                  );
+                })}
               </div>
-            </div>
-                        <div className="mt-1 text-gray-700">{(p.orders || []).map((o: any, i: number) => (<div key={i} className="flex justify-between"><span className="capitalize">{o.material.replace(/([A-Z])/g, ' $1').trim()} — {o.quantity.toLocaleString()} units</span><span className="font-mono">{formatCurrency(o.totalCost)}</span></div>))}</div>
-              </div>
-                    );
-                  })}
-            </div>
-              )}
-            </TabsContent>
-            <TabsContent value="season" className="mt-4">
-              {!(currentState?.procurementContracts?.contracts || []).length ? (<div className="text-sm text-gray-600">No procurement commitments yet.</div>) : (
-                <div className="space-y-3">
-                  {(currentState?.procurementContracts?.contracts || []).map((c: any, idx: number) => {
-                    const deliveries = c.deliveries || [];
-                    const delivered = Number(c.deliveredUnits || 0);
-                    const committed = Number(c.units || 0);
-                    return (
-                      <div key={idx} className="border rounded-md p-3 text-sm">
-                        <div className="flex justify-between"><div className="font-medium">{c.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {c.type}</div><div className="text-gray-600">Fabric: <span className="capitalize">{String(c.material).replace(/([A-Z])/g, ' $1').trim()}</span></div></div>
-                        <div className="mt-1 grid grid-cols-2 md:grid-cols-4 gap-2"><div>Committed: <span className="font-mono">{committed.toLocaleString()}</span></div><div>Delivered: <span className="font-mono">{delivered.toLocaleString()}</span></div><div>Outstanding: <span className="font-mono">{Math.max(0, committed - delivered).toLocaleString()}</span></div><div>Signed W{c.weekSigned}</div></div>
-                        {deliveries.length > 0 && (<div className="mt-2 text-gray-700"><div className="font-medium mb-1">Deliveries</div><div className="space-y-1">{deliveries.map((d: any, i: number) => (<div key={i} className="flex items-center justify-between"><span>W{d.week}: {Number(d.units).toLocaleString()} units</span><span className="flex items-center gap-1 text-gray-600"><PoundSterling size={14}/>{formatCurrency((Number(d.units) || 0) * Number(d.unitPrice || 0))}</span></div>))}</div></div>)}
-              </div>
-                    );
-                  })}
-            </div>
-              )}
-            </TabsContent>
-          </Tabs>
+            );
+          })()}
         </CardContent>
       </Card>
     </div>

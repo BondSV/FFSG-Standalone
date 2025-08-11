@@ -233,8 +233,8 @@ export class GameEngine {
     const singleSupplierDeal: SupplierKey | undefined = (state.procurementContracts as any)?.singleSupplierDeal;
 
     for (const c of contracts) {
-      if (c.discountPercentApplied == null) {
-        // New rule: tier discount + flat +2% if single-supplier deal matches this supplier
+      // Recompute discount every commit based on current totals, so tiers reflect signed GMC regardless of batch size
+      {
         const tier = this.computeSupplierVolumeDiscount(supplierTotals[c.supplier] || 0);
         const extra = singleSupplierDeal && c.supplier === singleSupplierDeal ? 0.02 : 0;
         c.discountPercentApplied = tier + extra;
