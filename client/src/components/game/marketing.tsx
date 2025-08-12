@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
+import { Switch } from "@/components/ui/switch";
 import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -91,6 +92,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
   const totalAllocation = useMemo(() => Object.values(channelAllocation).reduce((s, v) => s + (Number(v) || 0), 0), [channelAllocation]);
   const isFinalWeek = currentWeek === 15;
+  const [fineTune, setFineTune] = useState<boolean>(false);
 
   // Affordability
   const cash = Number(currentState?.cashOnHand || 0);
@@ -225,36 +227,38 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Marketing</h1>
-        <p className="text-gray-600">Set next week’s plan while reviewing last week’s outcomes. Solid gauges show actuals; faint arcs preview next week from your current settings.</p>
       </div>
 
       {/* Educational intro */}
       <Card className="border border-gray-100 mb-6">
         <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-base"><GraduationCap size={16}/> How this tab works</CardTitle>
+          <CardTitle className="flex items-center gap-2 text-base"><GraduationCap size={16}/> Getting results from marketing</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
             <ul className="space-y-2 list-disc pl-5">
               <li>
-                Presets by phase: <span className="font-medium">Awareness</span> (Weeks 1–6), <span className="font-medium">Balanced</span> (Weeks 7–10), <span className="font-medium">Conversion</span> (Weeks 11–15).
+                <span className="font-medium">Why marketing matters.</span> It creates demand by first making people aware of your product and then motivating them to buy. Good plans move audiences from “I’ve heard of it” → “I want it” → “I’ll buy now”.
               </li>
               <li>
-                Budget & split: set a total budget, then allocate 0–100% per channel (steps of 5%). The <span className="font-medium">Apply</span> button unlocks when the split totals 100% and you can afford the spend.
+                <span className="font-medium">How to use this tab.</span> Set a budget, pick a preset that fits the phase, then fine‑tune the channel split and (later) discounts if needed. Solid gauges show last week; faint arcs preview next week based on your current plan.
               </li>
               <li>
-                Channel roles: Social/Influencer build <span className="font-medium">Awareness</span> and <span className="font-medium">Intent</span>; Search converts ready demand; Display supports retargeting; Print adds local reach; TV needs scale (budget ≥ £200k and TV ≥ 10%).
+                <span className="font-medium">Channels work together.</span> Broad channels (social, creators) help more people hear about you. Performance channels (search) capture ready‑to‑buy demand. Display keeps you top‑of‑mind. Print can add credibility and local reach. TV can be powerful at sufficient scale.
               </li>
             </ul>
             <ul className="space-y-2 list-disc pl-5">
               <li>
-                A / I dynamics: Awareness builds slowly and caps Intent growth. With no marketing, both decay; demand tends toward a low baseline.
+                <span className="font-medium">Consistency beats bursts.</span> Steady, well‑timed activity compounds learning and trust. Sudden stops or erratic changes can cool interest; momentum builds it.
               </li>
               <li>
-                Discounts: optional in Balanced; emphasized in Conversion. Deeper discounts for 3+ weeks or frequent changes can reduce <span className="font-medium">Intent to Buy</span>.
+                <span className="font-medium">Right message, right time.</span> Early weeks focus on being seen; mid‑season balances reach and conversion; late season turns interest into action. Use discounts thoughtfully: they trade margin for speed.
               </li>
               <li>
-                Read‑only at Week 15: planning is disabled; gauges show final actuals.
+                <span className="font-medium">Learn by experimenting.</span> Make small adjustments to budget and split, watch Awareness and Intent to Buy respond, and track ROAS/CAC trends. Aim for steady improvement, not one‑week spikes.
+              </li>
+              <li>
+                <span className="font-medium">Stock and price reality.</span> Marketing can’t sell what isn’t available, and deep discounts can erode profit faster than they boost units. Check inventory and price before pushing harder.
               </li>
             </ul>
           </div>
@@ -298,38 +302,60 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               <Sparkline points={[]} />
             </div>
           </div>
-          {/* KPI chips (last completed week) */}
+          {/* KPI chips (cumulative across committed weeks) */}
           {(() => {
             const weeks = (weeksData?.weeks || []) as Array<any>;
             const committed = weeks.filter((w: any) => Boolean(w.isCommitted));
-            const last = committed.length > 0 ? committed[committed.length - 1] : null;
-            const spend = last ? Number((last as any).marketingPlan?.totalSpend ?? (last as any).marketingSpend ?? 0) : 0;
-            const sales = last ? (last.weeklySales || {}) : {};
-            const units = Number(sales.jacket || 0) + Number(sales.dress || 0) + Number(sales.pants || 0);
-            const revenue = last ? Number(last.weeklyRevenue || 0) : 0;
-            const roas = spend > 0 ? revenue / spend : null;
-            const cac = units > 0 ? spend / units : null;
+            if (committed.length === 0) {
+              return (
+                <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                  {['Total Spent','ROAS (to date)','CAC (to date)','Units sold (to date)','Revenue (to date)'].map((label, i)=> (
+                    <div key={i} className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                      <div className="text-gray-500">{label}</div>
+                      <div className="font-medium">—</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            }
+            const totals = committed.reduce((acc: any, w: any) => {
+              const spend = Number((w as any).marketingPlan?.totalSpend ?? (w as any).marketingSpend ?? 0);
+              const sales = (w.weeklySales || {}) as any;
+              const units = Number(sales.jacket || 0) + Number(sales.dress || 0) + Number(sales.pants || 0);
+              const revenue = Number(w.weeklyRevenue || 0);
+              acc.spend += spend;
+              acc.units += units;
+              acc.revenue += revenue;
+              return acc;
+            }, { spend: 0, units: 0, revenue: 0 });
+            const roas = totals.spend > 0 ? totals.revenue / totals.spend : null;
+            const cac = totals.units > 0 ? totals.spend / totals.units : null;
             return (
               <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
                 <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-                  <div className="text-gray-500">Spend</div>
-                  <div className="font-medium">{last ? `£${Math.round(spend).toLocaleString()}` : '—'}</div>
+                  <div className="text-gray-500">Total Spent</div>
+                  <div className="font-medium">£{Math.round(totals.spend).toLocaleString()}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">Cumulative marketing spend across completed weeks</div>
                 </div>
                 <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-                  <div className="text-gray-500">ROAS</div>
+                  <div className="text-gray-500">ROAS (to date)</div>
                   <div className="font-medium">{roas!=null ? `${roas.toFixed(2)}×` : '—'}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">Return on ad spend = Revenue ÷ Spend</div>
                 </div>
                 <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-                  <div className="text-gray-500">CAC</div>
+                  <div className="text-gray-500">CAC (to date)</div>
                   <div className="font-medium">{cac!=null ? `£${Math.round(cac).toLocaleString()}` : '—'}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">Customer acquisition cost = Spend ÷ Units sold</div>
                 </div>
                 <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-                  <div className="text-gray-500">Units sold</div>
-                  <div className="font-medium">{last ? units.toLocaleString() : '—'}</div>
+                  <div className="text-gray-500">Units sold (to date)</div>
+                  <div className="font-medium">{totals.units.toLocaleString()}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">Total units sold over completed weeks</div>
                 </div>
                 <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
-                  <div className="text-gray-500">Revenue</div>
-                  <div className="font-medium">{last ? `£${Math.round(revenue).toLocaleString()}` : '—'}</div>
+                  <div className="text-gray-500">Revenue (to date)</div>
+                  <div className="font-medium">£{Math.round(totals.revenue).toLocaleString()}</div>
+                  <div className="text-xs text-gray-500 mt-0.5">Total revenue over completed weeks</div>
                 </div>
               </div>
             );
@@ -389,8 +415,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       {floorWarnings.length>0 && (<div className="text-xs text-red-600 mt-1">Below cost risk: {floorWarnings.join(', ')}</div>)}
                     </div>
                   )}
-                </div>
-              )}
+              </div>
+            )}
             </div>
           </div>
         </CardContent>
@@ -400,7 +426,13 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       <Card className="border border-gray-100 mb-8">
         <CardHeader>
           <CardTitle>Channel Split</CardTitle>
-          <p className="text-sm text-gray-600">Allocate percent split (must total 100%).</p>
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-gray-600">Allocate percent split (must total 100%).</p>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-gray-700">Fine Tune Channel Split</span>
+              <Switch checked={fineTune} onCheckedChange={setFineTune} />
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
@@ -427,15 +459,16 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   <div className="relative">
                     {(() => {
                       const [min, max] = getEfficientRange(preset, channel.id);
-                      const left = Math.max(0, Math.min(100, min));
-                      const width = Math.max(0, Math.min(100, max - min));
+                      const pad = 6; // widen band by padding both sides
+                      const left = Math.max(0, Math.min(100, min - pad));
+                      const width = Math.max(0, Math.min(100, (max + pad) - (min - pad)));
                       return (
-                        <div className="absolute top-1/2 -translate-y-1/2 h-1.5 bg-green-200/80 rounded"
+                        <div className="absolute top-[60%] -translate-y-1/2 h-2 bg-green-200/80 rounded"
                              style={{ left: `${left}%`, width: `${width}%` }} />
                       );
                     })()}
-                    <Slider value={[pct]} min={0} max={100} step={5} onValueChange={(v)=> handleChannelAllocationChange(channel.id, v[0] || 0)} />
-                    <div className="flex justify-between text-xs text-gray-500 mt-2"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
+                    <Slider value={[pct]} min={0} max={100} step={5} onValueChange={(v)=> fineTune ? handleChannelAllocationChange(channel.id, v[0] || 0) : undefined} />
+                    <div className="flex justify-between text-xs text-gray-500 mt-3"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
                   </div>
                   <div className="text-right font-mono mt-1 sm:hidden">{pct.toFixed(0)}%</div>
                 </div>
@@ -445,7 +478,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               <div>Total allocation: {totalAllocation.toFixed(1)}%</div>
               {Math.round(totalAllocation) !== 100 && (<div className="text-red-600 inline-flex items-center gap-1"><AlertTriangle size={14}/> Must be 100%</div>)}
               {tvInefficient && (<div className="text-amber-600 inline-flex items-center gap-1"><AlertTriangle size={14}/> TV budget likely wasted at this level</div>)}
-            </div>
+                </div>
           </div>
         </CardContent>
       </Card>
@@ -454,7 +487,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       <div className="sticky bottom-0 bg-white/90 backdrop-blur border-t border-gray-200 pt-4 flex items-center gap-3">
         <Button onClick={handleApplyNextWeek} disabled={updateStateMutation.isPending || Math.round(totalAllocation)!==100 || marketingSpend>headroom}>
           {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
-        </Button>
+          </Button>
         <Button variant="outline" onClick={()=> { setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }}>Reset to Preset</Button>
       </div>
     </div>
