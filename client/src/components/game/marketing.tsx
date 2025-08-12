@@ -249,13 +249,13 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
           <p className="text-sm text-gray-600">Allocate percent split (must total 100%).</p>
         </CardHeader>
         <CardContent>
-          <div className="space-y-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {marketingChannels.map((channel) => {
               const Icon = channel.icon;
               const pct = Number(channelAllocation[channel.id] || 0);
               return (
                 <div key={channel.id} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-start justify-between mb-3">
+                  <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-primary bg-opacity-10 rounded-lg"><Icon className="text-primary" size={18}/></div>
                       <div>
@@ -272,7 +272,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                 </div>
               );
             })}
-            <div className="text-sm flex items-center justify-between">
+            <div className="text-sm flex items-center justify-between col-span-1 xl:col-span-2 mt-1">
               <div>Total allocation: {totalAllocation.toFixed(1)}%</div>
               {Math.round(totalAllocation) !== 100 && (<div className="text-red-600 inline-flex items-center gap-1"><AlertTriangle size={14}/> Must be 100%</div>)}
               {tvInefficient && (<div className="text-amber-600 inline-flex items-center gap-1"><AlertTriangle size={14}/> TV budget likely wasted at this level</div>)}
