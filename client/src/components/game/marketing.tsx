@@ -396,7 +396,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                 <span>{formatCurrency(marketingSpend)}</span>
                 <span>£1,000,000</span>
               </div>
-              <div className="text-xs text-gray-500">Efficient zone highlighted</div>
+              <div className="text-xs text-gray-500 text-center">Efficient zone highlighted</div>
             </div>
             <div className="space-y-2">
               <Label>Preset</Label>
@@ -494,7 +494,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       thumbClassName="border-amber-500"
                       zones={[{ left: leftPct, width: widthPct }]}
                     />
-                    <div className="flex justify-between text-xs text-gray-500 mt-5"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
+                    <div className="flex justify-between text-xs text-gray-500 mt-5"><span>0%</span><span>Efficient zone highlighted</span><span>100%</span></div>
                   </div>
                   <div className="text-right font-mono mt-1 sm:hidden">{pct.toFixed(0)}%</div>
                 </div>
