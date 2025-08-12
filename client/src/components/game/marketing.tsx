@@ -375,10 +375,10 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               <Label>Next Week Budget</Label>
               <div className="relative">
                 {/* Efficient zone band: £200k–£600k */}
-                <div className="absolute left-0 right-0 top-[35%] -translate-y-1/2 h-1 bg-amber-200/60 rounded" style={{
-                  left: '20%', // £200k of £1m
-                  width: '40%', // 200k..600k span
-                }}/>
+                <div
+                  className="absolute top-1/2 -translate-y-1/2 h-1 bg-amber-300/80 rounded z-10 pointer-events-none"
+                  style={{ left: '20%', width: '40%' }}
+                />
                 <Slider
                   value={[Math.min(1000000, Math.max(0, marketingSpend))]}
                   onValueChange={([v])=> setMarketingSpend(Math.round(v/5000)*5000)}
@@ -395,8 +395,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                 <span>{formatCurrency(marketingSpend)}</span>
                 <span>£1,000,000</span>
               </div>
-              <div className="text-xs text-gray-500">Efficient zone highlighted. Affordable headroom now: {formatCurrency(headroom)}</div>
-              {marketingSpend > headroom && (<div className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={12}/> Exceeds affordable headroom</div>)}
+              <div className="text-xs text-gray-500">Efficient zone (≈ £200k–£600k) highlighted.</div>
             </div>
             <div className="space-y-2">
               <Label>Preset</Label>
@@ -509,7 +508,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         <Button variant="outline" onClick={()=> { setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }}>Reset to Preset</Button>
         <Button onClick={handleApplyNextWeek} disabled={updateStateMutation.isPending || Math.round(totalAllocation)!==100 || marketingSpend>headroom}>
           {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
-        </Button>
+          </Button>
       </div>
     </div>
   );
