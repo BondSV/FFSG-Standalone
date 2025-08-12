@@ -6,6 +6,7 @@ import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
 import { Switch } from "@/components/ui/switch";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
@@ -93,6 +94,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   const totalAllocation = useMemo(() => Object.values(channelAllocation).reduce((s, v) => s + (Number(v) || 0), 0), [channelAllocation]);
   const isFinalWeek = currentWeek === 15;
   const [fineTune, setFineTune] = useState<boolean>(false);
+  const isLocked = Boolean((currentState as any)?.plannedLocked);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   // Affordability
   const cash = Number(currentState?.cashOnHand || 0);
@@ -196,13 +199,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       toast({ title: 'Allocation must be 100%', description: 'Adjust channel percentages to total 100%.', variant: 'destructive' });
       return;
     }
-    if (marketingSpend > headroom) {
-      toast({ title: 'Insufficient funds', description: 'Budget exceeds available cash + credit headroom.', variant: 'destructive' });
-      return;
-    }
-    const channelsArray = marketingChannels.map((c) => ({ name: c.id, spend: calculateChannelSpend(c.id) }));
-    const updates: any = { plannedMarketingPlan: { totalSpend: marketingSpend, channels: channelsArray }, plannedWeeklyDiscounts: plannedDiscounts };
-    updateStateMutation.mutate(updates);
+    setConfirmOpen(true);
   };
 
   const formatCurrency = (value: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
@@ -389,6 +386,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   rangeClassName="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500"
                   thumbClassName="border-amber-500"
                   zones={[{ left: 20, width: 40 }]}
+                  disabled={isLocked}
                 />
               </div>
               <div className="flex items-center justify-between text-xs text-gray-600">
@@ -402,7 +400,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               <Label>Preset</Label>
               <div className="flex gap-2 flex-wrap">
                 {(['awareness','balanced','conversion'] as PresetId[]).map(p => (
-                  <Button key={p} variant={preset===p?'default':'outline'} onClick={()=> setPreset(p)}>{p.charAt(0).toUpperCase()+p.slice(1)}</Button>
+                  <Button key={p} variant={preset===p?'default':'outline'} onClick={()=> setPreset(p)} disabled={isLocked}>{p.charAt(0).toUpperCase()+p.slice(1)}</Button>
                 ))}
               </div>
               <div className="text-xs text-gray-500 flex items-center gap-1"><HelpCircle size={12}/> Recommended for next week: {recommendedPreset.charAt(0).toUpperCase()+recommendedPreset.slice(1)}</div>
@@ -413,10 +411,10 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               {preset !== 'awareness' && (
                 <div className="space-y-2">
                   <div className="flex gap-2 flex-wrap">
-                    <Button variant={discountMode==='none'?'default':'outline'} onClick={()=>{ setDiscountMode('none'); setDiscountPercent(0); }}>None</Button>
-                    <Button variant={discountMode==='minimal'?'default':'outline'} onClick={()=>{ setDiscountMode('minimal'); setDiscountPercent(10); }}>Minimal</Button>
-                    <Button variant={discountMode==='standard'?'default':'outline'} onClick={()=>{ setDiscountMode('standard'); setDiscountPercent(15); }}>Standard</Button>
-                    <Button variant={discountMode==='aggressive'?'default':'outline'} onClick={()=>{ setDiscountMode('aggressive'); setDiscountPercent(35); }}>Aggressive</Button>
+                    <Button variant={discountMode==='none'?'default':'outline'} onClick={()=>{ setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>None</Button>
+                    <Button variant={discountMode==='minimal'?'default':'outline'} onClick={()=>{ setDiscountMode('minimal'); setDiscountPercent(10); }} disabled={isLocked}>Minimal</Button>
+                    <Button variant={discountMode==='standard'?'default':'outline'} onClick={()=>{ setDiscountMode('standard'); setDiscountPercent(15); }} disabled={isLocked}>Standard</Button>
+                    <Button variant={discountMode==='aggressive'?'default':'outline'} onClick={()=>{ setDiscountMode('aggressive'); setDiscountPercent(35); }} disabled={isLocked}>Aggressive</Button>
                   </div>
                   {discountMode!=='none' && (
                     <div>
@@ -430,7 +428,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                         if (discountPercent < min) setDiscountPercent(min);
                         if (discountPercent > max) setDiscountPercent(max);
                         return (
-                          <input type="range" min={min} max={max} step={1} value={discountPercent} onChange={(e)=> setDiscountPercent(Number(e.target.value))} className="w-full" />
+                          <input type="range" min={min} max={max} step={1} value={discountPercent} onChange={(e)=> setDiscountPercent(Number(e.target.value))} className="w-full" disabled={isLocked} />
                         );
                       })()}
                       {floorWarnings.length>0 && (<div className="text-xs text-red-600 mt-1">Below cost risk: {floorWarnings.join(', ')}</div>)}
@@ -493,6 +491,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       rangeClassName="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500"
                       thumbClassName="border-amber-500"
                       zones={[{ left: leftPct, width: widthPct }]}
+                      disabled={isLocked || !fineTune}
                     />
                     <div className="flex justify-between text-xs text-gray-500 mt-5"><span>0%</span><span>Efficient zone highlighted</span><span>100%</span></div>
                   </div>
@@ -511,11 +510,31 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
       {/* Actions footer (normal pane at bottom) */}
       <div className="mt-8 bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between">
-        <Button variant="outline" onClick={()=> { setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }}>Reset to Preset</Button>
-        <Button onClick={handleApplyNextWeek} disabled={updateStateMutation.isPending || Math.round(totalAllocation)!==100 || marketingSpend>headroom}>
+        <Button variant="outline" onClick={()=> { setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>Reset to Preset</Button>
+        <Button onClick={handleApplyNextWeek} disabled={isLocked || updateStateMutation.isPending || Math.round(totalAllocation)!==100}>
           {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
-          </Button>
+        </Button>
       </div>
+
+      <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Apply to next week?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This locks your marketing plan for the next week. You will be able to change it after the week advances.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => {
+              const channelsArray = marketingChannels.map((c) => ({ name: c.id, spend: calculateChannelSpend(c.id) }));
+              const updates: any = { plannedMarketingPlan: { totalSpend: marketingSpend, channels: channelsArray }, plannedWeeklyDiscounts: plannedDiscounts, plannedLocked: true };
+              updateStateMutation.mutate(updates);
+              setConfirmOpen(false);
+            }}>Confirm & Lock</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

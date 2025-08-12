@@ -315,8 +315,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const processedUpdates = GameEngine.processProductionSchedule(weeklyState, updates);
           weeklyState = await storage.updateWeeklyState(weeklyState.id, processedUpdates);
         } 
-        else {
-          // Update existing state
+        else if (updates.plannedMarketingPlan || updates.plannedWeeklyDiscounts || typeof updates.plannedLocked !== 'undefined') {
+          // Update planning-only fields without touching purchases
+          weeklyState = await storage.updateWeeklyState(weeklyState.id, {
+            plannedMarketingPlan: updates.plannedMarketingPlan ?? (weeklyState as any).plannedMarketingPlan,
+            plannedWeeklyDiscounts: updates.plannedWeeklyDiscounts ?? (weeklyState as any).plannedWeeklyDiscounts,
+            plannedLocked: updates.plannedLocked,
+          } as any);
+        } else {
+          // Generic fall-through update
           weeklyState = await storage.updateWeeklyState(weeklyState.id, updates);
         }
       }
