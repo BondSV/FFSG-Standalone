@@ -471,6 +471,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Preview next week's A/I and demand using current planned marketing/discounts
+  app.get('/api/game/:gameId/week/:weekNumber/marketing-preview', isAuthenticated, async (req: any, res) => {
+    try {
+      const { gameId, weekNumber } = req.params;
+      const week = parseInt(weekNumber);
+      const weeklyState = await storage.getWeeklyState(gameId, week);
+      if (!weeklyState) return res.status(404).json({ message: 'Weekly state not found' });
+      const result = GameEngine.previewNextWeekMarketing(weeklyState as any);
+      res.json(result);
+    } catch (error) {
+      console.error('Error generating marketing preview:', error);
+      res.status(500).json({ message: 'Failed to generate marketing preview' });
+    }
+  });
+
   app.post('/api/game/calculate-unit-cost', async (req, res) => {
     try {
       const { product, materialChoice, hasPrint } = req.body;

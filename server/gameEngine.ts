@@ -253,6 +253,72 @@ export class GameEngine {
     return this.clamp(fA * gI, 0.3, 1.3);
   }
 
+  // Preview next week's Awareness/Intent and demand without mutating state
+  static previewNextWeekMarketing(currentState: WeeklyState & ExtendedWeeklyState, plan?: any, plannedDiscounts?: any) {
+    const state: any = this.cloneJson(currentState);
+    const nextWeek = this.toNumber(state.weekNumber) + 1;
+    const marketingPlan = plan || state.plannedMarketingPlan || { totalSpend: 0, channels: [] };
+    const totalSpend = this.toNumber(marketingPlan?.totalSpend, 0);
+    const channels: Array<{ name: string; spend: number }> = (marketingPlan?.channels || []) as any;
+
+    let awareness = this.toNumber(state.awareness, 0);
+    let intent = this.toNumber(state.intent, 0);
+
+    // Gains from spend and synergies
+    const { dA: gainsA, dI: gainsI } = this.computeChannelGains(totalSpend, channels);
+    let dA = gainsA;
+    let dI = gainsI;
+
+    // Progressive decay (use current streaks as baseline, do not persist)
+    const baselineSpend = GAME_CONSTANTS.BASELINE_MARKETING_SPEND;
+    const belowHalf = totalSpend > 0 && totalSpend < 0.5 * baselineSpend;
+    const zeroSpend = totalSpend <= 0;
+    const streakA = this.toNumber(state.underfundedStreakA, 0);
+    const streakI = this.toNumber(state.underfundedStreakI, 0);
+    if (zeroSpend) {
+      dA -= 1.0 + 0.5 * (streakA);
+      dI -= 2.0 + 1.0 * (streakI);
+    } else if (belowHalf) {
+      dA -= 0.5 + 0.25 * (streakA);
+      dI -= 1.0 + 0.5 * (streakI);
+    }
+
+    // Discount behavior penalties (compare next plan vs last observed)
+    const nextDiscounts = plannedDiscounts || state.plannedWeeklyDiscounts || { jacket: 0, dress: 0, pants: 0 };
+    const avgNext = (this.toNumber(nextDiscounts.jacket) + this.toNumber(nextDiscounts.dress) + this.toNumber(nextDiscounts.pants)) / 3;
+    const lastAvg = this.toNumber(state.lastDiscountAvg, 0);
+    const deepenStreak = this.toNumber(state.discountDeepenStreak, 0);
+    let projectedDeepen = deepenStreak;
+    if (avgNext > lastAvg + 0.005) {
+      projectedDeepen += 1;
+    } else if (avgNext < lastAvg - 0.005) {
+      if (lastAvg >= 0.30) dI -= 8;
+      projectedDeepen = 0;
+    }
+    if (projectedDeepen >= 3) dI -= 5;
+
+    // Apply and cap; Intent growth limited by Awareness ceiling
+    const nextAwareness = this.clamp(awareness + dA, 0, 100);
+    const nextIntent = this.clamp(intent + Math.min(dI, nextAwareness - intent + 10), 0, 100);
+
+    // Demand forecast using next A/I and planned discounts for nextWeek
+    const marketingFactor = this.computeMarketingFactor(nextAwareness, nextIntent);
+    const productKeys: ProductKey[] = ['jacket', 'dress', 'pants'];
+    const demandByProduct: Record<string, number> = {};
+    for (const p of productKeys) {
+      const dec = (state.productData as any)?.[p];
+      const rrp = this.toNumber(dec?.rrp);
+      const hasPrint = !!dec?.hasPrint;
+      const discount = this.toNumber((nextDiscounts as any)[p]);
+      if (!rrp) { demandByProduct[p] = 0; continue; }
+      const base = this.calculateDemand(p, nextWeek, rrp, discount, 0, hasPrint);
+      demandByProduct[p] = Math.round(base * marketingFactor);
+    }
+    const forecastDemandTotal = Object.values(demandByProduct).reduce((s, v) => s + this.toNumber(v), 0);
+
+    return { nextAwareness, nextIntent, demandByProduct, forecastDemandTotal };
+  }
+
   // --------------------
   // Core weekly processing
   // --------------------

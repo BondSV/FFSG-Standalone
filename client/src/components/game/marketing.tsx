@@ -9,7 +9,7 @@ import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { Megaphone, TrendingUp, Users, Eye, AlertTriangle, HelpCircle, Share2, Sparkles, Newspaper, Tv, Search, MonitorSmartphone } from "lucide-react";
+import { AlertTriangle, HelpCircle, Share2, Newspaper, Tv, Search, MonitorSmartphone, User, GraduationCap } from "lucide-react";
 import { DonutGauge } from "@/components/ui/donut-gauge";
 import { Sparkline } from "@/components/ui/sparkline";
 
@@ -22,9 +22,9 @@ type PresetId = 'awareness' | 'balanced' | 'conversion';
 
 const marketingChannels = [
   { id: 'social', name: 'Social Media', icon: Share2, description: 'Efficient awareness and conversion; strong with Influencers and Search' },
-  { id: 'influencer', name: 'Influencer Marketing', icon: Sparkles, description: 'Highest impact on awareness and intent; expensive; pairs best with Social' },
+  { id: 'influencer', name: 'Influencer Marketing', icon: User, description: 'Highest impact on awareness and intent; expensive; pairs best with Social' },
   { id: 'print', name: 'Printed Ads', icon: Newspaper, description: 'Local/regional awareness support; modest conversion' },
-  { id: 'tv', name: 'TV Commercials', icon: Tv, description: 'Very costly broad awareness; low conversion for small brands' },
+  { id: 'tv', name: 'TV Commercials', icon: Tv, description: 'Very costly broad awareness; low conversion for small brands and low budgets' },
   { id: 'google_search', name: 'Google Ads (Search)', icon: Search, description: 'High‑intent capture at point of demand; best in sales phases' },
   { id: 'google_display', name: 'Google AdSense', icon: MonitorSmartphone, description: 'Cheap broad awareness; good for retarget with Social/Influencer' },
 ];
@@ -33,7 +33,7 @@ const channelThemes: Record<string, { iconBg: string; iconColor: string; ring: s
   social: { iconBg: 'bg-sky-100', iconColor: 'text-sky-700', ring: 'ring-sky-100', gradientFrom: 'from-sky-50', gradientTo: 'to-white', chipBg: 'bg-sky-100', chipText: 'text-sky-800' },
   influencer: { iconBg: 'bg-fuchsia-100', iconColor: 'text-fuchsia-700', ring: 'ring-fuchsia-100', gradientFrom: 'from-fuchsia-50', gradientTo: 'to-white', chipBg: 'bg-fuchsia-100', chipText: 'text-fuchsia-800' },
   print: { iconBg: 'bg-amber-100', iconColor: 'text-amber-700', ring: 'ring-amber-100', gradientFrom: 'from-amber-50', gradientTo: 'to-white', chipBg: 'bg-amber-100', chipText: 'text-amber-800' },
-  tv: { iconBg: 'bg-purple-100', iconColor: 'text-purple-700', ring: 'ring-purple-100', gradientFrom: 'from-purple-50', gradientTo: 'to-white', chipBg: 'bg-purple-100', chipText: 'text-purple-800' },
+  tv: { iconBg: 'bg-rose-100', iconColor: 'text-rose-700', ring: 'ring-rose-100', gradientFrom: 'from-rose-50', gradientTo: 'to-white', chipBg: 'bg-rose-100', chipText: 'text-rose-800' },
   google_search: { iconBg: 'bg-emerald-100', iconColor: 'text-emerald-700', ring: 'ring-emerald-100', gradientFrom: 'from-emerald-50', gradientTo: 'to-white', chipBg: 'bg-emerald-100', chipText: 'text-emerald-800' },
   google_display: { iconBg: 'bg-indigo-100', iconColor: 'text-indigo-700', ring: 'ring-indigo-100', gradientFrom: 'from-indigo-50', gradientTo: 'to-white', chipBg: 'bg-indigo-100', chipText: 'text-indigo-800' },
 };
@@ -42,6 +42,15 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const { data: gameConstants } = useQuery({ queryKey: ['/api/game/constants'], retry: false });
+  const { data: weeksData } = useQuery({
+    queryKey: ['/api/game', gameSession?.id, 'weeks'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/game/${gameSession.id}/weeks`);
+      return res.json();
+    },
+    enabled: Boolean(gameSession?.id),
+    staleTime: 60_000,
+  });
 
   const currentWeek = Number(currentState?.weekNumber || 1);
   const awarenessNow = Number((currentState as any)?.awareness || 0);
@@ -81,6 +90,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   }, [preset]);
 
   const totalAllocation = useMemo(() => Object.values(channelAllocation).reduce((s, v) => s + (Number(v) || 0), 0), [channelAllocation]);
+  const isFinalWeek = currentWeek === 15;
 
   // Affordability
   const cash = Number(currentState?.cashOnHand || 0);
@@ -195,12 +205,61 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
   const formatCurrency = (value: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 
+  // Debounced preview of next week's A/I and demand to drive forecast donuts
+  const [preview, setPreview] = useState<{ nextAwareness: number; nextIntent: number; forecastDemandTotal: number } | null>(null);
+  useEffect(() => {
+    if (isFinalWeek) { setPreview(null); return; }
+    const t = setTimeout(async () => {
+      try {
+        const res = await apiRequest('GET', `/api/game/${gameSession.id}/week/${currentWeek}/marketing-preview`);
+        const data = await res.json();
+        setPreview({ nextAwareness: Number(data.nextAwareness||0), nextIntent: Number(data.nextIntent||0), forecastDemandTotal: Number(data.forecastDemandTotal||0) });
+      } catch {
+        setPreview(null);
+      }
+    }, 300);
+    return () => clearTimeout(t);
+  }, [gameSession?.id, currentWeek, marketingSpend, JSON.stringify(channelAllocation), preset, discountMode, discountPercent]);
+
   return (
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-2xl font-bold text-gray-900 mb-2">Marketing</h1>
-        <p className="text-gray-600">Plan next week. See last week outcomes and cumulative results.</p>
+        <p className="text-gray-600">Set next week’s plan while reviewing last week’s outcomes. Solid gauges show actuals; faint arcs preview next week from your current settings.</p>
       </div>
+
+      {/* Educational intro */}
+      <Card className="border border-gray-100 mb-6">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-base"><GraduationCap size={16}/> How this tab works</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-gray-700">
+            <ul className="space-y-2 list-disc pl-5">
+              <li>
+                Presets by phase: <span className="font-medium">Awareness</span> (Weeks 1–6), <span className="font-medium">Balanced</span> (Weeks 7–10), <span className="font-medium">Conversion</span> (Weeks 11–15).
+              </li>
+              <li>
+                Budget & split: set a total budget, then allocate 0–100% per channel (steps of 5%). The <span className="font-medium">Apply</span> button unlocks when the split totals 100% and you can afford the spend.
+              </li>
+              <li>
+                Channel roles: Social/Influencer build <span className="font-medium">Awareness</span> and <span className="font-medium">Intent</span>; Search converts ready demand; Display supports retargeting; Print adds local reach; TV needs scale (budget ≥ £200k and TV ≥ 10%).
+              </li>
+            </ul>
+            <ul className="space-y-2 list-disc pl-5">
+              <li>
+                A / I dynamics: Awareness builds slowly and caps Intent growth. With no marketing, both decay; demand tends toward a low baseline.
+              </li>
+              <li>
+                Discounts: optional in Balanced; emphasized in Conversion. Deeper discounts for 3+ weeks or frequent changes can reduce <span className="font-medium">Intent to Buy</span>.
+              </li>
+              <li>
+                Read‑only at Week 15: planning is disabled; gauges show final actuals.
+              </li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Gauges */}
       <Card className="border border-gray-100 mb-6">
@@ -211,7 +270,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
             <div className="flex items-center gap-3">
-              <DonutGauge value={Number.isFinite(awarenessNow)?awarenessNow:undefined} colorClass="stroke-blue-500" />
+              <DonutGauge value={Number.isFinite(awarenessNow)?awarenessNow:undefined} forecast={isFinalWeek?undefined:preview?.nextAwareness} colorClass="stroke-blue-500" />
               <TooltipWrapper content="Awareness: how many people have heard about your product. Builds slowly with broad‑reach channels (Social, Influencers, Print/TV). Higher awareness enables faster growth in intent.">
                 <div>
                   <div className="text-sm text-gray-700">Awareness</div>
@@ -220,7 +279,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               </TooltipWrapper>
             </div>
             <div className="flex items-center gap-3">
-              <DonutGauge value={Number.isFinite(intentNow)?intentNow:undefined} colorClass="stroke-emerald-500" />
+              <DonutGauge value={Number.isFinite(intentNow)?intentNow:undefined} forecast={isFinalWeek?undefined:preview?.nextIntent} colorClass="stroke-emerald-500" />
               <TooltipWrapper content="Intent to Buy: readiness to purchase. Grows faster when awareness is already high and you focus on performance channels (Search) or promotions. Volatile if discounts change erratically.">
                 <div>
                   <div className="text-sm text-gray-700">Intent to Buy</div>
@@ -235,10 +294,46 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   <span className="text-gray-400">?</span>
                 </TooltipWrapper>
               </div>
-              <div className="text-xs text-gray-600 mb-1">{Number(currentState?.weeklyDemand?.jacket||0)+Number(currentState?.weeklyDemand?.dress||0)+Number(currentState?.weeklyDemand?.pants||0)} units</div>
+              <div className="text-xs text-gray-600 mb-1">{Number(currentState?.weeklyDemand?.jacket||0)+Number(currentState?.weeklyDemand?.dress||0)+Number(currentState?.weeklyDemand?.pants||0)} units {(!isFinalWeek && Number(preview?.forecastDemandTotal||0)>0) ? `→ next week ~ ${Number(preview?.forecastDemandTotal||0).toLocaleString()} (forecast)` : ''}</div>
               <Sparkline points={[]} />
             </div>
           </div>
+          {/* KPI chips (last completed week) */}
+          {(() => {
+            const weeks = (weeksData?.weeks || []) as Array<any>;
+            const committed = weeks.filter((w: any) => Boolean(w.isCommitted));
+            const last = committed.length > 0 ? committed[committed.length - 1] : null;
+            const spend = last ? Number((last as any).marketingPlan?.totalSpend ?? (last as any).marketingSpend ?? 0) : 0;
+            const sales = last ? (last.weeklySales || {}) : {};
+            const units = Number(sales.jacket || 0) + Number(sales.dress || 0) + Number(sales.pants || 0);
+            const revenue = last ? Number(last.weeklyRevenue || 0) : 0;
+            const roas = spend > 0 ? revenue / spend : null;
+            const cac = units > 0 ? spend / units : null;
+            return (
+              <div className="mt-4 grid grid-cols-2 md:grid-cols-5 gap-3 text-sm">
+                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                  <div className="text-gray-500">Spend</div>
+                  <div className="font-medium">{last ? `£${Math.round(spend).toLocaleString()}` : '—'}</div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                  <div className="text-gray-500">ROAS</div>
+                  <div className="font-medium">{roas!=null ? `${roas.toFixed(2)}×` : '—'}</div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                  <div className="text-gray-500">CAC</div>
+                  <div className="font-medium">{cac!=null ? `£${Math.round(cac).toLocaleString()}` : '—'}</div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                  <div className="text-gray-500">Units sold</div>
+                  <div className="font-medium">{last ? units.toLocaleString() : '—'}</div>
+                </div>
+                <div className="rounded-lg border border-gray-200 bg-white px-3 py-2">
+                  <div className="text-gray-500">Revenue</div>
+                  <div className="font-medium">{last ? `£${Math.round(revenue).toLocaleString()}` : '—'}</div>
+                </div>
+              </div>
+            );
+          })()}
         </CardContent>
       </Card>
 
@@ -340,7 +435,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       );
                     })()}
                     <Slider value={[pct]} min={0} max={100} step={5} onValueChange={(v)=> handleChannelAllocationChange(channel.id, v[0] || 0)} />
-                    <div className="flex justify-between text-xs text-gray-500 mt-1"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
+                    <div className="flex justify-between text-xs text-gray-500 mt-2"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
                   </div>
                   <div className="text-right font-mono mt-1 sm:hidden">{pct.toFixed(0)}%</div>
                 </div>
