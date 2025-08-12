@@ -463,7 +463,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       const left = Math.max(0, Math.min(100, min - pad));
                       const width = Math.max(0, Math.min(100, (max + pad) - (min - pad)));
                       return (
-                        <div className="absolute top-[35%] -translate-y-1/2 h-2 bg-green-200/80 rounded"
+                        <div className="absolute top-[35%] -translate-y-1/2 h-1 bg-green-200/80 rounded"
                              style={{ left: `${left}%`, width: `${width}%` }} />
                       );
                     })()}
@@ -483,8 +483,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         </CardContent>
       </Card>
 
-      {/* Actions (sticky footer) */}
-      <div className="sticky bottom-0 left-0 right-0 -mx-6 px-6 py-4 bg-white/95 backdrop-blur border-t border-gray-200 z-20 flex items-center justify-between">
+      {/* Actions footer (normal pane at bottom) */}
+      <div className="mt-8 bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between">
         <Button variant="outline" onClick={()=> { setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }}>Reset to Preset</Button>
         <Button onClick={handleApplyNextWeek} disabled={updateStateMutation.isPending || Math.round(totalAllocation)!==100 || marketingSpend>headroom}>
           {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
