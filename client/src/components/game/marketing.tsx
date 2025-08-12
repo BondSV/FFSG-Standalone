@@ -9,7 +9,7 @@ import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { Megaphone, TrendingUp, Users, Eye, AlertTriangle, HelpCircle } from "lucide-react";
+import { Megaphone, TrendingUp, Users, Eye, AlertTriangle, HelpCircle, Share2, Sparkles, Newspaper, Tv, Search, MonitorSmartphone } from "lucide-react";
 import { DonutGauge } from "@/components/ui/donut-gauge";
 import { Sparkline } from "@/components/ui/sparkline";
 
@@ -21,13 +21,22 @@ interface MarketingProps {
 type PresetId = 'awareness' | 'balanced' | 'conversion';
 
 const marketingChannels = [
-  { id: 'social', name: 'Social Media', icon: Users, description: 'Efficient awareness and conversion; strong with Influencers and Search' },
-  { id: 'influencer', name: 'Influencer Marketing', icon: TrendingUp, description: 'Highest impact on awareness and intent; expensive; pairs best with Social' },
-  { id: 'print', name: 'Printed Ads', icon: Eye, description: 'Local/regional awareness support; modest conversion' },
-  { id: 'tv', name: 'TV Commercials', icon: Megaphone, description: 'Very costly broad awareness; low conversion for small brands' },
-  { id: 'google_search', name: 'Google Ads (Search)', icon: TrendingUp, description: 'High‑intent capture at point of demand; best in sales phases' },
-  { id: 'google_display', name: 'Google AdSense', icon: Eye, description: 'Cheap broad awareness; good for retarget with Social/Influencer' },
+  { id: 'social', name: 'Social Media', icon: Share2, description: 'Efficient awareness and conversion; strong with Influencers and Search' },
+  { id: 'influencer', name: 'Influencer Marketing', icon: Sparkles, description: 'Highest impact on awareness and intent; expensive; pairs best with Social' },
+  { id: 'print', name: 'Printed Ads', icon: Newspaper, description: 'Local/regional awareness support; modest conversion' },
+  { id: 'tv', name: 'TV Commercials', icon: Tv, description: 'Very costly broad awareness; low conversion for small brands' },
+  { id: 'google_search', name: 'Google Ads (Search)', icon: Search, description: 'High‑intent capture at point of demand; best in sales phases' },
+  { id: 'google_display', name: 'Google AdSense', icon: MonitorSmartphone, description: 'Cheap broad awareness; good for retarget with Social/Influencer' },
 ];
+
+const channelThemes: Record<string, { iconBg: string; iconColor: string; ring: string; gradientFrom: string; gradientTo: string; chipBg: string; chipText: string }> = {
+  social: { iconBg: 'bg-sky-100', iconColor: 'text-sky-700', ring: 'ring-sky-100', gradientFrom: 'from-sky-50', gradientTo: 'to-white', chipBg: 'bg-sky-100', chipText: 'text-sky-800' },
+  influencer: { iconBg: 'bg-fuchsia-100', iconColor: 'text-fuchsia-700', ring: 'ring-fuchsia-100', gradientFrom: 'from-fuchsia-50', gradientTo: 'to-white', chipBg: 'bg-fuchsia-100', chipText: 'text-fuchsia-800' },
+  print: { iconBg: 'bg-amber-100', iconColor: 'text-amber-700', ring: 'ring-amber-100', gradientFrom: 'from-amber-50', gradientTo: 'to-white', chipBg: 'bg-amber-100', chipText: 'text-amber-800' },
+  tv: { iconBg: 'bg-purple-100', iconColor: 'text-purple-700', ring: 'ring-purple-100', gradientFrom: 'from-purple-50', gradientTo: 'to-white', chipBg: 'bg-purple-100', chipText: 'text-purple-800' },
+  google_search: { iconBg: 'bg-emerald-100', iconColor: 'text-emerald-700', ring: 'ring-emerald-100', gradientFrom: 'from-emerald-50', gradientTo: 'to-white', chipBg: 'bg-emerald-100', chipText: 'text-emerald-800' },
+  google_display: { iconBg: 'bg-indigo-100', iconColor: 'text-indigo-700', ring: 'ring-indigo-100', gradientFrom: 'from-indigo-50', gradientTo: 'to-white', chipBg: 'bg-indigo-100', chipText: 'text-indigo-800' },
+};
 
 export default function Marketing({ gameSession, currentState }: MarketingProps) {
   const { toast } = useToast();
@@ -254,7 +263,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   <Button key={p} variant={preset===p?'default':'outline'} onClick={()=> setPreset(p)}>{p.charAt(0).toUpperCase()+p.slice(1)}</Button>
                 ))}
               </div>
-              <div className="text-xs text-gray-500 flex items-center gap-1"><HelpCircle size={12}/> Recommended this week: {recommendedPreset.charAt(0).toUpperCase()+recommendedPreset.slice(1)}</div>
+              <div className="text-xs text-gray-500 flex items-center gap-1"><HelpCircle size={12}/> Recommended for next week: {recommendedPreset.charAt(0).toUpperCase()+recommendedPreset.slice(1)}</div>
             </div>
             <div className="space-y-2">
               <Label>Discounts (next week)</Label>
@@ -304,10 +313,12 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               const Icon = channel.icon;
               const pct = Number(channelAllocation[channel.id] || 0);
               return (
-                <div key={channel.id} className="border border-gray-200 rounded-lg p-4">
+                <div key={channel.id} className={`rounded-xl p-4 border border-gray-200 ring-1 ${channelThemes[channel.id]?.ring || ''} bg-gradient-to-br ${channelThemes[channel.id]?.gradientFrom || 'from-white'} ${channelThemes[channel.id]?.gradientTo || 'to-white'}`}>
                   <div className="flex items-start justify-between mb-2">
                     <div className="flex items-center gap-3">
-                      <div className="p-2 bg-primary bg-opacity-10 rounded-lg"><Icon className="text-primary" size={18}/></div>
+                      <div className={`p-2 rounded-lg ${channelThemes[channel.id]?.iconBg || 'bg-gray-100'}`}>
+                        <Icon className={`${channelThemes[channel.id]?.iconColor || 'text-gray-700'}`} size={18}/>
+                      </div>
                       <div>
                         <div className="font-medium text-gray-900 flex items-center gap-2">
                           {channel.name}
@@ -316,6 +327,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                         <div className="text-xs text-gray-600">{channel.description}</div>
                       </div>
                     </div>
+                    <div className={`hidden sm:block rounded-full px-2 py-0.5 text-xs font-medium ${channelThemes[channel.id]?.chipBg || 'bg-gray-100'} ${channelThemes[channel.id]?.chipText || 'text-gray-800'}`}>{pct.toFixed(0)}%</div>
                   </div>
                   <div className="relative">
                     {(() => {
@@ -323,14 +335,14 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       const left = Math.max(0, Math.min(100, min));
                       const width = Math.max(0, Math.min(100, max - min));
                       return (
-                        <div className="absolute top-1/2 -translate-y-1/2 h-1 bg-green-200 rounded"
+                        <div className="absolute top-1/2 -translate-y-1/2 h-1.5 bg-green-200/80 rounded"
                              style={{ left: `${left}%`, width: `${width}%` }} />
                       );
                     })()}
                     <Slider value={[pct]} min={0} max={100} step={5} onValueChange={(v)=> handleChannelAllocationChange(channel.id, v[0] || 0)} />
                     <div className="flex justify-between text-xs text-gray-500 mt-1"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
                   </div>
-                  <div className="text-right font-mono mt-1">{pct.toFixed(0)}%</div>
+                  <div className="text-right font-mono mt-1 sm:hidden">{pct.toFixed(0)}%</div>
                 </div>
               );
             })}
