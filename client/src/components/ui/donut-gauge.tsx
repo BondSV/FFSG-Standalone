@@ -1,13 +1,13 @@
 import React from 'react';
 
 interface DonutGaugeProps {
-  label: string;
-  value?: number; // 0..100; if undefined, render placeholder
+  value?: number; // 0..100; if undefined, render empty ring
   colorClass?: string; // tailwind stroke color e.g. 'stroke-blue-500'
   size?: number; // px
+  showNumeric?: boolean; // optionally show number in center
 }
 
-export function DonutGauge({ label, value, colorClass = 'stroke-blue-500', size = 104 }: DonutGaugeProps) {
+export function DonutGauge({ value, colorClass = 'stroke-blue-500', size = 104, showNumeric = false }: DonutGaugeProps) {
   const radius = 44;
   const circumference = 2 * Math.PI * radius;
   const pct = Math.max(0, Math.min(100, Number.isFinite(value as number) ? (value as number) : 0));
@@ -28,19 +28,13 @@ export function DonutGauge({ label, value, colorClass = 'stroke-blue-500', size 
             strokeDasharray={`${dash} ${remainder}`}
             transform="rotate(-90)"
           />
-          <text textAnchor="middle" dominantBaseline="middle" className="fill-gray-900 text-sm font-semibold">
-            {Number.isFinite(value as number) ? `${Math.round(pct)}` : '—'}
-          </text>
+          {showNumeric && (
+            <text textAnchor="middle" dominantBaseline="middle" className="fill-gray-900 text-sm font-semibold">
+              {Number.isFinite(value as number) ? `${Math.round(pct)}` : '—'}
+            </text>
+          )}
         </g>
       </svg>
-      <div>
-        <div className="text-sm text-gray-600">{label}</div>
-        {Number.isFinite(value as number) ? (
-          <div className="text-xs text-gray-500">{Math.round(pct)}/100</div>
-        ) : (
-          <div className="text-xs text-gray-400">No data yet</div>
-        )}
-      </div>
     </div>
   );
 }

@@ -195,13 +195,37 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
       {/* Gauges */}
       <Card className="border border-gray-100 mb-6">
-        <CardHeader><CardTitle className="flex items-center gap-2">Awareness • Intent • Demand</CardTitle></CardHeader>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">Awareness • Intent to Buy • Demand</CardTitle>
+          <p className="text-sm text-gray-600">These indicators summarize how well people know about your brand (Awareness), how ready they are to purchase (Intent to Buy), and the units sold last week (Demand). Adjust your plan below and apply it to next week.</p>
+        </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
-            <div className="flex items-center"><DonutGauge label="Awareness" value={Number.isFinite(awarenessNow)?awarenessNow:undefined} colorClass="stroke-blue-500" /></div>
-            <div className="flex items-center"><DonutGauge label="Intent" value={Number.isFinite(intentNow)?intentNow:undefined} colorClass="stroke-emerald-500" /></div>
+            <div className="flex items-center gap-3">
+              <DonutGauge value={Number.isFinite(awarenessNow)?awarenessNow:undefined} colorClass="stroke-blue-500" />
+              <TooltipWrapper content="Awareness: how many people have heard about your product. Builds slowly with broad‑reach channels (Social, Influencers, Print/TV). Higher awareness enables faster growth in intent.">
+                <div>
+                  <div className="text-sm text-gray-700">Awareness</div>
+                  <div className="text-xs text-gray-500">Long‑term visibility</div>
+                </div>
+              </TooltipWrapper>
+            </div>
+            <div className="flex items-center gap-3">
+              <DonutGauge value={Number.isFinite(intentNow)?intentNow:undefined} colorClass="stroke-emerald-500" />
+              <TooltipWrapper content="Intent to Buy: readiness to purchase. Grows faster when awareness is already high and you focus on performance channels (Search) or promotions. Volatile if discounts change erratically.">
+                <div>
+                  <div className="text-sm text-gray-700">Intent to Buy</div>
+                  <div className="text-xs text-gray-500">Short‑term purchase motivation</div>
+                </div>
+              </TooltipWrapper>
+            </div>
             <div>
-              <div className="text-sm text-gray-600 mb-1">Demand (units, last week)</div>
+              <div className="text-sm text-gray-700 mb-1 flex items-center gap-1">
+                Demand (units, last week)
+                <TooltipWrapper content="Demand: units sold last week. Driven by Awareness × Intent and pricing (discounts). With no marketing activity, sales trend toward a low baseline.">
+                  <span className="text-gray-400">?</span>
+                </TooltipWrapper>
+              </div>
               <div className="text-xs text-gray-600 mb-1">{Number(currentState?.weeklyDemand?.jacket||0)+Number(currentState?.weeklyDemand?.dress||0)+Number(currentState?.weeklyDemand?.pants||0)} units</div>
               <Sparkline points={[]} />
             </div>
