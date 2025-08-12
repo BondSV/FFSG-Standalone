@@ -9,7 +9,9 @@ import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { Megaphone, TrendingUp, Users, Eye, AlertTriangle, Gauge, HelpCircle } from "lucide-react";
+import { Megaphone, TrendingUp, Users, Eye, AlertTriangle, HelpCircle } from "lucide-react";
+import { DonutGauge } from "@/components/ui/donut-gauge";
+import { Sparkline } from "@/components/ui/sparkline";
 
 interface MarketingProps {
   gameSession: any;
@@ -49,7 +51,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   };
 
   const recommendedPreset: PresetId = useMemo(() => {
-    if (currentWeek >= 2 && currentWeek <= 6) return 'awareness';
+    // Weeks 1–6: Awareness, 7–10: Balanced, 11–15: Conversion
+    if (currentWeek >= 1 && currentWeek <= 6) return 'awareness';
     if (currentWeek >= 7 && currentWeek <= 10) return 'balanced';
     return 'conversion';
   }, [currentWeek]);
@@ -117,8 +120,40 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   // TV inefficiency indicator (engine will waste TV if spend<£200k or TV share<10%)
   const tvInefficient = useMemo(() => {
     const tvPct = Number(channelAllocation['tv'] || 0);
-    return marketingSpend < 200000 || tvPct < 10;
+    const hasSpend = marketingSpend > 0 && tvPct > 0;
+    return hasSpend && (marketingSpend < 200000 || tvPct < 10);
   }, [channelAllocation, marketingSpend]);
+
+  // Recommended efficient zones by preset and channel (percent ranges)
+  const getEfficientRange = (p: PresetId, channelId: string): [number, number] => {
+    const map: Record<PresetId, Record<string, [number, number]>> = {
+      awareness: {
+        influencer: [25, 45],
+        social: [25, 40],
+        google_display: [10, 20],
+        print: [8, 15],
+        google_search: [3, 8],
+        tv: [5, 15],
+      },
+      balanced: {
+        social: [25, 35],
+        google_search: [20, 30],
+        influencer: [15, 25],
+        google_display: [10, 20],
+        print: [5, 10],
+        tv: [3, 10],
+      },
+      conversion: {
+        google_search: [25, 35],
+        influencer: [20, 30],
+        social: [20, 30],
+        google_display: [10, 20],
+        print: [0, 5],
+        tv: [0, 5],
+      },
+    };
+    return map[p][channelId] || [0, 0];
+  };
 
   const floorWarnings = useMemo(() => {
     const manuf = gameConstants?.MANUFACTURING || {};
@@ -160,25 +195,16 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
       {/* Gauges */}
       <Card className="border border-gray-100 mb-6">
-        <CardHeader><CardTitle className="flex items-center gap-2"><Gauge size={16}/> Awareness • Intent • Demand</CardTitle></CardHeader>
+        <CardHeader><CardTitle className="flex items-center gap-2">Awareness • Intent • Demand</CardTitle></CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {[
-              {label:'Awareness', value: awarenessNow},
-              {label:'Intent', value: intentNow},
-              {label:'Demand (units, last week)', value: Number(currentState?.weeklyDemand?.jacket||0)+Number(currentState?.weeklyDemand?.dress||0)+Number(currentState?.weeklyDemand?.pants||0)}
-            ].map((g, i)=> (
-              <div key={i} className="p-3 border rounded-lg">
-                <div className="flex items-center justify-between text-sm text-gray-600">
-                  <span>{g.label}</span>
-                  {i<2 && <span>{Math.round(g.value)}/100</span>}
-                </div>
-                <div className="mt-2 w-full bg-gray-200 h-2 rounded-full">
-                  <div className={`h-2 rounded-full ${i===0? 'bg-blue-500': i===1? 'bg-emerald-500': 'bg-indigo-500'}`} style={{ width: `${Math.min(100, i<2 ? g.value : 100)}%` }} />
-                </div>
-                {i===2 && <div className="mt-1 text-xs text-gray-600">{Number(g.value||0).toLocaleString()} units</div>}
-              </div>
-            ))}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
+            <div className="flex items-center"><DonutGauge label="Awareness" value={Number.isFinite(awarenessNow)?awarenessNow:undefined} colorClass="stroke-blue-500" /></div>
+            <div className="flex items-center"><DonutGauge label="Intent" value={Number.isFinite(intentNow)?intentNow:undefined} colorClass="stroke-emerald-500" /></div>
+            <div>
+              <div className="text-sm text-gray-600 mb-1">Demand (units, last week)</div>
+              <div className="text-xs text-gray-600 mb-1">{Number(currentState?.weeklyDemand?.jacket||0)+Number(currentState?.weeklyDemand?.dress||0)+Number(currentState?.weeklyDemand?.pants||0)} units</div>
+              <Sparkline points={[]} />
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -259,12 +285,24 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                     <div className="flex items-center gap-3">
                       <div className="p-2 bg-primary bg-opacity-10 rounded-lg"><Icon className="text-primary" size={18}/></div>
                       <div>
-                        <div className="font-medium text-gray-900">{channel.name}</div>
+                        <div className="font-medium text-gray-900 flex items-center gap-2">
+                          {channel.name}
+                          <TooltipWrapper content={channel.description}><span className="text-gray-400">?</span></TooltipWrapper>
+                        </div>
                         <div className="text-xs text-gray-600">{channel.description}</div>
                       </div>
                     </div>
                   </div>
-                  <div>
+                  <div className="relative">
+                    {(() => {
+                      const [min, max] = getEfficientRange(preset, channel.id);
+                      const left = Math.max(0, Math.min(100, min));
+                      const width = Math.max(0, Math.min(100, max - min));
+                      return (
+                        <div className="absolute top-1/2 -translate-y-1/2 h-1 bg-green-200 rounded"
+                             style={{ left: `${left}%`, width: `${width}%` }} />
+                      );
+                    })()}
                     <Slider value={[pct]} min={0} max={100} step={5} onValueChange={(v)=> handleChannelAllocationChange(channel.id, v[0] || 0)} />
                     <div className="flex justify-between text-xs text-gray-500 mt-1"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
                   </div>
@@ -281,8 +319,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         </CardContent>
       </Card>
 
-      {/* Actions */}
-      <div className="flex items-center gap-3">
+      {/* Actions (sticky footer) */}
+      <div className="sticky bottom-0 bg-white/90 backdrop-blur border-t border-gray-200 pt-4 flex items-center gap-3">
         <Button onClick={handleApplyNextWeek} disabled={updateStateMutation.isPending || Math.round(totalAllocation)!==100 || marketingSpend>headroom}>
           {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
         </Button>
