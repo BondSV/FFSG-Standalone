@@ -463,12 +463,12 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       const left = Math.max(0, Math.min(100, min - pad));
                       const width = Math.max(0, Math.min(100, (max + pad) - (min - pad)));
                       return (
-                        <div className="absolute top-[60%] -translate-y-1/2 h-2 bg-green-200/80 rounded"
+                        <div className="absolute top-[35%] -translate-y-1/2 h-2 bg-green-200/80 rounded"
                              style={{ left: `${left}%`, width: `${width}%` }} />
                       );
                     })()}
                     <Slider value={[pct]} min={0} max={100} step={5} onValueChange={(v)=> fineTune ? handleChannelAllocationChange(channel.id, v[0] || 0) : undefined} />
-                    <div className="flex justify-between text-xs text-gray-500 mt-3"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
+                    <div className="flex justify-between text-xs text-gray-500 mt-5"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
                   </div>
                   <div className="text-right font-mono mt-1 sm:hidden">{pct.toFixed(0)}%</div>
                 </div>
@@ -484,11 +484,11 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       </Card>
 
       {/* Actions (sticky footer) */}
-      <div className="sticky bottom-0 bg-white/90 backdrop-blur border-t border-gray-200 pt-4 flex items-center gap-3">
+      <div className="sticky bottom-0 left-0 right-0 -mx-6 px-6 py-4 bg-white/95 backdrop-blur border-t border-gray-200 z-20 flex items-center justify-between">
+        <Button variant="outline" onClick={()=> { setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }}>Reset to Preset</Button>
         <Button onClick={handleApplyNextWeek} disabled={updateStateMutation.isPending || Math.round(totalAllocation)!==100 || marketingSpend>headroom}>
           {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
-          </Button>
-        <Button variant="outline" onClick={()=> { setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }}>Reset to Preset</Button>
+        </Button>
       </div>
     </div>
   );
