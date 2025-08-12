@@ -426,6 +426,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           validationErrors: [],
           validationWarnings: [],
         };
+        // Apply planned marketing and discounts into next week's live plan
+        if ((computed as any).plannedMarketingPlan) {
+          nextWeekState.marketingPlan = (computed as any).plannedMarketingPlan;
+        }
+        if ((computed as any).plannedWeeklyDiscounts) {
+          nextWeekState.weeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
+        }
+        // Preserve plans for subsequent programming
+        nextWeekState.plannedMarketingPlan = (computed as any).plannedMarketingPlan;
+        nextWeekState.plannedWeeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
         await storage.createWeeklyState(nextWeekState);
       }
       

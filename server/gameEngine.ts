@@ -207,6 +207,53 @@ export class GameEngine {
   }
 
   // --------------------
+  // Marketing helpers
+  // --------------------
+  private static clamp(n: number, min: number, max: number): number { return Math.max(min, Math.min(max, n)); }
+
+  private static computeChannelGains(totalSpend: number, channels: Array<{ name: string; spend: number }>): { dA: number; dI: number } {
+    // Effects per £100k spend
+    const per100k: Record<string, { a: number; i: number }> = {
+      social: { a: 2.0, i: 3.0 },
+      influencer: { a: 3.0, i: 5.0 },
+      print: { a: 1.5, i: 0.5 },
+      tv: { a: 4.0, i: 0.5 },
+      google_search: { a: 0.5, i: 3.0 },
+      google_display: { a: 1.5, i: 1.0 },
+    };
+    const spendBy: Record<string, number> = {};
+    for (const c of channels || []) spendBy[c.name] = (spendBy[c.name] || 0) + Number(c.spend || 0);
+    const unit = 100000;
+    // TV waste rule
+    const tvSpend = spendBy['tv'] || 0;
+    const tvShare = totalSpend > 0 ? tvSpend / totalSpend : 0;
+    const tvEffective = (totalSpend < 200000 || tvShare < 0.10) ? 0 : tvSpend;
+    let dA = 0, dI = 0;
+    for (const [key, spend] of Object.entries(spendBy)) {
+      const effSpend = key === 'tv' ? tvEffective : spend;
+      const k = per100k[key] || { a: 0, i: 0 };
+      dA += (effSpend / unit) * k.a;
+      dI += (effSpend / unit) * k.i;
+    }
+    // Synergies apply to I gains only
+    const has = (k: string) => (spendBy[k] || 0) > 0;
+    let synergyI = 0;
+    if (has('social') && has('influencer')) synergyI += dI * 0.10;
+    if (has('social') && has('google_search')) synergyI += dI * 0.05;
+    if (has('google_display') && (has('social') || has('influencer'))) synergyI += dI * 0.04;
+    dI += synergyI;
+    return { dA, dI };
+  }
+
+  private static computeMarketingFactor(awareness: number, intent: number): number {
+    const A = this.clamp(awareness, 0, 100) / 100;
+    const I = this.clamp(intent, 0, 100) / 100;
+    const fA = 0.3 + 0.7 * Math.pow(A, 0.6);
+    const gI = 0.7 + 0.6 * Math.pow(I, 0.7);
+    return this.clamp(fA * gI, 0.3, 1.3);
+  }
+
+  // --------------------
   // Core weekly processing
   // --------------------
   static commitWeek(currentState: WeeklyState): WeeklyState {
@@ -417,8 +464,66 @@ export class GameEngine {
     }
     state.shipmentsInTransit = remainingShipments;
 
-    // 6) Sales for this week
+    // Update Awareness/Intent from this week's marketing plan prior to sales
+    const thisWeekPlan = (state as any).marketingPlan as any;
+    const totalSpendThisWeek = this.toNumber(thisWeekPlan?.totalSpend, 0);
+    const channelsThisWeek: Array<{ name: string; spend: number }> = (thisWeekPlan?.channels || []) as any;
+    let awareness = this.toNumber((state as any).awareness, 0);
+    let intent = this.toNumber((state as any).intent, 0);
+
+    // Gains from spend and synergies
+    const gains = this.computeChannelGains(totalSpendThisWeek, channelsThisWeek || []);
+    let dA = gains.dA;
+    let dI = gains.dI;
+
+    // Progressive decay when underfunded or below optimal
+    const baselineSpend = GAME_CONSTANTS.BASELINE_MARKETING_SPEND;
+    const belowHalf = totalSpendThisWeek > 0 && totalSpendThisWeek < 0.5 * baselineSpend;
+    const zeroSpend = totalSpendThisWeek <= 0;
+    (state as any).underfundedStreakA = this.toNumber((state as any).underfundedStreakA, 0);
+    (state as any).underfundedStreakI = this.toNumber((state as any).underfundedStreakI, 0);
+    if (zeroSpend) {
+      (state as any).underfundedStreakA += 1;
+      (state as any).underfundedStreakI += 1;
+      dA -= 1.0 + 0.5 * ((state as any).underfundedStreakA - 1);
+      dI -= 2.0 + 1.0 * ((state as any).underfundedStreakI - 1);
+    } else if (belowHalf) {
+      (state as any).underfundedStreakA += 1;
+      (state as any).underfundedStreakI += 1;
+      dA -= 0.5 + 0.25 * ((state as any).underfundedStreakA - 1);
+      dI -= 1.0 + 0.5 * ((state as any).underfundedStreakI - 1);
+    } else {
+      (state as any).underfundedStreakA = 0;
+      (state as any).underfundedStreakI = 0;
+    }
+
+    // Discount behavior penalties on Intent
     const discounts = this.cloneJson(state.weeklyDiscounts);
+    (state as any).lastDiscountAvg = this.toNumber((state as any).lastDiscountAvg, 0);
+    (state as any).discountDeepenStreak = this.toNumber((state as any).discountDeepenStreak, 0);
+    const avgDiscount = (this.toNumber((discounts as any).jacket, 0) + this.toNumber((discounts as any).dress, 0) + this.toNumber((discounts as any).pants, 0)) / 3;
+    if (avgDiscount > (state as any).lastDiscountAvg + 0.005) {
+      (state as any).discountDeepenStreak += 1;
+    } else if (avgDiscount < (state as any).lastDiscountAvg - 0.005) {
+      // dropping discounts after deep sales causes immediate intent drop
+      if ((state as any).lastDiscountAvg >= 0.30) {
+        dI -= 8;
+      }
+      (state as any).discountDeepenStreak = 0;
+    }
+    if ((state as any).discountDeepenStreak >= 3) {
+      dI -= 5; // waiting for better deals effect
+    }
+    (state as any).lastDiscountAvg = avgDiscount;
+
+    // Apply gains/decays with caps and A→I dependency
+    awareness = this.clamp(awareness + dA, 0, 100);
+    intent = this.clamp(intent + Math.min(dI, awareness - intent + 10), 0, 100);
+    (state as any).awareness = awareness;
+    (state as any).intent = intent;
+
+    // 6) Sales for this week
+    // discounts already defined above
     // Automatic run-out markdowns override
     if (week === 13) { discounts.jacket = 0.20; discounts.dress = 0.20; discounts.pants = 0.20; }
     if (week === 14) { discounts.jacket = 0.35; discounts.dress = 0.35; discounts.pants = 0.35; }
@@ -445,6 +550,8 @@ export class GameEngine {
     const totMkt = this.toNumber((state.totals as any)?.cogsMarketingToDate);
     const actualUnitCost = this.calculateActualUnitCost(totRev, totMat, totProd, totLog, totMkt, Math.max(1, totUnitsSold));
 
+    // Compute marketing factor once for the week
+    const marketingFactor = this.computeMarketingFactor(awareness, intent);
     for (const p of productKeys) {
       const dec = (state.productData as any)[p];
       const rrp = this.toNumber(dec?.rrp);
@@ -452,7 +559,8 @@ export class GameEngine {
       const discount = this.toNumber((discounts as any)[p]);
       const price = rrp * (1 - discount);
       // Demand
-      const demand = this.calculateDemand(p, week, rrp, discount, marketingSpend, hasPrint);
+      const baseDemand = this.calculateDemand(p, week, rrp, discount, 0, hasPrint);
+      const demand = Math.round(baseDemand * marketingFactor);
       demandByProduct[p] = demand;
 
       // Available inventory for sale
@@ -731,9 +839,6 @@ export class GameEngine {
     const finalPrice = rrp * (1 - discount);
     const priceEffect = Math.pow(rrp / finalPrice, productData.elasticity);
     
-    // Promo lift
-    const promoLift = Math.max(0.2, marketingSpend / GAME_CONSTANTS.BASELINE_MARKETING_SPEND);
-    
     // Positioning effect 
     const priceRatio = (rrp / productData.hmPrice) - 1;
     const positioningEffect = 1 + (0.8 / (1 + Math.exp(-(-50) * (priceRatio - 0.20)))) - 0.4;
@@ -741,7 +846,8 @@ export class GameEngine {
     // Design appeal effect
     const designEffect = hasPrint ? 1.05 : 0.95;
     
-    return Math.round(baseUnits * seasonality * priceEffect * promoLift * positioningEffect * designEffect);
+    // Base demand before Awareness/Intent adjustment; marketingSpend no longer directly boosts demand
+    return Math.round(baseUnits * seasonality * priceEffect * positioningEffect * designEffect);
   }
   
   static calculateProjectedUnitCost(
@@ -1012,6 +1118,12 @@ export class GameEngine {
       materialInventory: {},
       marketingSpend: '0', // legacy UI field
       marketingPlan: { totalSpend: 0 } as any,
+      plannedMarketingPlan: { totalSpend: 0 } as any,
+      plannedWeeklyDiscounts: { jacket: 0, dress: 0, pants: 0 } as any,
+      awareness: 0,
+      intent: 0,
+      lastDiscountAvg: 0,
+      discountDeepenStreak: 0,
       weeklyDiscounts: { jacket: 0, dress: 0, pants: 0 },
       weeklyRevenue: '0',
       weeklyDemand: { jacket: 0, dress: 0, pants: 0 },

@@ -296,6 +296,16 @@ export interface ExtendedWeeklyState {
   productionSchedule: { batches: ProductionBatchPlan[] };
   procurementContracts: { contracts: ProcurementContract[] };
   marketingPlan?: MarketingPlan;
+  // Planned marketing to be applied to NEXT week when week is committed
+  plannedMarketingPlan?: MarketingPlan;
+  // Planned discounts to be applied to NEXT week when week is committed
+  plannedWeeklyDiscounts?: WeeklyDiscountsByProduct;
+  // Awareness and Intent state variables (0..100)
+  awareness?: number;
+  intent?: number;
+  // Discount trend tracking (for intent penalties)
+  lastDiscountAvg?: number; // last week's average discount 0..1
+  discountDeepenStreak?: number; // consecutive weeks of deeper discounts
   weeklyDiscounts: WeeklyDiscountsByProduct;
   weeklyDemand: WeeklyDemandByProduct;
   weeklySales: WeeklySalesByProduct;
