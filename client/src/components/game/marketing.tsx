@@ -376,7 +376,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               <div className="relative">
                 {/* Efficient zone band: £200k–£600k */}
                 <div
-                  className="absolute top-1/2 -translate-y-1/2 h-1 bg-amber-300/80 rounded z-10 pointer-events-none"
+                  className="absolute top-1/2 -translate-y-1/2 h-1 bg-emerald-300/80 rounded z-10 pointer-events-none"
                   style={{ left: '20%', width: '40%' }}
                 />
                 <Slider
@@ -395,7 +395,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                 <span>{formatCurrency(marketingSpend)}</span>
                 <span>£1,000,000</span>
               </div>
-              <div className="text-xs text-gray-500">Efficient zone (≈ £200k–£600k) highlighted.</div>
+              <div className="text-xs text-gray-500">Efficient zone highlighted</div>
             </div>
             <div className="space-y-2">
               <Label>Preset</Label>
@@ -487,7 +487,18 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                              style={{ left: `${left}%`, width: `${width}%` }} />
                       );
                     })()}
-                    <Slider value={[pct]} min={0} max={100} step={5} onValueChange={(v)=> fineTune ? handleChannelAllocationChange(channel.id, v[0] || 0) : undefined} />
+                    {/* Efficient zone band overlay */}
+                    <div className="absolute top-1/2 -translate-y-1/2 h-1 bg-emerald-300/80 rounded z-10 pointer-events-none" style={{ left: `${left}%`, width: `${width}%` }} />
+                    <Slider
+                      value={[pct]}
+                      min={0}
+                      max={100}
+                      step={5}
+                      onValueChange={(v)=> fineTune ? handleChannelAllocationChange(channel.id, v[0] || 0) : undefined}
+                      trackClassName="bg-gray-200"
+                      rangeClassName="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500"
+                      thumbClassName="border-amber-500"
+                    />
                     <div className="flex justify-between text-xs text-gray-500 mt-5"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
                   </div>
                   <div className="text-right font-mono mt-1 sm:hidden">{pct.toFixed(0)}%</div>
