@@ -459,6 +459,11 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             {marketingChannels.map((channel) => {
               const Icon = channel.icon;
               const pct = Number(channelAllocation[channel.id] || 0);
+              // Efficient zone bounds (percent of slider) widened with padding
+              const [minEZ, maxEZ] = getEfficientRange(preset, channel.id);
+              const padEZ = 6;
+              const leftPct = Math.max(0, Math.min(100, minEZ - padEZ));
+              const widthPct = Math.max(0, Math.min(100, (maxEZ + padEZ) - (minEZ - padEZ)));
               return (
                 <div key={channel.id} className={`rounded-xl p-4 border border-gray-200 ring-1 ${channelThemes[channel.id]?.ring || ''} bg-gradient-to-br ${channelThemes[channel.id]?.gradientFrom || 'from-white'} ${channelThemes[channel.id]?.gradientTo || 'to-white'}`}>
                   <div className="flex items-start justify-between mb-2">
@@ -477,18 +482,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                     <div className={`hidden sm:block rounded-full px-2 py-0.5 text-xs font-medium ${channelThemes[channel.id]?.chipBg || 'bg-gray-100'} ${channelThemes[channel.id]?.chipText || 'text-gray-800'}`}>{pct.toFixed(0)}%</div>
                   </div>
                   <div className="relative">
-                    {(() => {
-                      const [min, max] = getEfficientRange(preset, channel.id);
-                      const pad = 6; // widen band by padding both sides
-                      const left = Math.max(0, Math.min(100, min - pad));
-                      const width = Math.max(0, Math.min(100, (max + pad) - (min - pad)));
-                      return (
-                        <div className="absolute top-[35%] -translate-y-1/2 h-1 bg-green-200/80 rounded"
-                             style={{ left: `${left}%`, width: `${width}%` }} />
-                      );
-                    })()}
                     {/* Efficient zone band overlay */}
-                    <div className="absolute top-1/2 -translate-y-1/2 h-1 bg-emerald-300/80 rounded z-10 pointer-events-none" style={{ left: `${left}%`, width: `${width}%` }} />
+                    <div className="absolute top-1/2 -translate-y-1/2 h-1 bg-emerald-300/80 rounded z-10 pointer-events-none" style={{ left: `${leftPct}%`, width: `${widthPct}%` }} />
                     <Slider
                       value={[pct]}
                       min={0}
