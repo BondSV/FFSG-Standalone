@@ -388,6 +388,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   trackClassName="bg-gray-200"
                   rangeClassName="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500"
                   thumbClassName="border-amber-500"
+                  zones={[{ left: 20, width: 40 }]}
                 />
               </div>
               <div className="flex items-center justify-between text-xs text-gray-600">
@@ -482,8 +483,6 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                     <div className={`hidden sm:block rounded-full px-2 py-0.5 text-xs font-medium ${channelThemes[channel.id]?.chipBg || 'bg-gray-100'} ${channelThemes[channel.id]?.chipText || 'text-gray-800'}`}>{pct.toFixed(0)}%</div>
                   </div>
                   <div className="relative">
-                    {/* Efficient zone band overlay (inside slider) */}
-                    <div className="absolute top-1/2 -translate-y-1/2 h-1 bg-emerald-300/80 rounded z-30 pointer-events-none" style={{ left: `${leftPct}%`, width: `${widthPct}%` }} />
                     <Slider
                       value={[pct]}
                       min={0}
@@ -493,6 +492,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       trackClassName="bg-gray-200"
                       rangeClassName="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500"
                       thumbClassName="border-amber-500"
+                      zones={[{ left: leftPct, width: widthPct }]}
                     />
                     <div className="flex justify-between text-xs text-gray-500 mt-5"><span>0%</span><span>Efficient zone</span><span>100%</span></div>
                   </div>
