@@ -211,37 +211,47 @@ export class GameEngine {
   // --------------------
   private static clamp(n: number, min: number, max: number): number { return Math.max(min, Math.min(max, n)); }
 
-  private static computeChannelGains(totalSpend: number, channels: Array<{ name: string; spend: number }>): { dA: number; dI: number } {
-    // Effects per £100k spend
+  private static computeChannelGains(
+    totalSpend: number,
+    channels: Array<{ name: string; spend: number }>,
+    currentAwareness: number,
+    currentIntent: number
+  ): { dA: number; dI: number } {
+    // Rebalanced effects per £100k spend (higher A growth in awareness channels; search stronger on I)
     const per100k: Record<string, { a: number; i: number }> = {
-      social: { a: 2.0, i: 3.0 },
-      influencer: { a: 3.0, i: 5.0 },
-      print: { a: 1.5, i: 0.5 },
-      tv: { a: 4.0, i: 0.5 },
-      google_search: { a: 0.5, i: 3.0 },
-      google_display: { a: 1.5, i: 1.0 },
+      social: { a: 2.8, i: 2.2 },
+      influencer: { a: 3.6, i: 4.5 },
+      print: { a: 1.2, i: 0.4 },
+      tv: { a: 5.0, i: 0.3 },
+      google_search: { a: 0.4, i: 3.8 },
+      google_display: { a: 1.6, i: 1.0 },
     };
     const spendBy: Record<string, number> = {};
     for (const c of channels || []) spendBy[c.name] = (spendBy[c.name] || 0) + Number(c.spend || 0);
     const unit = 100000;
-    // TV waste rule
+    // TV waste rule (unchanged)
     const tvSpend = spendBy['tv'] || 0;
     const tvShare = totalSpend > 0 ? tvSpend / totalSpend : 0;
     const tvEffective = (totalSpend < 200000 || tvShare < 0.10) ? 0 : tvSpend;
-    let dA = 0, dI = 0;
+    let dA = 0, dIraw = 0;
     for (const [key, spend] of Object.entries(spendBy)) {
       const effSpend = key === 'tv' ? tvEffective : spend;
       const k = per100k[key] || { a: 0, i: 0 };
       dA += (effSpend / unit) * k.a;
-      dI += (effSpend / unit) * k.i;
+      dIraw += (effSpend / unit) * k.i;
     }
-    // Synergies apply to I gains only
+    // Synergies on I
     const has = (k: string) => (spendBy[k] || 0) > 0;
-    let synergyI = 0;
-    if (has('social') && has('influencer')) synergyI += dI * 0.10;
-    if (has('social') && has('google_search')) synergyI += dI * 0.05;
-    if (has('google_display') && (has('social') || has('influencer'))) synergyI += dI * 0.04;
-    dI += synergyI;
+    let dI = dIraw;
+    if (has('social') && has('influencer')) dI += dIraw * 0.15; // stronger creator synergy
+    if (has('social') && has('google_search')) dI += dIraw * 0.08; // social primes search
+    if (has('google_display') && (has('social') || has('influencer'))) dI += dIraw * 0.06; // retargeting support
+
+    // Intent growth depends on Awareness: very slow when A is low, fast when A is high
+    const A01 = this.clamp(currentAwareness, 0, 100) / 100;
+    const awarenessGate = 0.2 + 0.8 * Math.pow(A01, 1.25); // 0.2..1.0
+    dI = dI * awarenessGate;
+
     return { dA, dI };
   }
 
@@ -265,7 +275,7 @@ export class GameEngine {
     let intent = this.toNumber(state.intent, 0);
 
     // Gains from spend and synergies
-    const { dA: gainsA, dI: gainsI } = this.computeChannelGains(totalSpend, channels);
+    const { dA: gainsA, dI: gainsI } = this.computeChannelGains(totalSpend, channels, this.toNumber(state.awareness, 0), this.toNumber(state.intent, 0));
     let dA = gainsA;
     let dI = gainsI;
 
@@ -538,7 +548,7 @@ export class GameEngine {
     let intent = this.toNumber((state as any).intent, 0);
 
     // Gains from spend and synergies
-    const gains = this.computeChannelGains(totalSpendThisWeek, channelsThisWeek || []);
+    const gains = this.computeChannelGains(totalSpendThisWeek, channelsThisWeek || [], awareness, intent);
     let dA = gains.dA;
     let dI = gains.dI;
 

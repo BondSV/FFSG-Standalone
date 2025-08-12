@@ -372,9 +372,30 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="space-y-2">
-              <Label>Total Budget (£)</Label>
-              <Input type="number" value={marketingSpend} onChange={(e)=> setMarketingSpend(Math.max(0, Number(e.target.value||0)))} />
-              <div className="text-xs text-gray-500">Affordable headroom now: {formatCurrency(headroom)}</div>
+              <Label>Next Week Budget</Label>
+              <div className="relative">
+                {/* Efficient zone band: £200k–£600k */}
+                <div className="absolute left-0 right-0 top-[35%] -translate-y-1/2 h-1 bg-amber-200/60 rounded" style={{
+                  left: '20%', // £200k of £1m
+                  width: '40%', // 200k..600k span
+                }}/>
+                <Slider
+                  value={[Math.min(1000000, Math.max(0, marketingSpend))]}
+                  onValueChange={([v])=> setMarketingSpend(Math.round(v/5000)*5000)}
+                  min={0}
+                  max={1000000}
+                  step={5000}
+                  trackClassName="bg-gray-200"
+                  rangeClassName="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500"
+                  thumbClassName="border-amber-500"
+                />
+              </div>
+              <div className="flex items-center justify-between text-xs text-gray-600">
+                <span>£0</span>
+                <span>{formatCurrency(marketingSpend)}</span>
+                <span>£1,000,000</span>
+              </div>
+              <div className="text-xs text-gray-500">Efficient zone highlighted. Affordable headroom now: {formatCurrency(headroom)}</div>
               {marketingSpend > headroom && (<div className="text-xs text-red-600 flex items-center gap-1"><AlertTriangle size={12}/> Exceeds affordable headroom</div>)}
             </div>
             <div className="space-y-2">
