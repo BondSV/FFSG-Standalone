@@ -395,12 +395,13 @@ export class GameEngine {
           c.paidSoFar += due;
         }
       } else if (c.type === 'GMC') {
-        // Payment per batch order with 2-week settlement AFTER arrival; orders stored in c.gmcOrders
-        const orders = (c as any).gmcOrders || [];
-        for (const o of orders) {
-          const leadForSupplier = this.getSupplierLeadTime(c.supplier as SupplierKey);
-          if (week === this.toNumber(o.week) + leadForSupplier + 2) {
-            const due = this.toNumber(o.units) * this.toNumber(o.unitPrice ?? unitPrice);
+        // Payment per delivery with 2-week settlement AFTER arrival; good units only
+        const deliveries = (c as any).deliveries || [];
+        for (const d of deliveries) {
+          if (week === this.toNumber(d.week) + 2) {
+            const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
+            const u = this.toNumber(d.unitPrice ?? unitPrice);
+            const due = goodUnits * u;
             operationalOutflows += due;
             costMaterials += due;
             c.paidSoFar += due;
@@ -412,18 +413,26 @@ export class GameEngine {
     // 2) Receive material deliveries scheduled for this week; account for defects for Supplier-2
     for (const c of contracts) {
       c.deliveredUnits = this.toNumber(c.deliveredUnits);
-      // For GMC, build synthetic deliveries from gmcOrders (lead time)
+      // For GMC, build synthetic deliveries from gmcOrders (lead time), also carry goodUnits
       if (c.type === 'GMC' && !(c.deliveries && c.deliveries.length)) {
         const orders = (c as any).gmcOrders || [];
         const lead = this.getSupplierLeadTime(c.supplier as SupplierKey);
         const unitPrice = this.computeContractUnitPrice(c);
-        c.deliveries = orders.map((o: any) => ({ week: this.toNumber(o.week) + lead, units: this.toNumber(o.units), unitPrice }));
+        const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
+        c.deliveries = orders.map((o: any) => {
+          const units = this.toNumber(o.units);
+          const arrWeek = this.toNumber(o.week) + lead;
+          const uPrice = this.toNumber(o.unitPrice ?? unitPrice);
+          const goodUnits = Math.round(units * (1 - defectRate));
+          return { week: arrWeek, units, goodUnits, unitPrice: uPrice } as any;
+        });
       }
       for (const d of c.deliveries || []) {
         if (d.week === week) {
           const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
-          const defectiveUnits = Math.round(d.units * defectRate);
-          const goodUnits = d.units - defectiveUnits;
+          const precomputedGood = this.toNumber((d as any).goodUnits, NaN);
+          const goodUnits = Number.isFinite(precomputedGood) ? precomputedGood : (d.units - Math.round(d.units * defectRate));
+          (d as any).goodUnits = goodUnits;
           // Update raw materials inventory on-hand
           const matKey = c.material as MaterialKey;
           const entry: any = state.rawMaterials[matKey] || { onHand: 0, allocated: 0, inTransit: [] };
@@ -473,6 +482,13 @@ export class GameEngine {
       operationalOutflows += productionCash;
       costProduction += productionCash;
 
+      // Pay logistics (shipping) cost immediately on batch schedule as per rules
+      const shipMethodAtSchedule = (b.shipping || 'standard') as 'standard' | 'expedited';
+      const shipUnitCostAtSchedule = this.getShippingUnitCost(product, shipMethodAtSchedule);
+      const shippingCashAtSchedule = quantity * shipUnitCostAtSchedule;
+      operationalOutflows += shippingCashAtSchedule;
+      costLogistics += shippingCashAtSchedule;
+
       // Add to WIP with completion at end of week startWeek + lead
       const endWeek = week + prodLead;
       (state.workInProcess as any).batches.push({
@@ -507,9 +523,7 @@ export class GameEngine {
           // Available for sale at start of the week AFTER shipping completes
           arrivalWeek: week + shipWeeks + 1,
         });
-        const shippingCash = wb.quantity * shipUnitCost;
-        operationalOutflows += shippingCash;
-        costLogistics += shippingCash;
+        // Shipping cost was already paid at scheduling time
       } else {
         remainingWip.push(wb);
       }
@@ -674,27 +688,28 @@ export class GameEngine {
     costHolding = this.calculateHoldingCosts(invValue);
     operationalOutflows += costHolding;
 
-    // 8) Apply cash waterfall
-    // Start: opening cash, then add revenue
-    cashOnHand = openingCash + weeklyRevenue;
-    // Subtract operational outflows, drawing credit if needed
+    // 8) Apply cash waterfall (timing-aware)
+    // Start-of-week: pay interest accrued on last week's ending credit balance
+    costInterest = this.calculateInterest(creditUsed);
+    if (openingCash >= costInterest) {
+      openingCash -= costInterest;
+    } else {
+      const shortfallInt = costInterest - openingCash;
+      creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallInt);
+      openingCash = 0;
+    }
+    // Then pay operational outflows scheduled for this week before sales cash arrives
+    cashOnHand = openingCash;
     if (cashOnHand >= operationalOutflows) {
       cashOnHand -= operationalOutflows;
     } else {
-      const shortfall = operationalOutflows - cashOnHand;
-      creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfall);
+      const shortfallOps = operationalOutflows - cashOnHand;
+      creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallOps);
       cashOnHand = 0;
     }
-    // Interest on credit after operations
-    costInterest = this.calculateInterest(creditUsed);
-    if (cashOnHand >= costInterest) {
-      cashOnHand -= costInterest;
-    } else {
-      const shortfall = costInterest - cashOnHand;
-      creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfall);
-      cashOnHand = 0;
-    }
-    // Auto paydown principal
+    // Add this week's revenue from sales
+    cashOnHand += weeklyRevenue;
+    // Auto paydown principal at end of week if cash remains
     if (cashOnHand > 0 && creditUsed > 0) {
       const payDown = Math.min(cashOnHand, creditUsed);
       creditUsed -= payDown;
@@ -1135,8 +1150,11 @@ export class GameEngine {
     const prod = currentState.productionSchedule as any;
     for (const b of prod?.batches || []) {
       if (b.startWeek === weekNumber) {
-        immediatePayments += Number(b.quantity || 0) * this.getProductionUnitCost(b.product, b.method);
-        // Shipping will be paid at production completion; skip here
+        const qty = Number(b.quantity || 0);
+        immediatePayments += qty * this.getProductionUnitCost(b.product, b.method);
+        // Shipping is paid immediately on batch schedule
+        const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
+        immediatePayments += qty * this.getShippingUnitCost(b.product, shipMethod);
       }
     }
     // Marketing spend

@@ -69,23 +69,9 @@ export default function Sidebar({ activeTab, onTabChange, currentState }: Sideba
             const pricesLocked = Boolean((currentState?.productData?.jacket?.rrpLocked
               && currentState?.productData?.dress?.rrpLocked
               && currentState?.productData?.pants?.rrpLocked));
-            // Lock until prices locked, except overview/pricing. Additionally, lock Production until there is some purchased material scheduled to arrive.
-            // Lock Logistics until Production is scheduled.
-            // Unlock Production as soon as there is any order placed (historic or this week).
-            const hasAnyOrders = Boolean(
-              (currentState?.materialPurchases && (currentState?.materialPurchases as any[]).length > 0) ||
-              // Fallback: check contracts if materialPurchases not present in this state snapshot
-              ((currentState?.procurementContracts?.contracts || []).some((c: any) => (c.gmcOrders && c.gmcOrders.length > 0) || (c.type === 'SPT' && Number(c.units) > 0)))
-            );
-            const hasProductionScheduled = Boolean(
-              (currentState?.productionSchedule?.batches || []).some((b: any) =>
-                Number(b.quantity) > 0
-              )
-            );
+            // Lock until prices locked, except overview/pricing. No extra gating for Production or Inventory & Logistics.
             const baseAllowed = tab.id === 'overview' || tab.id === 'pricing' || pricesLocked;
-            const productionUnlocked = baseAllowed && (tab.id !== 'production' || hasAnyOrders);
-            const logisticsUnlocked = productionUnlocked && (tab.id !== 'logistics' || hasProductionScheduled);
-            const allowTab = logisticsUnlocked;
+            const allowTab = baseAllowed;
             const isDisabled = !allowTab;
             
             return (

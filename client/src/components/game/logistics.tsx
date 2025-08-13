@@ -115,24 +115,43 @@ export default function Logistics({ gameSession, currentState }: LogisticsProps)
           {/* Raw materials arrivals timeline */}
           <Card className="border border-gray-100 mb-6">
             <CardHeader>
-              <CardTitle>Raw Materials Arrivals</CardTitle>
+              <CardTitle>Fabrics Arrivals (planned)</CardTitle>
             </CardHeader>
             <CardContent>
-              <ChartContainer
-                config={Object.fromEntries(rmMaterials.map((m: string, i: number)=> [m, { label: m, color: `hsl(${(i*80)%360} 70% 50%)` }]))}
-                className="h-64 w-full"
-              >
-                <BarChart data={rmChartData}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="week" />
-                  <YAxis />
-                  <ChartTooltip content={<ChartTooltipContent />} />
-                  <ChartLegend content={<ChartLegendContent />} />
-                  {rmMaterials.map((m: string, i: number)=> (
-                    <Bar key={m} dataKey={m} stackId="a" fill={`var(--color-${m})`} />
-                  ))}
-                </BarChart>
-              </ChartContainer>
+              <div className="space-y-4">
+                {rmMaterials.length === 0 ? (
+                  <div className="text-gray-500 text-sm">No planned arrivals yet</div>
+                ) : (
+                  rmMaterials.map((mat: string, idx: number) => {
+                    const arrivals = (inventory?.rawMaterials || []).find((r: any)=> r.material===mat)?.inTransitByWeek || [];
+                    const minW = rmWeeks[0] || 0;
+                    const maxW = rmWeeks[rmWeeks.length-1] || 0;
+                    const span = Math.max(1, maxW - minW);
+                    return (
+                      <div key={mat} className="">
+                        <div className="text-sm font-medium text-gray-900 mb-1">{mat}</div>
+                        <div className="relative h-8 rounded bg-gray-100">
+                          <div className="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-0.5 bg-gray-300" />
+                          {arrivals.map((it: any, i: number) => {
+                            const w = Number(it.week);
+                            const qty = Number(it.quantity || 0);
+                            const leftPct = ((w - minW) / span) * 100;
+                            const size = Math.max(8, Math.min(24, (qty / 25000) * 8));
+                            return (
+                              <div key={i} className="absolute" style={{ left: `${leftPct}%`, top: '50%', transform: 'translate(-50%, -50%)' }}>
+                                <div className="rounded-full bg-emerald-500 shadow ring-2 ring-white" style={{ width: size, height: size }} title={`W${w} • ${qty.toLocaleString()} units`} />
+                              </div>
+                            );
+                          })}
+                          <div className="absolute left-0 top-full mt-1 text-[10px] text-gray-500">W{minW}</div>
+                          <div className="absolute right-0 top-full mt-1 text-[10px] text-gray-500">W{maxW}</div>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+              <div className="text-xs text-gray-500 mt-3">Dots indicate planned fabric arrivals by week; size reflects quantity (25k = small dot)</div>
             </CardContent>
           </Card>
 
@@ -223,60 +242,60 @@ export default function Logistics({ gameSession, currentState }: LogisticsProps)
         </TabsContent>
 
         <TabsContent value="logistics">
-          {/* Shipping Options Overview */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-            {/* Standard Shipping */}
-            <Card className="border border-gray-100">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Truck size={20} />
-                  <TooltipWrapper content="Lower cost shipping option with a 2-week transit time.">
-                    <span className="cursor-help">Standard Shipping</span>
-                  </TooltipWrapper>
-                </CardTitle>
-                <p className="text-sm text-gray-600">Cost-effective option with longer transit time</p>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Clock size={16} className="text-gray-500" />
-                    <span className="font-medium">Transit Time</span>
-                  </div>
-                  <Badge variant="outline">2 weeks</Badge>
-                </div>
-              </CardContent>
-            </Card>
+      {/* Shipping Options Overview */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+        {/* Standard Shipping */}
+        <Card className="border border-gray-100">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Truck size={20} />
+              <TooltipWrapper content="Lower cost shipping option with a 2-week transit time.">
+                <span className="cursor-help">Standard Shipping</span>
+              </TooltipWrapper>
+            </CardTitle>
+            <p className="text-sm text-gray-600">Cost-effective option with longer transit time</p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Clock size={16} className="text-gray-500" />
+                <span className="font-medium">Transit Time</span>
+              </div>
+              <Badge variant="outline">2 weeks</Badge>
+            </div>
+          </CardContent>
+        </Card>
 
-            {/* Expedited Shipping */}
-            <Card className="border border-gray-100">
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  <Zap size={20} />
-                  <TooltipWrapper content="A premium, higher-cost shipping option with a 1-week transit time. Use this to get products to market faster.">
-                    <span className="cursor-help">Expedited Shipping</span>
-                  </TooltipWrapper>
-                </CardTitle>
-                <p className="text-sm text-gray-600">Premium option for faster delivery</p>
-              </CardHeader>
-              <CardContent>
-                <div className="flex items-center justify-between p-3 bg-primary bg-opacity-10 rounded-lg">
-                  <div className="flex items-center gap-2">
-                    <Clock size={16} className="text-primary" />
-                    <span className="font-medium text-primary">Transit Time</span>
-                  </div>
-                  <Badge className="bg-primary text-white">1 week</Badge>
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+        {/* Expedited Shipping */}
+        <Card className="border border-gray-100">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Zap size={20} />
+              <TooltipWrapper content="A premium, higher-cost shipping option with a 1-week transit time. Use this to get products to market faster.">
+                <span className="cursor-help">Expedited Shipping</span>
+              </TooltipWrapper>
+            </CardTitle>
+            <p className="text-sm text-gray-600">Premium option for faster delivery</p>
+          </CardHeader>
+          <CardContent>
+            <div className="flex items-center justify-between p-3 bg-primary bg-opacity-10 rounded-lg">
+              <div className="flex items-center gap-2">
+                <Clock size={16} className="text-primary" />
+                <span className="font-medium text-primary">Transit Time</span>
+              </div>
+              <Badge className="bg-primary text-white">1 week</Badge>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
 
           {/* Availability Timeline (read-only) */}
-          <Card className="border border-gray-100 mt-6">
-            <CardHeader>
+      <Card className="border border-gray-100 mt-6">
+        <CardHeader>
               <CardTitle>Finished Goods Availability</CardTitle>
               <p className="text-sm text-gray-600">Units available for sale by week</p>
-            </CardHeader>
-            <CardContent>
+        </CardHeader>
+        <CardContent>
               <ChartContainer
                 config={{ jacket: { label: 'Jacket', color: 'hsl(200 70% 50%)' }, dress: { label: 'Dress', color: 'hsl(320 70% 50%)' }, pants: { label: 'Pants', color: 'hsl(140 70% 45%)' } }}
                 className="h-64 w-full"
@@ -292,8 +311,8 @@ export default function Logistics({ gameSession, currentState }: LogisticsProps)
                   <Bar dataKey="pants" stackId="b" fill="var(--color-pants)" />
                 </BarChart>
               </ChartContainer>
-            </CardContent>
-          </Card>
+        </CardContent>
+      </Card>
         </TabsContent>
       </Tabs>
     </div>

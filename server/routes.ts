@@ -98,14 +98,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         inTransitByWeek[material] = inTransitByWeek[material] || {};
         inTransitByWeek[material][arrivalWeek] = (inTransitByWeek[material][arrivalWeek] || 0) + qty;
       };
-      // From explicit purchases (legacy UI)
-      for (const p of materialPurchases) {
-        const week = Number(p.shipmentWeek || 0);
-        for (const o of (p.orders || [])) {
-          addArrival(String(o.material || 'unknown'), week, Number(o.quantity || 0));
-        }
-      }
-      // From procurement contracts (planned arrivals)
+      // From procurement contracts (planned arrivals, canonical)
       for (const c of procurementContracts) {
         const supplier = String(c.supplier || '');
         const lead = Number((GAME_CONSTANTS.SUPPLIERS as any)?.[supplier]?.leadTime || 0);
@@ -113,13 +106,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (c.type === 'SPT' || c.type === 'FVC') {
           const week = Number(c.weekSigned || 0) + lead;
           const qty = Number(c.units || 0);
-          addArrival(material, week, qty);
+          if (week > currentWeek) addArrival(material, week, qty);
         } else if (c.type === 'GMC') {
           const orders = (c as any).gmcOrders || [];
           for (const o of orders) {
             const week = Number(o.week || 0) + lead;
             const qty = Number(o.units || 0);
-            addArrival(material, week, qty);
+            if (week > currentWeek) addArrival(material, week, qty);
           }
         }
       }
@@ -579,6 +572,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Commit the week via engine (full simulation); persist result
       const computed = GameEngine.commitWeek(weeklyState as any);
+      // Preserve Orders Log (materialPurchases) in the committed week
+      (computed as any).materialPurchases = (weeklyState as any).materialPurchases || [];
       const committedState = await storage.updateWeeklyState(weeklyState.id, computed as any);
       await storage.commitWeeklyState(weeklyState.id);
       
@@ -621,6 +616,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           validationErrors: [],
           validationWarnings: [],
         };
+        // New week starts with empty UI Orders Log; historical Orders Log remains on committed weeks
+        nextWeekState.materialPurchases = [];
         // Apply planned marketing and discounts into next week's live plan
         if ((computed as any).plannedMarketingPlan) {
           nextWeekState.marketingPlan = (computed as any).plannedMarketingPlan;
@@ -628,9 +625,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if ((computed as any).plannedWeeklyDiscounts) {
           nextWeekState.weeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
         }
-        // Preserve plans for subsequent programming
+        // Preserve plans for subsequent programming and unlock planning for the new week
         nextWeekState.plannedMarketingPlan = (computed as any).plannedMarketingPlan;
         nextWeekState.plannedWeeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
+        nextWeekState.plannedLocked = false;
         await storage.createWeeklyState(nextWeekState);
       }
       
