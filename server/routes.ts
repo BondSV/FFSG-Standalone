@@ -88,16 +88,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const shipmentsInTransit = (weeklyState as any).shipmentsInTransit || [];
       const finishedGoods = ((weeklyState as any).finishedGoods || {}).lots || [];
       const materialPurchases = (weeklyState as any).materialPurchases || [];
+      const procurementContracts = ((weeklyState as any).procurementContracts || {}).contracts || [];
       const productData = (weeklyState as any).productData || {};
 
       // RM arrivals timeline from purchases
       const inTransitByWeek: Record<string, Record<number, number>> = {};
+      const addArrival = (material: string, arrivalWeek: number, qty: number) => {
+        if (!material || !Number.isFinite(arrivalWeek) || !Number.isFinite(qty)) return;
+        inTransitByWeek[material] = inTransitByWeek[material] || {};
+        inTransitByWeek[material][arrivalWeek] = (inTransitByWeek[material][arrivalWeek] || 0) + qty;
+      };
+      // From explicit purchases (legacy UI)
       for (const p of materialPurchases) {
         const week = Number(p.shipmentWeek || 0);
         for (const o of (p.orders || [])) {
-          const mat = String(o.material || 'unknown');
-          inTransitByWeek[mat] = inTransitByWeek[mat] || {};
-          inTransitByWeek[mat][week] = (inTransitByWeek[mat][week] || 0) + Number(o.quantity || 0);
+          addArrival(String(o.material || 'unknown'), week, Number(o.quantity || 0));
+        }
+      }
+      // From procurement contracts (planned arrivals)
+      for (const c of procurementContracts) {
+        const supplier = String(c.supplier || '');
+        const lead = Number((GAME_CONSTANTS.SUPPLIERS as any)?.[supplier]?.leadTime || 0);
+        const material = String(c.material || 'unknown');
+        if (c.type === 'SPT' || c.type === 'FVC') {
+          const week = Number(c.weekSigned || 0) + lead;
+          const qty = Number(c.units || 0);
+          addArrival(material, week, qty);
+        } else if (c.type === 'GMC') {
+          const orders = (c as any).gmcOrders || [];
+          for (const o of orders) {
+            const week = Number(o.week || 0) + lead;
+            const qty = Number(o.units || 0);
+            addArrival(material, week, qty);
+          }
         }
       }
 

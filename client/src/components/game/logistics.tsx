@@ -6,6 +6,8 @@ import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { Truck, Clock, Zap, Boxes, PackageSearch } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart";
+import { Bar, BarChart, CartesianGrid, XAxis, YAxis, ResponsiveContainer } from "recharts";
 
 interface LogisticsProps {
   gameSession: any;
@@ -28,6 +30,27 @@ export default function Logistics({ gameSession, currentState }: LogisticsProps)
       (rm.inTransitByWeek || []).forEach((it: any) => set.add(Number(it.week)));
     });
     return Array.from(set).sort((a, b) => a - b);
+  }, [inventory]);
+
+  const rmMaterials = useMemo(() => (inventory?.rawMaterials || []).map((rm: any) => rm.material), [inventory]);
+  const rmChartData = useMemo(() => {
+    return rmWeeks.map((w) => {
+      const row: any = { week: `W${w}` };
+      (inventory?.rawMaterials || []).forEach((rm: any) => {
+        const qty = (rm.inTransitByWeek || []).find((it: any) => Number(it.week) === w)?.quantity || 0;
+        row[rm.material] = qty;
+      });
+      return row;
+    });
+  }, [inventory, rmWeeks]);
+
+  const fgChartData = useMemo(() => {
+    return (inventory?.availableForSaleByWeek || []).map((row: any) => ({
+      week: `W${row.week}`,
+      jacket: Number(row.products?.jacket || 0),
+      dress: Number(row.products?.dress || 0),
+      pants: Number(row.products?.pants || 0),
+    }));
   }, [inventory]);
   const shippingOptions = [
     {
@@ -95,27 +118,21 @@ export default function Logistics({ gameSession, currentState }: LogisticsProps)
               <CardTitle>Raw Materials Arrivals</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-2 px-4 text-gray-900">Material</th>
-                      {rmWeeks.map((w)=> (<th key={w} className="text-right py-2 px-4 text-gray-900">W{w}</th>))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(inventory?.rawMaterials || []).map((rm: any, idx: number) => (
-                      <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                        <td className="py-2 px-4 font-medium text-gray-900">{rm.material}</td>
-                        {rmWeeks.map((w)=> {
-                          const qty = (rm.inTransitByWeek || []).find((it: any)=> Number(it.week)===w)?.quantity || 0;
-                          return <td key={w} className="py-2 px-4 text-right">{qty>0? qty.toLocaleString(): '—'}</td>
-                        })}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ChartContainer
+                config={Object.fromEntries(rmMaterials.map((m: string, i: number)=> [m, { label: m, color: `hsl(${(i*80)%360} 70% 50%)` }]))}
+                className="h-64 w-full"
+              >
+                <BarChart data={rmChartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="week" />
+                  <YAxis />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  {rmMaterials.map((m: string, i: number)=> (
+                    <Bar key={m} dataKey={m} stackId="a" fill={`var(--color-${m})`} />
+                  ))}
+                </BarChart>
+              </ChartContainer>
             </CardContent>
           </Card>
 
@@ -256,34 +273,25 @@ export default function Logistics({ gameSession, currentState }: LogisticsProps)
           {/* Availability Timeline (read-only) */}
           <Card className="border border-gray-100 mt-6">
             <CardHeader>
-              <CardTitle>Availability Timeline</CardTitle>
-              <p className="text-sm text-gray-600">Units available for sale by week (derived from shipments and lots)</p>
+              <CardTitle>Finished Goods Availability</CardTitle>
+              <p className="text-sm text-gray-600">Units available for sale by week</p>
             </CardHeader>
             <CardContent>
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
-                  <thead>
-                    <tr className="border-b border-gray-200">
-                      <th className="text-left py-2 px-4 text-gray-900">Week</th>
-                      <th className="text-right py-2 px-4 text-gray-900">Jacket</th>
-                      <th className="text-right py-2 px-4 text-gray-900">Dress</th>
-                      <th className="text-right py-2 px-4 text-gray-900">Pants</th>
-                      <th className="text-right py-2 px-4 text-gray-900">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {(inventory?.availableForSaleByWeek || []).map((row: any, idx: number) => (
-                      <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                        <td className="py-2 px-4">Week {row.week}</td>
-                        <td className="py-2 px-4 text-right">{Number(row.products?.jacket || 0).toLocaleString()}</td>
-                        <td className="py-2 px-4 text-right">{Number(row.products?.dress || 0).toLocaleString()}</td>
-                        <td className="py-2 px-4 text-right">{Number(row.products?.pants || 0).toLocaleString()}</td>
-                        <td className="py-2 px-4 text-right font-medium">{Number(row.total || 0).toLocaleString()}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <ChartContainer
+                config={{ jacket: { label: 'Jacket', color: 'hsl(200 70% 50%)' }, dress: { label: 'Dress', color: 'hsl(320 70% 50%)' }, pants: { label: 'Pants', color: 'hsl(140 70% 45%)' } }}
+                className="h-64 w-full"
+              >
+                <BarChart data={fgChartData}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis dataKey="week" />
+                  <YAxis />
+                  <ChartTooltip content={<ChartTooltipContent />} />
+                  <ChartLegend content={<ChartLegendContent />} />
+                  <Bar dataKey="jacket" stackId="b" fill="var(--color-jacket)" />
+                  <Bar dataKey="dress" stackId="b" fill="var(--color-dress)" />
+                  <Bar dataKey="pants" stackId="b" fill="var(--color-pants)" />
+                </BarChart>
+              </ChartContainer>
             </CardContent>
           </Card>
         </TabsContent>
