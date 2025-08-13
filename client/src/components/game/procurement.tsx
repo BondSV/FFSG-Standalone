@@ -554,7 +554,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                 </div>
               ) : (
                 <>
-                  <Slider value={[gmcCommitments['supplier1'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier1: Number(v[0] || 0) }))} min={0} max={5000000} step={10000} />
+                  <Slider value={[gmcCommitments['supplier1'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier1: Number(v[0] || 0) }))} min={0} max={1000000} step={10000} />
                   <div className="flex items-center gap-2 mt-2">
                     <Input type="number" step={10000} value={gmcCommitments['supplier1'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier1: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" />
                     <Button variant="outline" onClick={() => setGmcConfirm({ open: true, supplier: 'supplier1' })}>Sign Commitment</Button>
@@ -582,7 +582,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
             </div>
               ) : (
                 <>
-                  <Slider value={[gmcCommitments['supplier2'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier2: Number(v[0] || 0) }))} min={0} max={5000000} step={10000} />
+                  <Slider value={[gmcCommitments['supplier2'] || 0]} onValueChange={(v) => setGmcCommitments(prev => ({ ...prev, supplier2: Number(v[0] || 0) }))} min={0} max={1000000} step={10000} />
                   <div className="flex items-center gap-2 mt-2">
                     <Input type="number" step={10000} value={gmcCommitments['supplier2'] || 0} onChange={(e) => setGmcCommitments(prev => ({ ...prev, supplier2: Math.max(0, Number(e.target.value || 0)) }))} className="w-40" />
                     <Button variant="outline" onClick={() => setGmcConfirm({ open: true, supplier: 'supplier2' })}>Sign Commitment</Button>

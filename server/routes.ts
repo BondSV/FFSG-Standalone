@@ -600,7 +600,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const computed = GameEngine.commitWeek(weeklyState as any);
       // Preserve Orders Log (materialPurchases) in the committed week
       (computed as any).materialPurchases = (weeklyState as any).materialPurchases || [];
-      const committedState = await storage.updateWeeklyState(weeklyState.id, computed as any);
+      const { ledgerEntries, ...toPersist } = (computed as any);
+      const committedState = await storage.updateWeeklyState(weeklyState.id, toPersist as any);
       await storage.commitWeeklyState(weeklyState.id);
       
       // If this is week 15, mark game as completed
@@ -662,7 +663,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Persist cash ledger entries, if present
       try {
-        const entries = (computed as any).ledgerEntries as Array<{ type: string; amount: number; refId?: string }> | undefined;
+        const entries = (ledgerEntries as Array<{ type: string; amount: number; refId?: string }>) || [];
         if (entries && entries.length > 0) {
           const rows = entries.map((e) => ({
             id: `${weeklyState.gameSessionId}-${week}-${e.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

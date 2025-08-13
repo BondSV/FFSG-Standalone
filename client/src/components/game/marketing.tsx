@@ -210,7 +210,9 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     if (isFinalWeek) { setPreview(null); return; }
     const t = setTimeout(async () => {
       try {
-        const res = await apiRequest('GET', `/api/game/${gameSession.id}/week/${currentWeek}/marketing-preview`);
+        const channelsArray = marketingChannels.map((c) => ({ name: c.id, spend: (marketingSpend * (channelAllocation[c.id] || 0)) / 100 }));
+        const plan = { totalSpend: marketingSpend, channels: channelsArray };
+        const res = await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/marketing-preview`, { plan, discounts: plannedDiscounts });
         const data = await res.json();
         setPreview({ nextAwareness: Number(data.nextAwareness||0), nextIntent: Number(data.nextIntent||0), forecastDemandTotal: Number(data.forecastDemandTotal||0) });
       } catch {
@@ -480,7 +482,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                     </div>
                     <div className={`hidden sm:block rounded-full px-2 py-0.5 text-xs font-medium ${channelThemes[channel.id]?.chipBg || 'bg-gray-100'} ${channelThemes[channel.id]?.chipText || 'text-gray-800'}`}>{pct.toFixed(0)}%</div>
                   </div>
-                  <div className="relative">
+                  <div>
                     <Slider
                       value={[pct]}
                       min={0}
@@ -490,10 +492,9 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       trackClassName="bg-gray-200"
                       rangeClassName="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500"
                       thumbClassName="border-amber-500"
-                      zones={[{ left: leftPct, width: widthPct }]}
                       disabled={isLocked || !fineTune}
                     />
-                    <div className="flex justify-between text-xs text-gray-500 mt-5"><span>0%</span><span>Efficient zone highlighted</span><span>100%</span></div>
+                    <div className="flex justify-between text-xs text-gray-500 mt-5"><span>0%</span><span className="opacity-0">.</span><span>100%</span></div>
                   </div>
                   <div className="text-right font-mono mt-1 sm:hidden">{pct.toFixed(0)}%</div>
                 </div>
