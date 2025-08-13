@@ -690,7 +690,8 @@ export class GameEngine {
     costHolding = this.calculateHoldingCosts(invValue);
     operationalOutflows += costHolding;
 
-    // 8) Apply cash waterfall (timing-aware)
+    // 8) Apply cash waterfall (timing-aware) and collect ledger entries
+    const ledger: Array<{ type: string; amount: number; refId?: string }> = [];
     // Start-of-week: pay interest accrued on last week's ending credit balance
     costInterest = this.calculateInterest(creditUsed);
     if (openingCash >= costInterest) {
@@ -700,6 +701,7 @@ export class GameEngine {
       creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallInt);
       openingCash = 0;
     }
+    if (costInterest > 0) ledger.push({ type: 'interest', amount: costInterest });
     // Then pay operational outflows scheduled for this week before sales cash arrives
     cashOnHand = openingCash;
     if (cashOnHand >= operationalOutflows) {
@@ -709,6 +711,10 @@ export class GameEngine {
       creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallOps);
       cashOnHand = 0;
     }
+    if (costMarketing > 0) ledger.push({ type: 'marketing', amount: costMarketing });
+    if (costProduction > 0) ledger.push({ type: 'production', amount: costProduction });
+    if (costLogistics > 0) ledger.push({ type: 'logistics', amount: costLogistics });
+    if (costHolding > 0) ledger.push({ type: 'holding', amount: costHolding });
     // Add this week's revenue from sales
     cashOnHand += weeklyRevenue;
     // Auto paydown principal at end of week if cash remains
@@ -798,6 +804,7 @@ export class GameEngine {
 
     // Mark committed
     (state as any).isCommitted = true;
+    (state as any).ledgerEntries = ledger;
     return state as any as WeeklyState;
   }
 

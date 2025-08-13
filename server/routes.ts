@@ -1,6 +1,9 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
+import { db } from "./db";
+import { ordersLog as ordersLogTable, cashLedger as cashLedgerTable } from "@shared/schema";
+import { and, eq, inArray } from "drizzle-orm";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { GameEngine, GAME_CONSTANTS } from "./gameEngine";
 import { insertGameSessionSchema, insertWeeklyStateSchema } from "@shared/schema";
@@ -370,6 +373,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
               while (contracts.length) contracts.pop();
               for (const rc of remainingContracts) contracts.push(rc);
+              // Soft-delete Orders Log rows for these timestamps
+              try {
+                await db
+                  .update(ordersLogTable)
+                  .set({ removedAt: new Date() } as any)
+                  .where(and(eq(ordersLogTable.gameSessionId, (weeklyState as any).gameSessionId), inArray(ordersLogTable.orderTimestamp, removedTimestamps)));
+              } catch {}
             }
           }
 
@@ -472,6 +482,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 });
                 existingOrderIds.add(orderId);
               }
+
+              // Insert immutable Orders Log row in DB
+              try {
+                await db.insert(ordersLogTable).values({
+                  id: orderId,
+                  gameSessionId: (weeklyState as any).gameSessionId,
+                  weekNumber: currentWeek,
+                  orderTimestamp: String(p.timestamp || ''),
+                  supplier: String(p.supplier),
+                  orderType: String(p.type).toUpperCase(),
+                  material: String(order.material),
+                  quantity: Number(order.quantity || 0),
+                  effectiveUnitPrice: Number(order.effectiveUnitPrice || 0) as any,
+                  effectiveLineTotal: Number(order.effectiveLineTotal || 0) as any,
+                } as any);
+              } catch {}
             }
           }
           if (updates.gmcCommitments && typeof updates.gmcCommitments === 'object') {
@@ -633,6 +659,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         (nextWeekState as any).marketingPrepaid = 0;
         await storage.createWeeklyState(nextWeekState);
       }
+      
+      // Persist cash ledger entries, if present
+      try {
+        const entries = (computed as any).ledgerEntries as Array<{ type: string; amount: number; refId?: string }> | undefined;
+        if (entries && entries.length > 0) {
+          const rows = entries.map((e) => ({
+            id: `${weeklyState.gameSessionId}-${week}-${e.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            gameSessionId: weeklyState.gameSessionId,
+            weekNumber: week,
+            entryType: e.type,
+            refId: e.refId || null,
+            amount: Number(e.amount || 0) as any,
+          }));
+          await db.insert(cashLedgerTable).values(rows as any);
+        }
+      } catch {}
       
       res.json(committedState);
     } catch (error) {
