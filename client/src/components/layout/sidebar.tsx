@@ -25,7 +25,7 @@ const tabs = [
   { id: 'marketing', label: 'Marketing', icon: Megaphone },
   { id: 'procurement', label: 'Procurement', icon: ShoppingCart },
   { id: 'production', label: 'Production', icon: Factory },
-  { id: 'logistics', label: 'Logistics', icon: Truck },
+  { id: 'logistics', label: 'Inventory & Logistics', icon: Truck },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
 ];
 

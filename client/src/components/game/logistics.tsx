@@ -1,7 +1,11 @@
+import { useMemo } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
-import { Truck, Clock, Zap } from "lucide-react";
+import { Truck, Clock, Zap, Boxes, PackageSearch } from "lucide-react";
+import { apiRequest } from "@/lib/queryClient";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 interface LogisticsProps {
   gameSession: any;
@@ -9,6 +13,22 @@ interface LogisticsProps {
 }
 
 export default function Logistics({ gameSession, currentState }: LogisticsProps) {
+  const { data: inventory } = useQuery({
+    queryKey: ['/api/game', gameSession?.id, 'inventory-overview'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/game/${gameSession.id}/inventory/overview`);
+      return res.json();
+    },
+    enabled: Boolean(gameSession?.id),
+    staleTime: 30000,
+  });
+  const rmWeeks = useMemo(() => {
+    const set = new Set<number>();
+    (inventory?.rawMaterials || []).forEach((rm: any) => {
+      (rm.inTransitByWeek || []).forEach((it: any) => set.add(Number(it.week)));
+    });
+    return Array.from(set).sort((a, b) => a - b);
+  }, [inventory]);
   const shippingOptions = [
     {
       product: "Vintage Denim Jacket",
@@ -39,144 +59,235 @@ export default function Logistics({ gameSession, currentState }: LogisticsProps)
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">Logistics & Shipping</h1>
-        <p className="text-gray-600">Manage shipping and delivery schedules to meet customer demand</p>
+        <h1 className="text-2xl font-bold text-gray-900 mb-2">Inventory & Logistics</h1>
+        <p className="text-gray-600">Track materials, WIP, finished goods, and movements in one place</p>
       </div>
+      <Tabs defaultValue="inventory" className="w-full">
+        <TabsList className="mb-4">
+          <TabsTrigger value="inventory">Inventory</TabsTrigger>
+          <TabsTrigger value="logistics">Logistics</TabsTrigger>
+        </TabsList>
 
-      {/* Shipping Options Overview */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-        {/* Standard Shipping */}
-        <Card className="border border-gray-100">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Truck size={20} />
-              <TooltipWrapper content="Lower cost shipping option with a 2-week transit time.">
-                <span className="cursor-help">Standard Shipping</span>
-              </TooltipWrapper>
-            </CardTitle>
-            <p className="text-sm text-gray-600">Cost-effective option with longer transit time</p>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-              <div className="flex items-center gap-2">
-                <Clock size={16} className="text-gray-500" />
-                <span className="font-medium">Transit Time</span>
-              </div>
-              <Badge variant="outline">2 weeks</Badge>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Expedited Shipping */}
-        <Card className="border border-gray-100">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Zap size={20} />
-              <TooltipWrapper content="A premium, higher-cost shipping option with a 1-week transit time. Use this to get products to market faster.">
-                <span className="cursor-help">Expedited Shipping</span>
-              </TooltipWrapper>
-            </CardTitle>
-            <p className="text-sm text-gray-600">Premium option for faster delivery</p>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between p-3 bg-primary bg-opacity-10 rounded-lg">
-              <div className="flex items-center gap-2">
-                <Clock size={16} className="text-primary" />
-                <span className="font-medium text-primary">Transit Time</span>
-              </div>
-              <Badge className="bg-primary text-white">1 week</Badge>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Shipping Costs by Product */}
-      <Card className="border border-gray-100">
-        <CardHeader>
-          <CardTitle>Shipping Costs by Product</CardTitle>
-          <p className="text-sm text-gray-600">Compare standard vs expedited shipping costs for each product</p>
-        </CardHeader>
-        <CardContent>
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left py-3 px-4 font-medium text-gray-900">Product</th>
-                  <th className="text-center py-3 px-4 font-medium text-gray-900">Standard Shipping</th>
-                  <th className="text-center py-3 px-4 font-medium text-gray-900">Expedited Shipping</th>
-                  <th className="text-center py-3 px-4 font-medium text-gray-900">Premium Cost</th>
-                </tr>
-              </thead>
-              <tbody>
-                {shippingOptions.map((option, index) => (
-                  <tr key={index} className={index % 2 === 0 ? "bg-gray-50" : "bg-white"}>
-                    <td className="py-3 px-4 font-medium text-gray-900">{option.product}</td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="space-y-1">
-                        <div className="font-mono font-semibold">{formatCurrency(option.standard.cost)}</div>
-                        <div className="text-xs text-gray-500">{option.standard.time} weeks</div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="space-y-1">
-                        <div className="font-mono font-semibold text-primary">{formatCurrency(option.expedited.cost)}</div>
-                        <div className="text-xs text-primary">{option.expedited.time} week</div>
-                      </div>
-                    </td>
-                    <td className="py-3 px-4 text-center">
-                      <div className="font-mono font-semibold text-accent">
-                        +{formatCurrency(option.expedited.cost - option.standard.cost)}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        <TabsContent value="inventory">
+          {/* Inventory KPIs */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-8">
+            <Card className="border border-gray-100">
+              <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><Boxes size={16}/> RM on hand</CardTitle></CardHeader>
+              <CardContent className="text-2xl font-semibold">{(inventory?.summary?.rawMaterialsOnHand || 0).toLocaleString()} units</CardContent>
+            </Card>
+            <Card className="border border-gray-100">
+              <CardHeader className="pb-2"><CardTitle className="text-sm flex items-center gap-2"><PackageSearch size={16}/> WIP units</CardTitle></CardHeader>
+              <CardContent className="text-2xl font-semibold">{(inventory?.summary?.wipUnits || 0).toLocaleString()}</CardContent>
+            </Card>
+            <Card className="border border-gray-100">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">FG available this week</CardTitle></CardHeader>
+              <CardContent className="text-2xl font-semibold">{(inventory?.summary?.totalFinishedGoodsAvailableThisWeek || 0).toLocaleString()}</CardContent>
+            </Card>
+            <Card className="border border-gray-100">
+              <CardHeader className="pb-2"><CardTitle className="text-sm">FG available next week</CardTitle></CardHeader>
+              <CardContent className="text-2xl font-semibold">{(inventory?.summary?.totalFinishedGoodsAvailableNextWeek || 0).toLocaleString()}</CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
 
-      {/* Shipping Timeline */}
-      <Card className="border border-gray-100 mt-6">
-        <CardHeader>
-          <CardTitle>Logistics Timeline</CardTitle>
-          <p className="text-sm text-gray-600">
-            Products must arrive in stores by Week 7 to meet launch deadline
-          </p>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-4">
-            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Clock className="text-yellow-600" size={16} />
-                <span className="font-medium text-yellow-800">Important Timeline Rules</span>
+          {/* Raw materials arrivals timeline */}
+          <Card className="border border-gray-100 mb-6">
+            <CardHeader>
+              <CardTitle>Raw Materials Arrivals</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-2 px-4 text-gray-900">Material</th>
+                      {rmWeeks.map((w)=> (<th key={w} className="text-right py-2 px-4 text-gray-900">W{w}</th>))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(inventory?.rawMaterials || []).map((rm: any, idx: number) => (
+                      <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                        <td className="py-2 px-4 font-medium text-gray-900">{rm.material}</td>
+                        {rmWeeks.map((w)=> {
+                          const qty = (rm.inTransitByWeek || []).find((it: any)=> Number(it.week)===w)?.quantity || 0;
+                          return <td key={w} className="py-2 px-4 text-right">{qty>0? qty.toLocaleString(): '—'}</td>
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
-              <ul className="text-sm text-yellow-700 space-y-1">
-                <li>• Goods completing shipping by end of a week are available for sale the next week</li>
-                <li>• Example: 1-week expedited shipping finishing in Week 6 = ready for Week 7 launch</li>
-                <li>• Standard shipping from Week 5 production = arrives Week 7 (just in time)</li>
-                <li>• Expedited shipping from Week 6 production = arrives Week 7 (last chance)</li>
-              </ul>
-            </div>
+            </CardContent>
+          </Card>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 border border-green-200 bg-green-50 rounded-lg">
-                <h4 className="font-medium text-green-800 mb-2">Week 5 Production + Standard Shipping</h4>
-                <p className="text-sm text-green-700">Production complete: End of Week 5</p>
-                <p className="text-sm text-green-700">Shipping complete: End of Week 7</p>
-                <p className="text-sm font-medium text-green-800">✓ Meets launch deadline</p>
-              </div>
-              
-              <div className="p-4 border border-red-200 bg-red-50 rounded-lg">
-                <h4 className="font-medium text-red-800 mb-2">Week 6 Production + Standard Shipping</h4>
-                <p className="text-sm text-red-700">Production complete: End of Week 6</p>
-                <p className="text-sm text-red-700">Shipping complete: End of Week 8</p>
-                <p className="text-sm font-medium text-red-800">✗ Misses launch deadline</p>
-              </div>
-            </div>
+          {/* Raw materials / WIP / FG detail tables */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Card className="border border-gray-100">
+              <CardHeader><CardTitle>Raw Materials</CardTitle></CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-2 px-3">Material</th>
+                        <th className="text-right py-2 px-3">On hand</th>
+                        <th className="text-right py-2 px-3">Allocated</th>
+                        <th className="text-right py-2 px-3">Avg unit £</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(inventory?.rawMaterials || []).map((rm: any, idx: number) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                          <td className="py-2 px-3 font-medium">{rm.material}</td>
+                          <td className="py-2 px-3 text-right">{Number(rm.onHand||0).toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right">{Number(rm.allocated||0).toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right">{rm.avgUnitCost? rm.avgUnitCost.toFixed(2): '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border border-gray-100">
+              <CardHeader><CardTitle>WIP Batches</CardTitle></CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-2 px-3">Product</th>
+                        <th className="text-right py-2 px-3">Quantity</th>
+                        <th className="text-right py-2 px-3">Start</th>
+                        <th className="text-right py-2 px-3">End</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(inventory?.wip || []).map((b: any, idx: number) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                          <td className="py-2 px-3 font-medium">{b.product}</td>
+                          <td className="py-2 px-3 text-right">{Number(b.quantity||0).toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right">W{b.startWeek}</td>
+                          <td className="py-2 px-3 text-right">W{b.endWeek}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border border-gray-100">
+              <CardHeader><CardTitle>Finished Goods</CardTitle></CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full border-collapse text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="text-left py-2 px-3">Product</th>
+                        <th className="text-right py-2 px-3">Quantity</th>
+                        <th className="text-right py-2 px-3">Available</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(inventory?.finishedGoodsLots || []).map((l: any, idx: number) => (
+                        <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                          <td className="py-2 px-3 font-medium">{l.product}</td>
+                          <td className="py-2 px-3 text-right">{Number(l.quantity||0).toLocaleString()}</td>
+                          <td className="py-2 px-3 text-right">W{l.availableWeek}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
           </div>
-        </CardContent>
-      </Card>
+        </TabsContent>
+
+        <TabsContent value="logistics">
+          {/* Shipping Options Overview */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            {/* Standard Shipping */}
+            <Card className="border border-gray-100">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Truck size={20} />
+                  <TooltipWrapper content="Lower cost shipping option with a 2-week transit time.">
+                    <span className="cursor-help">Standard Shipping</span>
+                  </TooltipWrapper>
+                </CardTitle>
+                <p className="text-sm text-gray-600">Cost-effective option with longer transit time</p>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Clock size={16} className="text-gray-500" />
+                    <span className="font-medium">Transit Time</span>
+                  </div>
+                  <Badge variant="outline">2 weeks</Badge>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Expedited Shipping */}
+            <Card className="border border-gray-100">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Zap size={20} />
+                  <TooltipWrapper content="A premium, higher-cost shipping option with a 1-week transit time. Use this to get products to market faster.">
+                    <span className="cursor-help">Expedited Shipping</span>
+                  </TooltipWrapper>
+                </CardTitle>
+                <p className="text-sm text-gray-600">Premium option for faster delivery</p>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-center justify-between p-3 bg-primary bg-opacity-10 rounded-lg">
+                  <div className="flex items-center gap-2">
+                    <Clock size={16} className="text-primary" />
+                    <span className="font-medium text-primary">Transit Time</span>
+                  </div>
+                  <Badge className="bg-primary text-white">1 week</Badge>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Availability Timeline (read-only) */}
+          <Card className="border border-gray-100 mt-6">
+            <CardHeader>
+              <CardTitle>Availability Timeline</CardTitle>
+              <p className="text-sm text-gray-600">Units available for sale by week (derived from shipments and lots)</p>
+            </CardHeader>
+            <CardContent>
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse">
+                  <thead>
+                    <tr className="border-b border-gray-200">
+                      <th className="text-left py-2 px-4 text-gray-900">Week</th>
+                      <th className="text-right py-2 px-4 text-gray-900">Jacket</th>
+                      <th className="text-right py-2 px-4 text-gray-900">Dress</th>
+                      <th className="text-right py-2 px-4 text-gray-900">Pants</th>
+                      <th className="text-right py-2 px-4 text-gray-900">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {(inventory?.availableForSaleByWeek || []).map((row: any, idx: number) => (
+                      <tr key={idx} className={idx % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                        <td className="py-2 px-4">Week {row.week}</td>
+                        <td className="py-2 px-4 text-right">{Number(row.products?.jacket || 0).toLocaleString()}</td>
+                        <td className="py-2 px-4 text-right">{Number(row.products?.dress || 0).toLocaleString()}</td>
+                        <td className="py-2 px-4 text-right">{Number(row.products?.pants || 0).toLocaleString()}</td>
+                        <td className="py-2 px-4 text-right font-medium">{Number(row.total || 0).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

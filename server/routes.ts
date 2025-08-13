@@ -75,6 +75,167 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Inventory overview (read-only aggregate)
+  app.get('/api/game/:gameId/inventory/overview', isAuthenticated, async (req: any, res) => {
+    try {
+      const { gameId } = req.params;
+      const weeklyState = await storage.getLatestWeeklyState(gameId);
+      if (!weeklyState) return res.status(404).json({ message: 'No state' });
+
+      const currentWeek = Number((weeklyState as any).weekNumber || 1);
+      const rawMaterials = (weeklyState as any).rawMaterials || {};
+      const workInProcess = ((weeklyState as any).workInProcess || {}).batches || [];
+      const shipmentsInTransit = (weeklyState as any).shipmentsInTransit || [];
+      const finishedGoods = ((weeklyState as any).finishedGoods || {}).lots || [];
+      const materialPurchases = (weeklyState as any).materialPurchases || [];
+      const productData = (weeklyState as any).productData || {};
+
+      // RM arrivals timeline from purchases
+      const inTransitByWeek: Record<string, Record<number, number>> = {};
+      for (const p of materialPurchases) {
+        const week = Number(p.shipmentWeek || 0);
+        for (const o of (p.orders || [])) {
+          const mat = String(o.material || 'unknown');
+          inTransitByWeek[mat] = inTransitByWeek[mat] || {};
+          inTransitByWeek[mat][week] = (inTransitByWeek[mat][week] || 0) + Number(o.quantity || 0);
+        }
+      }
+
+      // FG available timeline: current lots + shipments arrival weeks
+      const availableForSaleByWeek: Array<{ week: number; products: Record<string, number>; total: number }> = [];
+      for (let w = currentWeek; w <= 15; w++) {
+        const products: Record<string, number> = {};
+        let total = 0;
+        if (w === currentWeek) {
+          for (const lot of finishedGoods) {
+            const qty = Number(lot.quantity || 0);
+            products[lot.product] = (products[lot.product] || 0) + qty;
+            total += qty;
+          }
+        }
+        for (const sh of shipmentsInTransit) {
+          if (Number(sh.arrivalWeek) === w) {
+            const qty = Number(sh.quantity || 0);
+            products[sh.product] = (products[sh.product] || 0) + qty;
+            total += qty;
+          }
+        }
+        availableForSaleByWeek.push({ week: w, products, total });
+      }
+
+      const fgThisWeek: Record<string, number> = {};
+      for (const lot of finishedGoods) {
+        const qty = Number(lot.quantity || 0);
+        fgThisWeek[lot.product] = (fgThisWeek[lot.product] || 0) + qty;
+      }
+      const nextWeekEntry = availableForSaleByWeek.find(e => e.week === currentWeek + 1) || { products: {} } as any;
+
+      const summary = {
+        rawMaterialsOnHand: Object.values(rawMaterials).reduce((s: number, v: any) => s + Number(v.onHand || 0), 0),
+        wipUnits: (workInProcess as any[]).reduce((s, b: any) => s + Number(b.quantity || 0), 0),
+        finishedGoodsAvailableThisWeek: fgThisWeek,
+        finishedGoodsAvailableNextWeek: nextWeekEntry.products || {},
+        totalFinishedGoodsAvailableThisWeek: Object.values(fgThisWeek).reduce((s: number, v: any) => s + Number(v || 0), 0),
+        totalFinishedGoodsAvailableNextWeek: Object.values(nextWeekEntry.products || {}).reduce((s: number, v: any) => s + Number(v || 0), 0),
+      };
+
+      const rmList = Object.entries(rawMaterials).map(([material, v]: any) => ({
+        material,
+        onHand: Number(v.onHand || 0),
+        allocated: Number(v.allocated || 0),
+        onHandValue: Number(v.onHandValue || 0),
+        avgUnitCost: Number(v.onHand || 0) > 0 ? Number(v.onHandValue || 0) / Number(v.onHand || 1) : undefined,
+        inTransitByWeek: Object.entries(inTransitByWeek[material] || {}).map(([week, quantity]) => ({ week: Number(week), quantity: Number(quantity) })),
+      }));
+
+      const wipList = (workInProcess as any[]).map((b: any) => ({
+        id: String(b.id || ''),
+        product: String(b.product || ''),
+        startWeek: Number(b.startWeek || 0),
+        endWeek: Number(b.endWeek || 0),
+        quantity: Number(b.quantity || 0),
+        unitMaterialCost: Number(b.unitMaterialCost || 0),
+        unitProductionCost: Number(b.unitProductionCost || 0),
+        unitShippingCost: Number(b.unitShippingCost || 0),
+        unitCostBasis: Number(b.unitMaterialCost || 0) + Number(b.unitProductionCost || 0) + Number(b.unitShippingCost || 0),
+      }));
+
+      const fgLots = (finishedGoods as any[]).map((l: any) => ({
+        id: String(l.id || ''),
+        product: String(l.product || ''),
+        quantity: Number(l.quantity || 0),
+        availableWeek: currentWeek, // existing lots are available now
+        unitCostBasis: Number(l.unitCostBasis || (Number(l.unitMaterialCost || 0) + Number(l.unitProductionCost || 0) + Number(l.unitShippingCost || 0))),
+      }));
+
+      const shipments = (shipmentsInTransit as any[]).map((s: any) => ({
+        id: String(s.id || ''),
+        product: String(s.product || ''),
+        quantity: Number(s.quantity || 0),
+        arrivalWeek: Number(s.arrivalWeek || 0),
+      }));
+
+      res.json({ summary, rawMaterials: rmList, wip: wipList, shipmentsInTransit: shipments, finishedGoodsLots: fgLots, availableForSaleByWeek });
+    } catch (e) {
+      console.error('inventory overview error', e);
+      res.status(500).json({ message: 'Failed to build inventory overview' });
+    }
+  });
+
+  // Production preview (read-only)
+  app.post('/api/game/:gameId/production/preview', isAuthenticated, async (req: any, res) => {
+    try {
+      const { gameId } = req.params;
+      const { product, method, startWeek, batches } = req.body || {};
+      const weeklyState = await storage.getLatestWeeklyState(gameId);
+      if (!weeklyState) return res.status(404).json({ message: 'No state' });
+      const units = Number(batches || 0) * GAME_CONSTANTS.BATCH_SIZE;
+      const mfg = (GAME_CONSTANTS.MANUFACTURING as any)[product] || {};
+      const lead = method === 'inhouse' ? Number(mfg.inHouseTime || 2) : Number(mfg.outsourceTime || 1);
+      const completionWeek = Number(startWeek) + lead;
+      // Assume standard shipping for preview
+      const shipWeeks = Number((GAME_CONSTANTS.SHIPPING as any)[product]?.standard || 2);
+      const availableWeek = completionWeek + shipWeeks + 1;
+
+      // Capacity check for inhouse
+      let okCapacity = true;
+      const capacityDetail: Array<{ week: number; used: number; capacity: number }> = [];
+      const schedule = (weeklyState as any).productionSchedule?.batches || [];
+      if (method === 'inhouse') {
+        const perWeekUnits = Math.ceil(units / lead);
+        for (let w = Number(startWeek); w < Number(startWeek) + lead; w++) {
+          const capacity = Number(GAME_CONSTANTS.CAPACITY_SCHEDULE[w - 1] || 0);
+          const used = schedule.filter((b: any) => b.method === 'inhouse' && w >= Number(b.startWeek) && w < Number(b.startWeek) + (b.method === 'inhouse' ? Number((GAME_CONSTANTS.MANUFACTURING as any)[b.product]?.inHouseTime || 2) : Number((GAME_CONSTANTS.MANUFACTURING as any)[b.product]?.outsourceTime || 1))).reduce((s: number, b: any) => s + Math.ceil(Number(b.quantity || 0) / (b.method === 'inhouse' ? Number((GAME_CONSTANTS.MANUFACTURING as any)[b.product]?.inHouseTime || 2) : Number((GAME_CONSTANTS.MANUFACTURING as any)[b.product]?.outsourceTime || 1))), 0);
+          const newUsed = used + perWeekUnits;
+          capacityDetail.push({ week: w, used: newUsed, capacity });
+          if (newUsed > capacity) okCapacity = false;
+        }
+      }
+
+      // Materials check (coarse): shipmentWeek <= startWeek for required fabric
+      const productFabric = (weeklyState as any).productData?.[product]?.fabric;
+      let okMaterials = true;
+      let projectedOnHandAtStart = 0;
+      let allocatedAtStart = 0;
+      let inboundByStart = 0;
+      const materialPurchases = (weeklyState as any).materialPurchases || [];
+      inboundByStart = materialPurchases.filter((p: any) => Number(p.shipmentWeek || 0) <= Number(startWeek)).reduce((s: number, p: any) => s + (p.orders || []).filter((o: any) => o.material === productFabric).reduce((ss: number, o: any) => ss + Number(o.quantity || 0), 0), 0);
+      const rmEntry = (weeklyState as any).rawMaterials?.[productFabric] || { onHand: 0, allocated: 0 };
+      projectedOnHandAtStart = Number(rmEntry.onHand || 0) + inboundByStart;
+      allocatedAtStart = Number(rmEntry.allocated || 0);
+      okMaterials = projectedOnHandAtStart - allocatedAtStart >= units;
+
+      const unitProductionCost = method === 'inhouse' ? Number(mfg.inHouseCost || 10) : Number(mfg.outsourceCost || 15);
+      const projectedCost = { unitProductionCost, totalProductionCost: units * unitProductionCost };
+      const materialsDetail = { material: productFabric, projectedOnHandAtStart, allocatedAtStart, inTransitArrivingByStart: inboundByStart, needed: units };
+
+      res.json({ completionWeek, availableWeek, okCapacity, capacityDetail, okMaterials, materialsDetail, projectedCost });
+    } catch (e) {
+      console.error('production preview error', e);
+      res.status(500).json({ message: 'Failed to preview production' });
+    }
+  });
+
   // Restart current game: mark active session as completed so the client shows the welcome/start screen
   app.post('/api/game/restart', isAuthenticated, async (req: any, res) => {
     try {
