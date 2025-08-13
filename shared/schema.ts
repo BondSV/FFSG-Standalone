@@ -100,7 +100,7 @@ export const weeklyStates = pgTable("weekly_states", {
 
 // Orders Log (immutable UI log of placed orders; row removed only via removedAt for current week)
 export const ordersLog = pgTable("orders_log", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: varchar("id").primaryKey(),
   gameSessionId: varchar("game_session_id").notNull().references(() => gameSessions.id),
   weekNumber: integer("week_number").notNull(),
   orderTimestamp: varchar("order_timestamp").notNull(),
@@ -116,7 +116,7 @@ export const ordersLog = pgTable("orders_log", {
 
 // Cash ledger (optional; phase 2a). Entries appended by server for audit.
 export const cashLedger = pgTable("cash_ledger", {
-  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  id: varchar("id").primaryKey(),
   gameSessionId: varchar("game_session_id").notNull().references(() => gameSessions.id),
   weekNumber: integer("week_number").notNull(),
   entryType: varchar("entry_type").notNull(),
