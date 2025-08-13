@@ -348,7 +348,7 @@ export class GameEngine {
     state.weeklySales = state.weeklySales || { jacket: 0, dress: 0, pants: 0 };
     state.lostSales = state.lostSales || { jacket: 0, dress: 0, pants: 0 };
 
-    const openingCash = this.toNumber(state.cashOnHand, GAME_CONSTANTS.STARTING_CAPITAL);
+    let openingCash = this.toNumber(state.cashOnHand, GAME_CONSTANTS.STARTING_CAPITAL);
     let cashOnHand = openingCash;
     let creditUsed = this.toNumber(state.creditUsed, 0);
     let weeklyRevenue = 0;
