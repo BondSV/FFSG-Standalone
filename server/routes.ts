@@ -629,6 +629,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nextWeekState.plannedMarketingPlan = (computed as any).plannedMarketingPlan;
         nextWeekState.plannedWeeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
         nextWeekState.plannedLocked = false;
+        // Carry forward any prepayment balance for marketing if we add prepay later (initialize zero now)
+        (nextWeekState as any).marketingPrepaid = 0;
         await storage.createWeeklyState(nextWeekState);
       }
       

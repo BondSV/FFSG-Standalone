@@ -13,7 +13,19 @@
  * should not be used in production.
  */
 
-import { type GameSession, type WeeklyState, type User, type UpsertUser, type InsertGameSession, type InsertWeeklyState } from "@shared/schema";
+import { db } from "./db";
+import { and, desc, eq, sql as dsql, asc } from "drizzle-orm";
+import {
+  users as usersTable,
+  gameSessions as gameSessionsTable,
+  weeklyStates as weeklyStatesTable,
+  type GameSession,
+  type WeeklyState,
+  type User,
+  type UpsertUser,
+  type InsertGameSession,
+  type InsertWeeklyState,
+} from "@shared/schema";
 
 // Define the shape of the storage interface. This mirrors the original
 // interface used with the Postgres implementation but is simplified for
@@ -174,4 +186,94 @@ class InMemoryStorage implements IStorage {
 
 // Export a single instance of the in‑memory storage. This mirrors the
 // original API where a singleton `storage` was exported from this module.
-export const storage: IStorage = new InMemoryStorage();
+class DatabaseStorage implements IStorage {
+  async getUser(id: string): Promise<User | undefined> {
+    const rows = await db.select().from(usersTable).where(eq(usersTable.id, id)).limit(1);
+    return rows[0];
+  }
+  async upsertUser(userData: UpsertUser): Promise<User> {
+    const existing = await db.select().from(usersTable).where(eq(usersTable.email, userData.email as any)).limit(1);
+    if (existing[0]) {
+      const updated = await db
+        .update(usersTable)
+        .set({ ...userData, updatedAt: new Date() } as any)
+        .where(eq(usersTable.id, existing[0].id))
+        .returning();
+      return updated[0] as any;
+    }
+    const inserted = await db.insert(usersTable).values(userData as any).returning();
+    return inserted[0] as any;
+  }
+  async createGameSession(gameSession: InsertGameSession): Promise<GameSession> {
+    const rows = await db.insert(gameSessionsTable).values(gameSession as any).returning();
+    return rows[0] as any;
+  }
+  async getGameSession(id: string): Promise<GameSession | undefined> {
+    const rows = await db.select().from(gameSessionsTable).where(eq(gameSessionsTable.id, id)).limit(1);
+    return rows[0] as any;
+  }
+  async getUserActiveGameSession(userId: string): Promise<GameSession | undefined> {
+    const rows = await db
+      .select()
+      .from(gameSessionsTable)
+      .where(and(eq(gameSessionsTable.userId, userId), eq(gameSessionsTable.isCompleted, false as any)))
+      .orderBy(desc(gameSessionsTable.createdAt))
+      .limit(1);
+    return rows[0] as any;
+  }
+  async updateGameSession(id: string, updates: Partial<GameSession>): Promise<GameSession> {
+    const rows = await db.update(gameSessionsTable).set({ ...(updates as any), updatedAt: new Date() }).where(eq(gameSessionsTable.id, id)).returning();
+    return rows[0] as any;
+  }
+  async createWeeklyState(weeklyState: InsertWeeklyState): Promise<WeeklyState> {
+    const rows = await db.insert(weeklyStatesTable).values(weeklyState as any).returning();
+    return rows[0] as any;
+  }
+  async getWeeklyState(gameSessionId: string, weekNumber: number): Promise<WeeklyState | undefined> {
+    const rows = await db
+      .select()
+      .from(weeklyStatesTable)
+      .where(and(eq(weeklyStatesTable.gameSessionId, gameSessionId), eq(weeklyStatesTable.weekNumber, weekNumber)))
+      .limit(1);
+    return rows[0] as any;
+  }
+  async getLatestWeeklyState(gameSessionId: string): Promise<WeeklyState | undefined> {
+    const rows = await db
+      .select()
+      .from(weeklyStatesTable)
+      .where(eq(weeklyStatesTable.gameSessionId, gameSessionId))
+      .orderBy(desc(weeklyStatesTable.weekNumber))
+      .limit(1);
+    return rows[0] as any;
+  }
+  async updateWeeklyState(id: string, updates: Partial<WeeklyState>): Promise<WeeklyState> {
+    const rows = await db
+      .update(weeklyStatesTable)
+      .set({ ...(updates as any), updatedAt: new Date() })
+      .where(eq(weeklyStatesTable.id, id))
+      .returning();
+    return rows[0] as any;
+  }
+  async getAllWeeklyStates(gameSessionId: string): Promise<WeeklyState[]> {
+    const rows = await db
+      .select()
+      .from(weeklyStatesTable)
+      .where(eq(weeklyStatesTable.gameSessionId, gameSessionId))
+      .orderBy(asc(weeklyStatesTable.weekNumber));
+    return rows as any;
+  }
+  async commitWeeklyState(id: string): Promise<WeeklyState> {
+    const rows = await db.update(weeklyStatesTable).set({ isCommitted: true, updatedAt: new Date() } as any).where(eq(weeklyStatesTable.id, id)).returning();
+    return rows[0] as any;
+  }
+}
+
+// Choose DB storage when DATABASE_URL is present; otherwise in-memory
+let selected: IStorage;
+if (process.env.DATABASE_URL) {
+  selected = new DatabaseStorage();
+} else {
+  selected = new InMemoryStorage();
+}
+
+export const storage: IStorage = selected;

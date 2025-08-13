@@ -13,6 +13,30 @@
 import type { Express, RequestHandler } from "express";
 import { storage } from "./storage";
 
+function parseCookies(header: string | undefined): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!header) return out;
+  header.split(";").forEach((p) => {
+    const [k, ...rest] = p.trim().split("=");
+    if (!k) return;
+    out[k] = decodeURIComponent(rest.join("="));
+  });
+  return out;
+}
+
+function buildSessionCookie(sid: string): string {
+  const parts = [
+    `sid=${encodeURIComponent(sid)}`,
+    "Path=/",
+    "HttpOnly",
+    "SameSite=Lax",
+  ];
+  if (process.env.NODE_ENV === "production") parts.push("Secure");
+  // 30 days
+  parts.push(`Max-Age=${30 * 24 * 60 * 60}`);
+  return parts.join("; ");
+}
+
 /*
  * Attach a fake user object to every incoming request. In addition to
  * setting a static user identifier, this function ensures that a
@@ -20,22 +44,22 @@ import { storage } from "./storage";
  * it once at startup. Without this step, calls to `/api/auth/user` would
  * return `undefined`, causing the frontend to remain on the landing page.
  */
-let demoUserId: string | undefined;
-
 export async function setupAuth(app: Express) {
-  // Create or update a demo user once when the server is configured. This
-  // ensures that the user exists in storage and has an ID we can reference.
-  const demoUser = await storage.upsertUser({
-    email: "demo@example.com",
-    firstName: "Demo",
-    lastName: "User",
-    profileImageUrl: "",
-  } as any);
-  demoUserId = demoUser.id as string;
-
-  app.use(async (req: any, _res: any, next: any) => {
-    // Provide a consistent user ID so that storage can track sessions
-    req.user = { claims: { sub: demoUserId } };
+  app.use(async (req: any, res: any, next: any) => {
+    const cookies = parseCookies(req.headers["cookie"] as string | undefined);
+    let sid = cookies["sid"];
+    if (!sid) {
+      sid = (globalThis.crypto ?? require("crypto")).randomUUID();
+      res.setHeader("Set-Cookie", buildSessionCookie(sid));
+    }
+    // Upsert a lightweight pseudo-user keyed by session id
+    const user = await storage.upsertUser({
+      email: `session:${sid}@local`,
+      firstName: "Session",
+      lastName: sid.slice(0, 8),
+      profileImageUrl: "",
+    } as any);
+    req.user = { claims: { sub: (user as any).id } };
     next();
   });
 }
