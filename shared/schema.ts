@@ -98,6 +98,35 @@ export const weeklyStates = pgTable("weekly_states", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Orders Log (immutable UI log of placed orders; row removed only via removedAt for current week)
+export const ordersLog = pgTable("orders_log", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  gameSessionId: varchar("game_session_id").notNull().references(() => gameSessions.id),
+  weekNumber: integer("week_number").notNull(),
+  orderTimestamp: varchar("order_timestamp").notNull(),
+  supplier: varchar("supplier").notNull(),
+  orderType: varchar("order_type").notNull(), // 'spot' | 'gmc' | 'fvc'
+  material: varchar("material").notNull(),
+  quantity: integer("quantity").notNull(),
+  effectiveUnitPrice: decimal("effective_unit_price", { precision: 12, scale: 4 }).notNull(),
+  effectiveLineTotal: decimal("effective_line_total", { precision: 14, scale: 2 }).notNull(),
+  removedAt: timestamp("removed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Cash ledger (optional; phase 2a). Entries appended by server for audit.
+export const cashLedger = pgTable("cash_ledger", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  gameSessionId: varchar("game_session_id").notNull().references(() => gameSessions.id),
+  weekNumber: integer("week_number").notNull(),
+  entryType: varchar("entry_type").notNull(),
+  refId: varchar("ref_id"),
+  amount: decimal("amount", { precision: 15, scale: 2 }).notNull(),
+  balanceAfter: decimal("balance_after", { precision: 15, scale: 2 }),
+  creditAfter: decimal("credit_after", { precision: 15, scale: 2 }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   gameSessions: many(gameSessions),
@@ -117,6 +146,9 @@ export const weeklyStatesRelations = relations(weeklyStates, ({ one }) => ({
     references: [gameSessions.id],
   }),
 }));
+
+export type OrdersLog = typeof ordersLog.$inferSelect;
+export type CashLedger = typeof cashLedger.$inferSelect;
 
 // Insert schemas
 export const insertUserSchema = createInsertSchema(users).omit({
