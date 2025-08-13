@@ -162,14 +162,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         totalFinishedGoodsAvailableNextWeek: Object.values(nextWeekEntry.products || {}).reduce((s: number, v: any) => s + Number(v || 0), 0),
       };
 
-      const rmList = Object.entries(rawMaterials).map(([material, v]: any) => ({
-        material,
-        onHand: Number(v.onHand || 0),
-        allocated: Number(v.allocated || 0),
-        onHandValue: Number(v.onHandValue || 0),
-        avgUnitCost: Number(v.onHand || 0) > 0 ? Number(v.onHandValue || 0) / Number(v.onHand || 1) : undefined,
-        inTransitByWeek: Object.entries(inTransitByWeek[material] || {}).map(([week, quantity]) => ({ week: Number(week), quantity: Number(quantity) })),
-      }));
+      const materialKeys = new Set<string>([...Object.keys(rawMaterials), ...Object.keys(inTransitByWeek)]);
+      const rmList = Array.from(materialKeys).map((material: string) => {
+        const v: any = (rawMaterials as any)[material] || {};
+        return {
+          material,
+          onHand: Number(v.onHand || 0),
+          allocated: Number(v.allocated || 0),
+          onHandValue: Number(v.onHandValue || 0),
+          avgUnitCost: Number(v.onHand || 0) > 0 ? Number(v.onHandValue || 0) / Number(v.onHand || 1) : undefined,
+          inTransitByWeek: Object.entries(inTransitByWeek[material] || {}).map(([week, quantity]) => ({ week: Number(week), quantity: Number(quantity) })),
+        };
+      });
 
       const wipList = (workInProcess as any[]).map((b: any) => ({
         id: String(b.id || ''),
