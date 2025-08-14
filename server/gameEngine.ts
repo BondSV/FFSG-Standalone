@@ -628,10 +628,8 @@ export class GameEngine {
     let cogsLogisticsSold = 0;
 
     const marketingSpend = this.toNumber(state.marketingPlan?.totalSpend ?? state.marketingSpend);
-    const marketingPrepaid = this.toNumber((state as any).marketingPrepaid, 0);
-    costMarketing += marketingSpend; // P&L recognizes full spend this week
-    const marketingCashThisWeek = Math.max(0, marketingSpend - marketingPrepaid);
-    operationalOutflows += marketingCashThisWeek; // Cash only for unpaid portion
+    costMarketing += marketingSpend;
+    operationalOutflows += marketingSpend;
 
     // Compute actual unit cost to enforce no-loss sales
     const totUnitsSold = this.toNumber((state.totals as any)?.unitsSoldToDate);

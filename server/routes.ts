@@ -601,6 +601,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Preserve Orders Log (materialPurchases) in the committed week
       (computed as any).materialPurchases = (weeklyState as any).materialPurchases || [];
       const { ledgerEntries, createdAt: _ca, updatedAt: _ua, ...toPersist } = (computed as any);
+      // Coerce numeric types expected by DB
+      // Persist A/I as decimals, not integers
+      (toPersist as any).awareness = Number((toPersist as any).awareness ?? 0).toFixed(2);
+      (toPersist as any).intent = Number((toPersist as any).intent ?? 0).toFixed(2);
       const committedState = await storage.updateWeeklyState(weeklyState.id, toPersist as any);
       await storage.commitWeeklyState(weeklyState.id);
       
@@ -657,8 +661,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nextWeekState.plannedMarketingPlan = (computed as any).plannedMarketingPlan;
         nextWeekState.plannedWeeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
         nextWeekState.plannedLocked = false;
-        // Carry forward any prepayment balance for marketing if we add prepay later (initialize zero now)
-        (nextWeekState as any).marketingPrepaid = 0;
         await storage.createWeeklyState(nextWeekState);
       }
       
