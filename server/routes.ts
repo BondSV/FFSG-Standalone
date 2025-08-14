@@ -663,7 +663,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Persist cash ledger entries, if present
       try {
-        const entries = (ledgerEntries as Array<{ type: string; amount: number; refId?: string }>) || [];
+        const entries = ((computed as any).ledgerEntries as Array<{ type: string; amount: number; refId?: string }>) || [];
         if (entries && entries.length > 0) {
           const rows = entries.map((e) => ({
             id: `${weeklyState.gameSessionId}-${week}-${e.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
