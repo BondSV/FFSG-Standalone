@@ -61,6 +61,13 @@ export const weeklyStates = pgTable("weekly_states", {
   
   // Product decisions
   productData: jsonb("product_data").notNull(), // Stores RRP, fabric choices, etc.
+  // Marketing state and plans
+  awareness: integer("awareness").default(0),
+  intent: integer("intent").default(0),
+  marketingPlan: jsonb("marketing_plan"),
+  plannedMarketingPlan: jsonb("planned_marketing_plan"),
+  plannedWeeklyDiscounts: jsonb("planned_weekly_discounts"),
+  plannedLocked: boolean("planned_locked").default(false),
   
   // Inventory levels
   rawMaterials: jsonb("raw_materials").notNull(),

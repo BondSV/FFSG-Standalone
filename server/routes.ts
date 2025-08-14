@@ -600,7 +600,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const computed = GameEngine.commitWeek(weeklyState as any);
       // Preserve Orders Log (materialPurchases) in the committed week
       (computed as any).materialPurchases = (weeklyState as any).materialPurchases || [];
-      const { ledgerEntries, ...toPersist } = (computed as any);
+      const { ledgerEntries, createdAt: _ca, updatedAt: _ua, ...toPersist } = (computed as any);
       const committedState = await storage.updateWeeklyState(weeklyState.id, toPersist as any);
       await storage.commitWeeklyState(weeklyState.id);
       
@@ -634,8 +634,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Create next week's skeleton from committed state if not final week
       if (week < 15) {
+        const { createdAt: _c2, updatedAt: _u2, ledgerEntries: _l2, ...rest } = (computed as any);
         const nextWeekState: any = {
-          ...computed,
+          ...rest,
           id: undefined,
           weekNumber: week + 1,
           phase: GameEngine.getPhaseForWeek(week + 1),
@@ -720,6 +721,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(result);
     } catch (error) {
       console.error('Error generating marketing preview:', error);
+      res.status(500).json({ message: 'Failed to generate marketing preview' });
+    }
+  });
+
+  app.post('/api/game/:gameId/week/:weekNumber/marketing-preview', isAuthenticated, async (req: any, res) => {
+    try {
+      const { gameId, weekNumber } = req.params;
+      const week = parseInt(weekNumber);
+      const weeklyState = await storage.getWeeklyState(gameId, week);
+      if (!weeklyState) return res.status(404).json({ message: 'Weekly state not found' });
+      const plan = req.body?.plan || undefined;
+      const discounts = req.body?.discounts || undefined;
+      const result = GameEngine.previewNextWeekMarketing(weeklyState as any, plan, discounts);
+      res.json(result);
+    } catch (error) {
+      console.error('Error generating marketing preview (POST):', error);
       res.status(500).json({ message: 'Failed to generate marketing preview' });
     }
   });

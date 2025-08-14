@@ -765,6 +765,12 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               </div>
                           );
                         })}
+                        <div className="flex justify-between items-center font-semibold border-t border-gray-200 pt-2 mt-2">
+                          <span>Order Total</span>
+                          <span className="font-mono">
+                            {formatCurrency((p.orders || []).reduce((sum: number, o: any) => sum + Number(o.effectiveLineTotal || 0), 0))}
+                          </span>
+                        </div>
             </div>
               </div>
                   );

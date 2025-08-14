@@ -242,15 +242,7 @@ export default function CommitWeekModal({
           )}
 
           {/* Action Buttons */}
-          <div className="flex justify-between items-center pt-4 border-t border-gray-200">
-            <Button
-              variant="outline"
-              onClick={() => onOpenChange(false)}
-              disabled={commitMutation.isPending}
-            >
-              Review Changes
-            </Button>
-            
+          <div className="flex justify-end items-center pt-4 border-t border-gray-200">
             <Button
               onClick={handleCommit}
               disabled={!validationData?.canCommit || commitMutation.isPending}
