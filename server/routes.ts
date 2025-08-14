@@ -662,21 +662,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nextWeekState.plannedWeeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
         nextWeekState.plannedLocked = false;
 
-        // 1) Start-of-week marketing effects for the new week: deduct cash and set A/I to end-of-week projection
+        // 1) Set next week's A/I to projection. Do NOT deduct marketing here; the engine handles start-of-week cash.
         try {
           const preview = GameEngine.previewNextWeekMarketing(committedState as any, (computed as any).plannedMarketingPlan, (computed as any).plannedWeeklyDiscounts);
-          const marketingSpendNext = Number((computed as any).plannedMarketingPlan?.totalSpend || 0);
           let cash = Number(nextWeekState.cashOnHand || 0);
           let credit = Number(nextWeekState.creditUsed || 0);
-          if (marketingSpendNext > 0) {
-            if (cash >= marketingSpendNext) {
-              cash -= marketingSpendNext;
-            } else {
-              const shortfall = marketingSpendNext - cash;
-              cash = 0;
-              credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + shortfall);
-            }
-          }
           nextWeekState.cashOnHand = cash.toFixed(2);
           nextWeekState.creditUsed = credit.toFixed(2);
           nextWeekState.awareness = Number(preview.nextAwareness).toFixed(2);
@@ -796,8 +786,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const week = parseInt(weekNumber);
       const weeklyState = await storage.getWeeklyState(gameId, week);
       if (!weeklyState) return res.status(404).json({ message: 'Weekly state not found' });
-      const plan = req.body?.plan || undefined;
-      const discounts = req.body?.discounts || undefined;
+      const plan = req.body?.plan || req.body?.plannedMarketingPlan || undefined;
+      const discounts = req.body?.discounts || req.body?.plannedWeeklyDiscounts || undefined;
       const result = GameEngine.previewNextWeekMarketing(weeklyState as any, plan, discounts);
       res.json(result);
     } catch (error) {

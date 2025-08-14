@@ -386,6 +386,8 @@ export class GameEngine {
           operationalOutflows += due;
           costMaterials += due;
           c.paidSoFar += due;
+          // ledger: FVC deposit
+          // collected later in the unified ledger push
         }
         // 70% due 8 weeks after signing (settlement period), regardless of delivery
         if (week === c.weekSigned + 8) {
@@ -393,6 +395,7 @@ export class GameEngine {
           operationalOutflows += due;
           costMaterials += due;
           c.paidSoFar += due;
+          // ledger: FVC balance
         }
       } else if (c.type === 'GMC') {
         // Payment per delivery with 2-week settlement AFTER arrival; good units only
@@ -405,6 +408,7 @@ export class GameEngine {
             operationalOutflows += due;
             costMaterials += due;
             c.paidSoFar += due;
+            // ledger: GMC settlement will be collected below with ref info
           }
         }
       }
@@ -447,6 +451,7 @@ export class GameEngine {
             const deliveryCost = goodUnits * unitPrice;
             operationalOutflows += deliveryCost;
             costMaterials += deliveryCost;
+            // ledger: SPT paid on delivery (good units)
           }
         }
       }
@@ -657,9 +662,6 @@ export class GameEngine {
       const availableLots = (state.finishedGoods as any).lots.filter((l: any) => l.product === p);
       let availableUnits = availableLots.reduce((s: number, l: any) => s + this.toNumber(l.quantity), 0);
       let unitsToSell = Math.min(availableUnits, demand);
-      if (price < actualUnitCost) {
-        unitsToSell = 0; // block loss-making sales
-      }
       salesByProduct[p] = unitsToSell;
       lostByProduct[p] = Math.max(0, demand - unitsToSell);
 
@@ -700,6 +702,37 @@ export class GameEngine {
       openingCash = 0;
     }
     if (costInterest > 0) ledger.push({ type: 'interest', amount: costInterest });
+
+    // Procurement-specific ledger entries (materials)
+    // FVC 30% and 70% instalments for contracts signed such weeks
+    for (const c of contracts) {
+      const unitPrice = this.computeContractUnitPrice(c);
+      if (c.type === 'FVC') {
+        const contractValue = unitPrice * this.toNumber(c.units);
+        if (week === c.weekSigned) {
+          ledger.push({ type: 'materials_fvc_deposit', amount: contractValue * 0.30, refId: `${c.supplier}:${c.material}` });
+        }
+        if (week === c.weekSigned + 8) {
+          ledger.push({ type: 'materials_fvc_balance', amount: contractValue * 0.70, refId: `${c.supplier}:${c.material}` });
+        }
+      } else if (c.type === 'SPT') {
+        for (const d of (c.deliveries || [])) {
+          if (this.toNumber(d.week) === week) {
+            const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
+            const u = this.toNumber(d.unitPrice ?? unitPrice);
+            ledger.push({ type: 'materials_spt', amount: goodUnits * u, refId: `${c.supplier}:${c.material}` });
+          }
+        }
+      } else if (c.type === 'GMC') {
+        for (const d of (c.deliveries || [])) {
+          if (this.toNumber(d.week) + 2 === week) {
+            const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
+            const u = this.toNumber(d.unitPrice ?? unitPrice);
+            ledger.push({ type: 'materials_gmc', amount: goodUnits * u, refId: `${c.supplier}:${c.material}` });
+          }
+        }
+      }
+    }
     // Then pay operational outflows scheduled for this week before sales cash arrives
     cashOnHand = openingCash;
     if (cashOnHand >= operationalOutflows) {

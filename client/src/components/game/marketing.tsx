@@ -77,23 +77,35 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     return 'conversion';
   }, [currentWeek]);
 
+  const planned = (currentState as any)?.plannedMarketingPlan as any;
+  const initialManual = Boolean(planned?.manual);
+  const [manual, setManual] = useState<boolean>(initialManual);
   const [preset, setPreset] = useState<PresetId>(recommendedPreset);
-  const [channelAllocation, setChannelAllocation] = useState<Record<string, number>>(() => ({ ...defaultSplits[recommendedPreset] }));
+  const [channelAllocation, setChannelAllocation] = useState<Record<string, number>>(() => {
+    if (initialManual && planned?.channels && Number(planned?.totalSpend) >= 0) {
+      const total = Number(planned.totalSpend) || 1;
+      const pct: Record<string, number> = {};
+      (planned.channels as any[]).forEach((c) => { pct[c.name] = Math.round((Number(c.spend||0) / total) * 100); });
+      return pct;
+    }
+    return { ...defaultSplits[recommendedPreset] };
+  });
 
   // Discounts for next week
   const [discountMode, setDiscountMode] = useState<'none' | 'minimal' | 'standard' | 'aggressive'>(preset === 'conversion' ? 'standard' : 'none');
   const [discountPercent, setDiscountPercent] = useState<number>(preset === 'conversion' ? 15 : 0);
 
   useEffect(() => {
-    setChannelAllocation({ ...defaultSplits[preset] });
-    if (preset === 'awareness') { setDiscountMode('none'); setDiscountPercent(0); }
-    if (preset === 'balanced') { setDiscountMode('none'); }
-    if (preset === 'conversion') { setDiscountMode('standard'); setDiscountPercent(15); }
-  }, [preset]);
+    if (!manual) {
+      setChannelAllocation({ ...defaultSplits[preset] });
+      if (preset === 'awareness') { setDiscountMode('none'); setDiscountPercent(0); }
+      if (preset === 'balanced') { setDiscountMode('none'); }
+      if (preset === 'conversion') { setDiscountMode('standard'); setDiscountPercent(15); }
+    }
+  }, [preset, manual]);
 
   const totalAllocation = useMemo(() => Object.values(channelAllocation).reduce((s, v) => s + (Number(v) || 0), 0), [channelAllocation]);
   const isFinalWeek = currentWeek === 15;
-  const [fineTune, setFineTune] = useState<boolean>(false);
   const isLocked = Boolean((currentState as any)?.plannedLocked);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
@@ -112,7 +124,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
       toast({ title: 'Planned', description: 'Marketing plan applied to next week.' });
     },
-    onError: (error) => {
+    onError: (error: any) => {
       if (isUnauthorizedError(error)) {
         toast({ title: 'Unauthorized', description: 'You are logged out. Logging in again...', variant: 'destructive' });
         setTimeout(() => { window.location.href = '/api/login'; }, 500);
@@ -127,7 +139,15 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   };
 
   const handleChannelAllocationChange = (channelId: string, percentage: number) => {
-    setChannelAllocation(prev => ({ ...prev, [channelId]: percentage }));
+    setChannelAllocation((prev: Record<string, number>) => {
+      let others = 0;
+      for (const [key, value] of Object.entries(prev)) {
+        if (key !== channelId) others += Number(value || 0);
+      }
+      const maxAllowed = Math.max(0, 100 - others);
+      const clamped = Math.min(percentage, maxAllowed);
+      return { ...prev, [channelId]: clamped };
+    });
   };
 
   const plannedDiscounts = useMemo(() => {
@@ -211,8 +231,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     const t = setTimeout(async () => {
       try {
         const channelsArray = marketingChannels.map((c) => ({ name: c.id, spend: (marketingSpend * (channelAllocation[c.id] || 0)) / 100 }));
-        const plan = { totalSpend: marketingSpend, channels: channelsArray };
-        const res = await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/marketing-preview`, { plan, discounts: plannedDiscounts });
+        const plan = { totalSpend: marketingSpend, channels: channelsArray, manual };
+        const res = await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/marketing-preview`, { plannedMarketingPlan: plan, plannedWeeklyDiscounts: plannedDiscounts });
         const data = await res.json();
         setPreview({ nextAwareness: Number(data.nextAwareness||0), nextIntent: Number(data.nextIntent||0), forecastDemandTotal: Number(data.forecastDemandTotal||0) });
       } catch {
@@ -408,7 +428,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               <Label>Preset</Label>
               <div className="flex gap-2 flex-wrap">
                 {(['awareness','balanced','conversion'] as PresetId[]).map(p => (
-                  <Button key={p} variant={preset===p?'default':'outline'} onClick={()=> setPreset(p)} disabled={isLocked}>{p.charAt(0).toUpperCase()+p.slice(1)}</Button>
+                  <Button key={p} variant={!manual && preset===p?'default':'outline'} onClick={()=> { setManual(false); setPreset(p); }} disabled={isLocked}>{p.charAt(0).toUpperCase()+p.slice(1)}</Button>
                 ))}
               </div>
               <div className="text-xs text-gray-500 flex items-center gap-1"><HelpCircle size={12}/> Recommended for next week: {recommendedPreset.charAt(0).toUpperCase()+recommendedPreset.slice(1)}</div>
@@ -456,8 +476,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
           <div className="flex items-center justify-between">
             <p className="text-sm text-gray-600">Allocate percent split (must total 100%).</p>
             <div className="flex items-center gap-2">
-              <span className="text-sm text-gray-700">Fine Tune Channel Split</span>
-              <Switch checked={fineTune} onCheckedChange={setFineTune} />
+              <span className="text-sm text-gray-700">Manual Channel Split Management</span>
+              <Switch checked={manual} onCheckedChange={(v)=> setManual(Boolean(v))} />
             </div>
           </div>
         </CardHeader>
@@ -494,11 +514,11 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       min={0}
                       max={100}
                       step={5}
-                      onValueChange={(v)=> fineTune ? handleChannelAllocationChange(channel.id, v[0] || 0) : undefined}
+                      onValueChange={(v)=> manual ? handleChannelAllocationChange(channel.id, v[0] || 0) : undefined}
                       trackClassName="bg-gray-200"
                       rangeClassName="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500"
                       thumbClassName="border-amber-500"
-                      disabled={isLocked || !fineTune}
+                      disabled={isLocked || !manual}
                     />
                     <div className="flex justify-between text-xs text-gray-500 mt-5"><span>0%</span><span className="opacity-0">.</span><span>100%</span></div>
                   </div>
@@ -517,7 +537,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
       {/* Actions footer (normal pane at bottom) */}
       <div className="mt-8 bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between">
-        <Button variant="outline" onClick={()=> { setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>Reset to Preset</Button>
+        <Button variant="outline" onClick={()=> { setManual(false); setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>Reset to Preset</Button>
         <Button onClick={handleApplyNextWeek} disabled={isLocked || updateStateMutation.isPending || Math.round(totalAllocation)!==100}>
           {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
           </Button>
@@ -535,7 +555,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
               const channelsArray = marketingChannels.map((c) => ({ name: c.id, spend: calculateChannelSpend(c.id) }));
-              const updates: any = { plannedMarketingPlan: { totalSpend: marketingSpend, channels: channelsArray }, plannedWeeklyDiscounts: plannedDiscounts, plannedLocked: true };
+              const updates: any = { plannedMarketingPlan: { totalSpend: marketingSpend, channels: channelsArray, manual }, plannedWeeklyDiscounts: plannedDiscounts, plannedLocked: true };
               updateStateMutation.mutate(updates);
               setConfirmOpen(false);
             }}>Confirm & Lock</AlertDialogAction>
