@@ -661,6 +661,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nextWeekState.plannedMarketingPlan = (computed as any).plannedMarketingPlan;
         nextWeekState.plannedWeeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
         nextWeekState.plannedLocked = false;
+
+        // 1) Start-of-week marketing effects for the new week: deduct cash and set A/I to end-of-week projection
+        try {
+          const preview = GameEngine.previewNextWeekMarketing(committedState as any, (computed as any).plannedMarketingPlan, (computed as any).plannedWeeklyDiscounts);
+          const marketingSpendNext = Number((computed as any).plannedMarketingPlan?.totalSpend || 0);
+          let cash = Number(nextWeekState.cashOnHand || 0);
+          let credit = Number(nextWeekState.creditUsed || 0);
+          if (marketingSpendNext > 0) {
+            if (cash >= marketingSpendNext) {
+              cash -= marketingSpendNext;
+            } else {
+              const shortfall = marketingSpendNext - cash;
+              cash = 0;
+              credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + shortfall);
+            }
+          }
+          nextWeekState.cashOnHand = cash.toFixed(2);
+          nextWeekState.creditUsed = credit.toFixed(2);
+          nextWeekState.awareness = Number(preview.nextAwareness).toFixed(2);
+          nextWeekState.intent = Number(preview.nextIntent).toFixed(2);
+        } catch (e) {
+          // fallback: keep awareness/intent as-is
+        }
+
+        // 2) Receive deliveries scheduled to arrive this new week at start-of-week; update RM on-hand and pay SPT
+        try {
+          const contracts = ((nextWeekState as any).procurementContracts?.contracts || []) as any[];
+          const rm: any = (nextWeekState as any).rawMaterials || {};
+          const supplierDefect = (sup: string) => Number(((GAME_CONSTANTS as any).SUPPLIERS?.[sup]?.defectRate) || 0);
+          for (const c of contracts) {
+            const arr: any[] = (c.deliveries || []);
+            const remaining: any[] = [];
+            for (const d of arr) {
+              if (Number(d.week) === week + 1) {
+                const unitPrice = Number(d.unitPrice ?? c.lockedUnitPrice ?? 0);
+                const defectRate = supplierDefect(String(c.supplier));
+                const goodUnits = Number((d as any).goodUnits ?? Math.round(Number(d.units || 0) * (1 - defectRate)));
+                const mat = String(c.material);
+                const entry = rm[mat] || { onHand: 0, allocated: 0, onHandValue: 0 };
+                entry.onHand = Number(entry.onHand || 0) + goodUnits;
+                entry.onHandValue = Number(entry.onHandValue || 0) + goodUnits * unitPrice;
+                rm[mat] = entry;
+                c.deliveredUnits = Number(c.deliveredUnits || 0) + goodUnits;
+                if (c.type === 'SPT') {
+                  // pay on delivery now
+                  let cash = Number(nextWeekState.cashOnHand || 0);
+                  let credit = Number(nextWeekState.creditUsed || 0);
+                  const due = goodUnits * unitPrice;
+                  if (cash >= due) { cash -= due; } else { const short = due - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + short); }
+                  nextWeekState.cashOnHand = cash.toFixed(2);
+                  nextWeekState.creditUsed = credit.toFixed(2);
+                }
+              } else {
+                remaining.push(d);
+              }
+            }
+            c.deliveries = remaining;
+          }
+          (nextWeekState as any).rawMaterials = rm;
+        } catch (e) {
+          // ignore
+        }
+
         await storage.createWeeklyState(nextWeekState);
       }
       

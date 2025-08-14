@@ -292,12 +292,18 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             </div>
             <div>
               <div className="text-sm text-gray-700 mb-1 flex items-center gap-1">
-                Demand (units, last week)
-                <TooltipWrapper content="Demand: units sold last week. Driven by Awareness × Intent and pricing (discounts). With no marketing activity, sales trend toward a low baseline.">
-                  <span className="text-gray-400">?</span>
+                <TooltipWrapper content="Demand: estimated units customers want to buy this week (even if products aren’t yet on sale). Driven by Awareness × Intent and pricing. Forecast shows the impact of your current plan next week.">
+                  <span>Demand (units, last week)</span>
                 </TooltipWrapper>
               </div>
-              <div className="text-xs text-gray-600 mb-1">{Number(currentState?.weeklyDemand?.jacket||0)+Number(currentState?.weeklyDemand?.dress||0)+Number(currentState?.weeklyDemand?.pants||0)} units {(!isFinalWeek && Number(preview?.forecastDemandTotal||0)>0) ? `→ next week ~ ${Number(preview?.forecastDemandTotal||0).toLocaleString()} (forecast)` : ''}</div>
+              {(() => {
+                const dem = (currentState?.weeklyDemand || {}) as any;
+                const lastWeekUnits = Number(dem.jacket||0)+Number(dem.dress||0)+Number(dem.pants||0);
+                const nextForecast = Number(preview?.forecastDemandTotal||0);
+                return (
+                  <div className="text-xs text-gray-600 mb-1">{lastWeekUnits.toLocaleString()} units {(!isFinalWeek && nextForecast>0) ? `→ next week ~ ${nextForecast.toLocaleString()} (forecast)` : ''}</div>
+                );
+              })()}
               <Sparkline points={[]} />
             </div>
           </div>
@@ -514,7 +520,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         <Button variant="outline" onClick={()=> { setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>Reset to Preset</Button>
         <Button onClick={handleApplyNextWeek} disabled={isLocked || updateStateMutation.isPending || Math.round(totalAllocation)!==100}>
           {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
-        </Button>
+          </Button>
       </div>
 
       <AlertDialog open={confirmOpen} onOpenChange={setConfirmOpen}>

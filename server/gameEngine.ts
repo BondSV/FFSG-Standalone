@@ -930,9 +930,11 @@ export class GameEngine {
     hasPrint: boolean = false
   ): number {
     const productData = GAME_CONSTANTS.PRODUCTS[product];
-    const baseUnits = productData.forecast;
-    const seasonality = GAME_CONSTANTS.SEASONALITY[week - 1] || 0;
-    
+    // Use season forecast distributed evenly per sales week (9 weeks). We still compute weekly
+    // "want to buy" demand for all weeks (including pre‑sales), but there is no separate
+    // seasonality multiplier inside the 9-week window.
+    const baseWeekly = productData.forecast / 9;
+
     // Price effect
     const finalPrice = rrp * (1 - discount);
     const priceEffect = Math.pow(rrp / finalPrice, productData.elasticity);
@@ -945,7 +947,7 @@ export class GameEngine {
     const designEffect = hasPrint ? 1.05 : 0.95;
     
     // Base demand before Awareness/Intent adjustment; marketingSpend no longer directly boosts demand
-    return Math.round(baseUnits * seasonality * priceEffect * positioningEffect * designEffect);
+    return Math.round(baseWeekly * priceEffect * positioningEffect * designEffect);
   }
   
   static calculateProjectedUnitCost(
