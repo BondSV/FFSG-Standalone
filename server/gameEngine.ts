@@ -573,10 +573,14 @@ export class GameEngine {
     let awareness = this.toNumber((state as any).awareness, 0);
     let intent = this.toNumber((state as any).intent, 0);
 
-    // Gains from spend and synergies
-    const gains = this.computeChannelGains(totalSpendThisWeek, channelsThisWeek || [], awareness, intent);
-    let dA = gains.dA;
-    let dI = gains.dI;
+    // Apply A/I gains only if not already applied at start-of-week in routes
+    let dA = 0;
+    let dI = 0;
+    if (!(state as any).prepaidMarketing) {
+      const gains = this.computeChannelGains(totalSpendThisWeek, channelsThisWeek || [], awareness, intent);
+      dA = gains.dA;
+      dI = gains.dI;
+    }
 
     // Progressive decay when underfunded or below optimal
     const baselineSpend = GAME_CONSTANTS.BASELINE_MARKETING_SPEND;
@@ -752,8 +756,8 @@ export class GameEngine {
       creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallOps);
       cashOnHand = 0;
     }
-    // Always record marketing ledger for transparency, even if prepaid at start of week
-    if (marketingSpend > 0) ledger.push({ type: 'marketing', amount: marketingSpend });
+    // Record marketing ledger only if not prepaid at start-of-week
+    if (!prepaidMarketing && marketingSpend > 0) ledger.push({ type: 'marketing', amount: marketingSpend });
     if (costProduction > 0) ledger.push({ type: 'production', amount: costProduction });
     if (costLogistics > 0) ledger.push({ type: 'logistics', amount: costLogistics });
     if (costHolding > 0) ledger.push({ type: 'holding', amount: costHolding });

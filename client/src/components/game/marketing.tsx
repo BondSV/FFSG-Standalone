@@ -227,7 +227,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   }, [plannedDiscounts, currentState?.productData, gameConstants]);
 
   const handleApplyNextWeek = () => {
-    if (Math.round(totalAllocation) !== 100) {
+    if (marketingSpend > 0 && Math.round(totalAllocation) !== 100) {
       toast({ title: 'Allocation must be 100%', description: 'Adjust channel percentages to total 100%.', variant: 'destructive' });
       return;
     }
