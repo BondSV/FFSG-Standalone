@@ -37,6 +37,8 @@ export default function Header({ currentState, onCommitWeek }: HeaderProps) {
   };
 
   const { data: constants } = useQuery({ queryKey: ["/api/game/constants"], retry: false });
+  // Always refresh current game after a commit so header reflects start-of-week balances
+  useQuery({ queryKey: ['/api/game/current'], staleTime: 0 });
   const creditUsed = parseFloat(currentState?.creditUsed || '0');
   const creditLimit = Number((constants as any)?.CREDIT_LIMIT || 0);
   const creditAvailable = Math.max(0, creditLimit - creditUsed);

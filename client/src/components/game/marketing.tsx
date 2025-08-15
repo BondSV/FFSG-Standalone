@@ -168,6 +168,18 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     return hasSpend && (marketingSpend < 200000 || tvPct < 10);
   }, [channelAllocation, marketingSpend]);
 
+  // When budget is £0, force splits to 0 and lock sliders
+  useEffect(() => {
+    if (marketingSpend === 0) {
+      const zeros: Record<string, number> = {};
+      for (const c of marketingChannels) zeros[c.id] = 0;
+      setChannelAllocation(zeros);
+    } else if (!manual) {
+      // If spend increases above 0 and manual is off, apply recommended preset automatically
+      setChannelAllocation({ ...defaultSplits[recommendedPreset] });
+    }
+  }, [marketingSpend, manual, recommendedPreset]);
+
   // Recommended efficient zones by preset and channel (percent ranges)
   const getEfficientRange = (p: PresetId, channelId: string): [number, number] => {
     const map: Record<PresetId, Record<string, [number, number]>> = {
@@ -240,7 +252,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       }
     }, 300);
     return () => clearTimeout(t);
-  }, [gameSession?.id, currentWeek, marketingSpend, JSON.stringify(channelAllocation), preset, discountMode, discountPercent]);
+  }, [gameSession?.id, currentWeek, marketingSpend, JSON.stringify(channelAllocation), preset, discountMode, discountPercent, manual]);
 
   return (
     <div className="p-6">
@@ -353,6 +365,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               acc.revenue += revenue;
               return acc;
             }, { spend: 0, units: 0, revenue: 0 });
+            totals.spend += Number((currentState as any)?.marketingPlan?.totalSpend ?? 0);
             const roas = totals.spend > 0 ? totals.revenue / totals.spend : null;
             const cac = totals.units > 0 ? totals.spend / totals.units : null;
             return (
@@ -518,7 +531,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                       trackClassName="bg-gray-200"
                       rangeClassName="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500"
                       thumbClassName="border-amber-500"
-                      disabled={isLocked || !manual}
+                      disabled={isLocked || !manual || marketingSpend===0}
                     />
                     <div className="flex justify-between text-xs text-gray-500 mt-5"><span>0%</span><span className="opacity-0">.</span><span>100%</span></div>
                   </div>
@@ -528,7 +541,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             })}
             <div className="text-sm flex items-center justify-between col-span-1 xl:col-span-2 mt-1">
               <div>Total allocation: {totalAllocation.toFixed(1)}%</div>
-              {Math.round(totalAllocation) !== 100 && (<div className="text-red-600 inline-flex items-center gap-1"><AlertTriangle size={14}/> Must be 100%</div>)}
+              {marketingSpend > 0 && Math.round(totalAllocation) !== 100 && (<div className="text-red-600 inline-flex items-center gap-1"><AlertTriangle size={14}/> Must be 100%</div>)}
               {tvInefficient && (<div className="text-amber-600 inline-flex items-center gap-1"><AlertTriangle size={14}/> TV budget likely wasted at this level</div>)}
                 </div>
           </div>
@@ -538,7 +551,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       {/* Actions footer (normal pane at bottom) */}
       <div className="mt-8 bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between">
         <Button variant="outline" onClick={()=> { setManual(false); setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>Reset to Preset</Button>
-        <Button onClick={handleApplyNextWeek} disabled={isLocked || updateStateMutation.isPending || Math.round(totalAllocation)!==100}>
+        <Button onClick={handleApplyNextWeek} disabled={isLocked || updateStateMutation.isPending || (marketingSpend>0 && Math.round(totalAllocation)!==100)}>
           {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
           </Button>
       </div>

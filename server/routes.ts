@@ -675,44 +675,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // fallback: keep awareness/intent as-is
         }
 
-        // 2) Receive deliveries scheduled to arrive this new week at start-of-week; update RM on-hand and pay SPT
-        try {
-          const contracts = ((nextWeekState as any).procurementContracts?.contracts || []) as any[];
-          const rm: any = (nextWeekState as any).rawMaterials || {};
-          const supplierDefect = (sup: string) => Number(((GAME_CONSTANTS as any).SUPPLIERS?.[sup]?.defectRate) || 0);
-          for (const c of contracts) {
-            const arr: any[] = (c.deliveries || []);
-            const remaining: any[] = [];
-            for (const d of arr) {
-              if (Number(d.week) === week + 1) {
-                const unitPrice = Number(d.unitPrice ?? c.lockedUnitPrice ?? 0);
-                const defectRate = supplierDefect(String(c.supplier));
-                const goodUnits = Number((d as any).goodUnits ?? Math.round(Number(d.units || 0) * (1 - defectRate)));
-                const mat = String(c.material);
-                const entry = rm[mat] || { onHand: 0, allocated: 0, onHandValue: 0 };
-                entry.onHand = Number(entry.onHand || 0) + goodUnits;
-                entry.onHandValue = Number(entry.onHandValue || 0) + goodUnits * unitPrice;
-                rm[mat] = entry;
-                c.deliveredUnits = Number(c.deliveredUnits || 0) + goodUnits;
-                if (c.type === 'SPT') {
-                  // pay on delivery now
-                  let cash = Number(nextWeekState.cashOnHand || 0);
-                  let credit = Number(nextWeekState.creditUsed || 0);
-                  const due = goodUnits * unitPrice;
-                  if (cash >= due) { cash -= due; } else { const short = due - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + short); }
-                  nextWeekState.cashOnHand = cash.toFixed(2);
-                  nextWeekState.creditUsed = credit.toFixed(2);
-                }
-              } else {
-                remaining.push(d);
-              }
-            }
-            c.deliveries = remaining;
-          }
-          (nextWeekState as any).rawMaterials = rm;
-        } catch (e) {
-          // ignore
-        }
+        // 2) Do NOT mutate deliveries or raw materials here; the engine handles arrivals and settlements.
 
         await storage.createWeeklyState(nextWeekState);
       }
@@ -737,6 +700,77 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error committing weekly state:", error);
       res.status(500).json({ message: "Failed to commit weekly state" });
+    }
+  });
+
+  // Helper: preview due payments for a specific week (no mutation)
+  app.get('/api/game/:gameId/week/:weekNumber/due-payments', isAuthenticated, async (req: any, res) => {
+    try {
+      const { gameId, weekNumber } = req.params;
+      const week = parseInt(weekNumber);
+      const weeklyState = await storage.getWeeklyState(gameId, week);
+      if (!weeklyState) return res.status(404).json({ message: 'Weekly state not found' });
+
+      // Clone state and simulate only the payment schedule parts without sales
+      const state: any = JSON.parse(JSON.stringify(weeklyState));
+      const contracts = (state.procurementContracts?.contracts || []) as any[];
+      const result: Array<{ type: string; amount: number; refId?: string }> = [];
+
+      // Marketing spend due this week
+      const marketingDue = Number(state.marketingPlan?.totalSpend ?? state.marketingSpend ?? 0);
+      if (marketingDue > 0) result.push({ type: 'marketing', amount: marketingDue });
+
+      // Procurement instalments
+      for (const c of contracts) {
+        const unitPrice = ((): number => {
+          if (c.lockedUnitPrice != null) return Number(c.lockedUnitPrice);
+          const base = Number(c.unitBasePrice || 0);
+          const surcharge = Number(c.printSurcharge || 0);
+          const disc = Number(c.discountPercentApplied || 0);
+          return (base + surcharge) * (1 - disc);
+        })();
+        if (c.type === 'FVC') {
+          const contractValue = unitPrice * Number(c.units || 0);
+          if (week === Number(c.weekSigned)) result.push({ type: 'materials_fvc_deposit', amount: contractValue * 0.30, refId: `${c.supplier}:${c.material}` });
+          if (week === Number(c.weekSigned) + 8) result.push({ type: 'materials_fvc_balance', amount: contractValue * 0.70, refId: `${c.supplier}:${c.material}` });
+        } else if (c.type === 'SPT') {
+          for (const d of (c.deliveries || [])) {
+            if (Number(d.week) === week) {
+              const goodUnits = Number((d as any).goodUnits ?? d.units);
+              const u = Number(d.unitPrice ?? unitPrice);
+              result.push({ type: 'materials_spt', amount: goodUnits * u, refId: `${c.supplier}:${c.material}` });
+            }
+          }
+        } else if (c.type === 'GMC') {
+          for (const d of (c.deliveries || [])) {
+            if (Number(d.week) + 2 === week) {
+              const goodUnits = Number((d as any).goodUnits ?? d.units);
+              const u = Number(d.unitPrice ?? unitPrice);
+              result.push({ type: 'materials_gmc', amount: goodUnits * u, refId: `${c.supplier}:${c.material}` });
+            }
+          }
+        }
+      }
+
+      // Production/logistics due on schedule start this week
+      const batches = (state.productionSchedule?.batches || []) as any[];
+      for (const b of batches) {
+        if (Number(b.startWeek) === week) {
+          const product = String(b.product || '');
+          const method = String(b.method || 'inhouse');
+          const units = Number(b.quantity || 0);
+          const mfg = (GAME_CONSTANTS.MANUFACTURING as any)[product] || {};
+          const unitProd = method === 'inhouse' ? Number(mfg.inHouseCost || 0) : Number(mfg.outsourceCost || 0);
+          result.push({ type: 'production', amount: units * unitProd, refId: product });
+          const shipUnit = 0; // shipping cost is already captured at schedule time by engine; unknown per-product config here
+          if (shipUnit > 0) result.push({ type: 'logistics', amount: units * shipUnit, refId: product });
+        }
+      }
+
+      res.json({ week, due: result });
+    } catch (error) {
+      console.error('Error computing due payments:', error);
+      res.status(500).json({ message: 'Failed to compute due payments' });
     }
   });
 

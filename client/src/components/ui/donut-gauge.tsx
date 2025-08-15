@@ -17,18 +17,19 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
   const remainder = circumference - dash;
   const fDash = (Math.max(pct, fPct) / 100) * circumference;
   const fRemainder = circumference - fDash;
+  const isDecay = Number.isFinite(forecast as number) && Number.isFinite(value as number) && (fPct < pct);
 
   return (
     <div className="flex items-center gap-3">
       <svg width={size} height={size} viewBox="0 0 120 120" className="shrink-0">
         <g transform="translate(60,60)">
           <circle r={radius} className="stroke-gray-200" strokeWidth={12} fill="none" />
-          {/* Forecast arc (semi-opaque), drawn first so actual sits above */}
+          {/* Forecast arc: semi-opaque in normal case; solid red for decay */}
           {Number.isFinite(forecast as number) && (
             <circle
               r={radius}
               strokeLinecap="round"
-              className={`${colorClass} opacity-50 transition-all duration-500`}
+              className={`${isDecay ? 'stroke-red-500' : colorClass} ${isDecay ? '' : 'opacity-50'} transition-all duration-500`}
               strokeWidth={12}
               fill="none"
               strokeDasharray={`${fDash} ${fRemainder}`}
