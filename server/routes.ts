@@ -662,15 +662,83 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nextWeekState.plannedWeeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
         nextWeekState.plannedLocked = false;
 
-        // 1) Set next week's A/I to projection. Do NOT deduct marketing here; the engine handles start-of-week cash.
+        // 1) Set next week's A/I to projection and apply start-of-week payments so balances reflect Week N immediately
         try {
           const preview = GameEngine.previewNextWeekMarketing(committedState as any, (computed as any).plannedMarketingPlan, (computed as any).plannedWeeklyDiscounts);
           let cash = Number(nextWeekState.cashOnHand || 0);
           let credit = Number(nextWeekState.creditUsed || 0);
-          nextWeekState.cashOnHand = cash.toFixed(2);
-          nextWeekState.creditUsed = credit.toFixed(2);
           nextWeekState.awareness = Number(preview.nextAwareness).toFixed(2);
           nextWeekState.intent = Number(preview.nextIntent).toFixed(2);
+          // Apply start-of-week marketing spend for Week N
+          const marketingSpendNext = Number((computed as any).plannedMarketingPlan?.totalSpend || 0);
+          if (marketingSpendNext > 0) {
+            if (cash >= marketingSpendNext) { cash -= marketingSpendNext; } else { const shortfall = marketingSpendNext - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + shortfall); }
+            nextWeekState.prepaidMarketing = true;
+            // Also set the live marketing plan for Week N
+            nextWeekState.marketingPlan = (computed as any).plannedMarketingPlan;
+          }
+          // Apply FVC instalments due in Week N
+          const contractsFvc = (((nextWeekState as any).procurementContracts?.contracts) || []) as any[];
+          for (const c of contractsFvc) {
+            if (c.type === 'FVC') {
+              const unitPrice = ((): number => {
+                if (c.lockedUnitPrice != null) return Number(c.lockedUnitPrice);
+                const base = Number(c.unitBasePrice || 0);
+                const surcharge = Number(c.printSurcharge || 0);
+                const disc = Number(c.discountPercentApplied || 0);
+                return (base + surcharge) * (1 - disc);
+              })();
+              const contractValue = unitPrice * Number(c.units || 0);
+              if ((week + 1) === Number(c.weekSigned)) {
+                const due = contractValue * 0.30;
+                if (cash >= due) { cash -= due; } else { const short = due - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + short); }
+                c.__prepaidDepositWeek = week + 1;
+              }
+              if ((week + 1) === (Number(c.weekSigned) + 8)) {
+                const due = contractValue * 0.70;
+                if (cash >= due) { cash -= due; } else { const short = due - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + short); }
+                c.__prepaidBalanceWeek = week + 1;
+              }
+            }
+          }
+          // Receive deliveries arriving in Week N (add RM) and pay SPT; mark flags so engine skips double actions
+          const rm: any = (nextWeekState as any).rawMaterials || {};
+          for (const c of contractsFvc) {
+            for (const d of (c.deliveries || [])) {
+              if (Number(d.week) === (week + 1)) {
+                const unitPrice = Number(d.unitPrice ?? c.lockedUnitPrice ?? 0);
+                const defectRate = Number(((GAME_CONSTANTS as any).SUPPLIERS?.[c.supplier]?.defectRate) || 0);
+                const goodUnits = Number((d as any).goodUnits ?? Math.round(Number(d.units || 0) * (1 - defectRate)));
+                const mat = String(c.material);
+                const entry = rm[mat] || { onHand: 0, allocated: 0, onHandValue: 0 };
+                entry.onHand = Number(entry.onHand || 0) + goodUnits;
+                entry.onHandValue = Number(entry.onHandValue || 0) + goodUnits * unitPrice;
+                rm[mat] = entry;
+                (d as any).startApplied = true; // prevent double add in engine
+                if (c.type === 'SPT') {
+                  const due = goodUnits * unitPrice;
+                  if (cash >= due) { cash -= due; } else { const short = due - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + short); }
+                }
+              }
+            }
+          }
+          // GMC settlements due in Week N (deliveries that arrived Week N-2)
+          for (const c of contractsFvc) {
+            if (c.type === 'GMC') {
+              for (const d of (c.deliveries || [])) {
+                if ((Number(d.week) + 2) === (week + 1)) {
+                  const unitPrice = Number(d.unitPrice ?? c.lockedUnitPrice ?? 0);
+                  const goodUnits = Number((d as any).goodUnits ?? Number(d.units || 0));
+                  const due = goodUnits * unitPrice;
+                  if (cash >= due) { cash -= due; } else { const short = due - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + short); }
+                  (d as any).settlementPrepaid = true; // prevent engine double payment
+                }
+              }
+            }
+          }
+          (nextWeekState as any).rawMaterials = rm;
+          nextWeekState.cashOnHand = cash.toFixed(2);
+          nextWeekState.creditUsed = credit.toFixed(2);
         } catch (e) {
           // fallback: keep awareness/intent as-is
         }

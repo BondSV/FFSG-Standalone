@@ -380,7 +380,7 @@ export class GameEngine {
       const contractValue = unitPrice * this.toNumber(c.units);
       c.paidSoFar = this.toNumber(c.paidSoFar);
       if (c.type === 'FVC') {
-        if (week === c.weekSigned) {
+        if (week === c.weekSigned && !(c as any).__prepaidDepositWeek) {
           // 30% on signing
           const due = contractValue * 0.30;
           operationalOutflows += due;
@@ -390,7 +390,7 @@ export class GameEngine {
           // collected later in the unified ledger push
         }
         // 70% due 8 weeks after signing (settlement period), regardless of delivery
-        if (week === c.weekSigned + 8) {
+        if (week === c.weekSigned + 8 && !(c as any).__prepaidBalanceWeek) {
           const due = contractValue * 0.70;
           operationalOutflows += due;
           costMaterials += due;
@@ -401,7 +401,7 @@ export class GameEngine {
         // Payment per delivery with 2-week settlement AFTER arrival; good units only
         const deliveries = (c as any).deliveries || [];
         for (const d of deliveries) {
-          if (week === this.toNumber(d.week) + 2) {
+          if (week === this.toNumber(d.week) + 2 && !(d as any).settlementPrepaid) {
             const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
             const u = this.toNumber(d.unitPrice ?? unitPrice);
             const due = goodUnits * u;
@@ -440,17 +440,24 @@ export class GameEngine {
           // Update raw materials inventory on-hand
           const matKey = c.material as MaterialKey;
           const entry: any = state.rawMaterials[matKey] || { onHand: 0, allocated: 0, inTransit: [] };
-          entry.onHand = this.toNumber(entry.onHand) + goodUnits;
+          const already = Boolean((d as any).startApplied);
+          if (!already) {
+            entry.onHand = this.toNumber(entry.onHand) + goodUnits;
+          }
           // Track simple moving average unit cost on-hand
           const unitPrice = this.toNumber(d.unitPrice ?? c.lockedUnitPrice ?? this.computeContractUnitPrice(c));
-          entry.onHandValue = this.toNumber(entry.onHandValue) + goodUnits * unitPrice;
+          if (!already) {
+            entry.onHandValue = this.toNumber(entry.onHandValue) + goodUnits * unitPrice;
+          }
           state.rawMaterials[matKey] = entry;
           c.deliveredUnits += goodUnits;
           // SPT and GMC per-batch settlements: pay on delivery for good units (defects not billed) when settlement hits
           if (c.type === 'SPT') {
             const deliveryCost = goodUnits * unitPrice;
-            operationalOutflows += deliveryCost;
-            costMaterials += deliveryCost;
+            if (!already) {
+              operationalOutflows += deliveryCost;
+              costMaterials += deliveryCost;
+            }
             // ledger: SPT paid on delivery (good units)
           }
         }
