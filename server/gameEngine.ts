@@ -286,11 +286,11 @@ export class GameEngine {
     const streakA = this.toNumber(state.underfundedStreakA, 0);
     const streakI = this.toNumber(state.underfundedStreakI, 0);
     if (zeroSpend) {
-      dA -= 1.0 + 0.5 * (streakA);
-      dI -= 2.0 + 1.0 * (streakI);
+      dA -= (1.0 + 0.5 * (streakA)) * 3; // x3 decay
+      dI -= (2.0 + 1.0 * (streakI)) * 3; // x3 decay
     } else if (belowHalf) {
-      dA -= 0.5 + 0.25 * (streakA);
-      dI -= 1.0 + 0.5 * (streakI);
+      dA -= (0.5 + 0.25 * (streakA)) * 3; // x3 decay
+      dI -= (1.0 + 0.5 * (streakI)) * 3;  // x3 decay
     }
 
     // Discount behavior penalties (compare next plan vs last observed)
@@ -640,8 +640,11 @@ export class GameEngine {
     let cogsLogisticsSold = 0;
 
     const marketingSpend = this.toNumber(state.marketingPlan?.totalSpend ?? state.marketingSpend);
-    costMarketing += marketingSpend;
-    operationalOutflows += marketingSpend;
+    const prepaidMarketing = Boolean((state as any).prepaidMarketing);
+    if (!prepaidMarketing) {
+      costMarketing += marketingSpend;
+      operationalOutflows += marketingSpend;
+    }
 
     // Compute actual unit cost to enforce no-loss sales
     const totUnitsSold = this.toNumber((state.totals as any)?.unitsSoldToDate);
@@ -749,7 +752,8 @@ export class GameEngine {
       creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallOps);
       cashOnHand = 0;
     }
-    if (costMarketing > 0) ledger.push({ type: 'marketing', amount: costMarketing });
+    // Always record marketing ledger for transparency, even if prepaid at start of week
+    if (marketingSpend > 0) ledger.push({ type: 'marketing', amount: marketingSpend });
     if (costProduction > 0) ledger.push({ type: 'production', amount: costProduction });
     if (costLogistics > 0) ledger.push({ type: 'logistics', amount: costLogistics });
     if (costHolding > 0) ledger.push({ type: 'holding', amount: costHolding });
