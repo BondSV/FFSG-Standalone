@@ -567,7 +567,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
-              const channelsArray = marketingChannels.map((c) => ({ name: c.id, spend: calculateChannelSpend(c.id) }));
+              const channelsArray = marketingSpend === 0 ? [] : marketingChannels.map((c) => ({ name: c.id, spend: calculateChannelSpend(c.id) }));
               const updates: any = { plannedMarketingPlan: { totalSpend: marketingSpend, channels: channelsArray, manual }, plannedWeeklyDiscounts: plannedDiscounts, plannedLocked: true };
               updateStateMutation.mutate(updates);
               setConfirmOpen(false);

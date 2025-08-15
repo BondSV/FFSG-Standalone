@@ -68,6 +68,7 @@ export default function CommitWeekModal({
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession.id, 'weeks'] });
       onOpenChange(false);
       toast({
         title: "Week Committed",
