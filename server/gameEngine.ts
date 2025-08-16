@@ -539,38 +539,10 @@ export class GameEngine {
     }
     state.shipmentsInTransit = remainingShipments;
 
-    // Update Awareness/Intent from this week's marketing plan prior to sales
-    const thisWeekPlan = (state as any).marketingPlan as any;
-    const totalSpendThisWeek = this.toNumber(thisWeekPlan?.totalSpend, 0);
-    const channelsThisWeek: Array<{ name: string; spend: number }> = (thisWeekPlan?.channels || []) as any;
+    // Awareness/Intent are applied at the start of the week (when previous week committed).
+    // Do NOT apply this week's marketing plan here to avoid double-applying.
     let awareness = this.toNumber((state as any).awareness, 0);
     let intent = this.toNumber((state as any).intent, 0);
-
-    // Apply A/I gains from this week's marketing plan
-    const gains = this.computeChannelGains(totalSpendThisWeek, channelsThisWeek || [], awareness, intent);
-    let dA = gains.dA;
-    let dI = gains.dI;
-
-    // Progressive decay when underfunded or below optimal
-    const baselineSpend = GAME_CONSTANTS.BASELINE_MARKETING_SPEND;
-    const belowHalf = totalSpendThisWeek > 0 && totalSpendThisWeek < 0.5 * baselineSpend;
-    const zeroSpend = totalSpendThisWeek <= 0;
-    (state as any).underfundedStreakA = this.toNumber((state as any).underfundedStreakA, 0);
-    (state as any).underfundedStreakI = this.toNumber((state as any).underfundedStreakI, 0);
-    if (zeroSpend) {
-      (state as any).underfundedStreakA += 1;
-      (state as any).underfundedStreakI += 1;
-      dA -= 1.0 + 0.5 * ((state as any).underfundedStreakA - 1);
-      dI -= 2.0 + 1.0 * ((state as any).underfundedStreakI - 1);
-    } else if (belowHalf) {
-      (state as any).underfundedStreakA += 1;
-      (state as any).underfundedStreakI += 1;
-      dA -= 0.5 + 0.25 * ((state as any).underfundedStreakA - 1);
-      dI -= 1.0 + 0.5 * ((state as any).underfundedStreakI - 1);
-    } else {
-      (state as any).underfundedStreakA = 0;
-      (state as any).underfundedStreakI = 0;
-    }
 
     // Discount behavior penalties on Intent
     const discounts = this.cloneJson(state.weeklyDiscounts);
@@ -591,9 +563,7 @@ export class GameEngine {
     }
     (state as any).lastDiscountAvg = avgDiscount;
 
-    // Apply gains/decays with caps and A→I dependency
-    awareness = this.clamp(awareness + dA, 0, 100);
-    intent = this.clamp(intent + Math.min(dI, awareness - intent + 10), 0, 100);
+    // Keep A/I as-is during the week; only compute the next week's projection below
     (state as any).awareness = awareness;
     (state as any).intent = intent;
 
