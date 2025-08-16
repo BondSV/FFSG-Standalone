@@ -555,7 +555,8 @@ export class GameEngine {
     // Apply A/I gains only if not already applied at start-of-week in routes
     let dA = 0;
     let dI = 0;
-    if (!(state as any).prepaidMarketing) {
+    const prepaidAwareness = Boolean((state as any).prepaidAwareness);
+    if (!prepaidAwareness) {
       const gains = this.computeChannelGains(totalSpendThisWeek, channelsThisWeek || [], awareness, intent);
       dA = gains.dA;
       dI = gains.dI;

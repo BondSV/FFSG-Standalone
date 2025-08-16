@@ -666,6 +666,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (marketingSpendNext > 0) {
             if (cash >= marketingSpendNext) { cash -= marketingSpendNext; } else { const shortfall = marketingSpendNext - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + shortfall); }
             nextWeekState.prepaidMarketing = true;
+            nextWeekState.prepaidAwareness = true; // Flag that A/I were already computed by preview
             // Also set the live marketing plan for Week N
             nextWeekState.marketingPlan = (computed as any).plannedMarketingPlan;
           }
