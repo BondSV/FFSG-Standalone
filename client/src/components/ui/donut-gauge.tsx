@@ -42,7 +42,7 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
             <circle
               r={radius}
               strokeLinecap="round"
-              className={`${colorClass} opacity-50 transition-all duration-500`}
+              className={`stroke-green-500 opacity-50 transition-all duration-500`}
               strokeWidth={12}
               fill="none"
               strokeDasharray={`${fDashFull} ${fRemainderFull}`}
@@ -53,7 +53,7 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
             <circle
               r={radius}
               strokeLinecap="round"
-              className={`stroke-red-500 transition-all duration-500`}
+              className={`stroke-red-500 opacity-50 transition-all duration-500`}
               strokeWidth={12}
               fill="none"
               strokeDasharray={`${decayDash} ${circumference - decayDash}`}

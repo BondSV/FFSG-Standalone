@@ -314,7 +314,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               </TooltipWrapper>
             </div>
             <div className="flex items-center gap-3">
-              <DonutGauge value={Number.isFinite(intentNow)?intentNow:undefined} forecast={isFinalWeek?undefined:preview?.nextIntent} colorClass="stroke-emerald-500" />
+              <DonutGauge value={Number.isFinite(intentNow)?intentNow:undefined} forecast={isFinalWeek?undefined:preview?.nextIntent} colorClass="stroke-blue-500" />
               <TooltipWrapper content="Intent to Buy: readiness to purchase. Grows faster when awareness is already high and you focus on performance channels (Search) or promotions. Volatile if discounts change erratically.">
                 <div>
                   <div className="text-sm text-gray-700">Intent to Buy</div>
