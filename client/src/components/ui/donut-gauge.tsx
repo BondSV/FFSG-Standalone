@@ -20,7 +20,8 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
   const isDecay = Number.isFinite(forecast as number) && Number.isFinite(value as number) && (fPct < pct);
   // For decay, draw only the delta segment (from forecast to current) on top so it can't be hidden
   const decayDash = ((pct - fPct) / 100) * circumference;
-  const decayOffset = (fPct / 100) * circumference;
+  // Start the red segment exactly at the forecast arc end so it overlays the tail of the current fill
+  const decayOffset = circumference * (1 - (fPct / 100));
 
   return (
     <div className="flex items-center gap-3">
