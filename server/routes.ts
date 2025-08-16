@@ -654,7 +654,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nextWeekState.plannedWeeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
         nextWeekState.plannedLocked = false;
 
-        // GameEngine will handle all financial deductions and A/I updates when the new week is committed
+        // GameEngine handles all financial deductions and calculates next week's A/I
+        // Apply the calculated next week A/I values if available
+        if ((computed as any).nextWeekAwareness !== undefined) {
+          nextWeekState.awareness = (computed as any).nextWeekAwareness;
+        }
+        if ((computed as any).nextWeekIntent !== undefined) {
+          nextWeekState.intent = (computed as any).nextWeekIntent;
+        }
 
         await storage.createWeeklyState(nextWeekState);
       }

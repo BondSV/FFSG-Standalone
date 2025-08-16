@@ -597,6 +597,23 @@ export class GameEngine {
     (state as any).awareness = awareness;
     (state as any).intent = intent;
 
+    // Also calculate A/I for the following week based on planned marketing
+    // This provides immediate feedback when the week is committed
+    if ((state as any).plannedMarketingPlan && week < 15) {
+      try {
+        const nextWeekPreview = this.previewNextWeekMarketing(
+          state as any, 
+          (state as any).plannedMarketingPlan, 
+          (state as any).plannedWeeklyDiscounts
+        );
+        // Store the projected A/I for next week so routes.ts can use them
+        (state as any).nextWeekAwareness = Number(nextWeekPreview.nextAwareness).toFixed(2);
+        (state as any).nextWeekIntent = Number(nextWeekPreview.nextIntent).toFixed(2);
+      } catch (e) {
+        // Fallback: no change
+      }
+    }
+
     // 6) Sales for this week
     // discounts already defined above
     // Automatic run-out markdowns override
@@ -612,9 +629,17 @@ export class GameEngine {
     let cogsProductionSold = 0;
     let cogsLogisticsSold = 0;
 
+    // Current week's marketing (if any - this should normally be 0 since marketing is planned for next week)
     const marketingSpend = this.toNumber(state.marketingPlan?.totalSpend ?? state.marketingSpend);
     costMarketing += marketingSpend;
     operationalOutflows += marketingSpend;
+
+    // Next week's planned marketing - deduct immediately for instant UI feedback
+    const nextWeekMarketingSpend = this.toNumber((state as any).plannedMarketingPlan?.totalSpend ?? 0);
+    if (nextWeekMarketingSpend > 0) {
+      costMarketing += nextWeekMarketingSpend;
+      operationalOutflows += nextWeekMarketingSpend;
+    }
 
     // Compute actual unit cost to enforce no-loss sales
     const totUnitsSold = this.toNumber((state.totals as any)?.unitsSoldToDate);
@@ -713,8 +738,9 @@ export class GameEngine {
       creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallOps);
       cashOnHand = 0;
     }
-    // Record marketing ledger entry
+    // Record marketing ledger entries
     if (marketingSpend > 0) ledger.push({ type: 'marketing', amount: marketingSpend });
+    if (nextWeekMarketingSpend > 0) ledger.push({ type: 'marketing', amount: nextWeekMarketingSpend });
     if (costProduction > 0) ledger.push({ type: 'production', amount: costProduction });
     if (costLogistics > 0) ledger.push({ type: 'logistics', amount: costLogistics });
     if (costHolding > 0) ledger.push({ type: 'holding', amount: costHolding });
