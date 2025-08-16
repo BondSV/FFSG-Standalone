@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -90,6 +90,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     }
     return { ...defaultSplits[recommendedPreset] };
   });
+  // Remember the last non-zero allocation to restore after leaving £0 with manual on
+  const lastNonZeroAllocation = useRef<Record<string, number> | null>(null);
 
   // Discounts for next week
   const [discountMode, setDiscountMode] = useState<'none' | 'minimal' | 'standard' | 'aggressive'>(preset === 'conversion' ? 'standard' : 'none');
@@ -171,12 +173,23 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   // When budget is £0, force splits to 0 and lock sliders
   useEffect(() => {
     if (marketingSpend === 0) {
+      // Save current non-zero split for restoration when returning > 0 with manual on
+      const currentTotal = Object.values(channelAllocation).reduce((s, v) => s + Number(v || 0), 0);
+      if (currentTotal > 0) lastNonZeroAllocation.current = { ...channelAllocation };
       const zeros: Record<string, number> = {};
       for (const c of marketingChannels) zeros[c.id] = 0;
       setChannelAllocation(zeros);
-    } else if (!manual) {
-      // If spend increases above 0 and manual is off, apply recommended preset automatically
-      setChannelAllocation({ ...defaultSplits[recommendedPreset] });
+    } else {
+      // marketingSpend > 0
+      if (!manual) {
+        setChannelAllocation({ ...defaultSplits[recommendedPreset] });
+      } else {
+        // manual ON: if allocation is all zeros, try to restore the last non-zero split
+        const currentTotal = Object.values(channelAllocation).reduce((s, v) => s + Number(v || 0), 0);
+        if (currentTotal === 0 && lastNonZeroAllocation.current) {
+          setChannelAllocation({ ...lastNonZeroAllocation.current });
+        }
+      }
     }
   }, [marketingSpend, manual, recommendedPreset]);
 
