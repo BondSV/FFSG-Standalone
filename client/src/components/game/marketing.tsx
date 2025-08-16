@@ -305,7 +305,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
             <div className="flex items-center gap-3">
-              <DonutGauge value={Number.isFinite(awarenessNow)?awarenessNow:undefined} forecast={isFinalWeek?undefined:preview?.nextAwareness} colorClass="stroke-blue-500" />
+              <DonutGauge key={`A-${awarenessNow}-${preview?.nextAwareness ?? 'na'}`} value={Number.isFinite(awarenessNow)?awarenessNow:undefined} forecast={isFinalWeek?undefined:preview?.nextAwareness} colorClass="stroke-blue-500" />
               <TooltipWrapper content="Awareness: how many people have heard about your product. Builds slowly with broad‑reach channels (Social, Influencers, Print/TV). Higher awareness enables faster growth in intent.">
                 <div>
                   <div className="text-sm text-gray-700">Awareness</div>
@@ -314,7 +314,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               </TooltipWrapper>
             </div>
             <div className="flex items-center gap-3">
-              <DonutGauge value={Number.isFinite(intentNow)?intentNow:undefined} forecast={isFinalWeek?undefined:preview?.nextIntent} colorClass="stroke-blue-500" />
+              <DonutGauge key={`I-${intentNow}-${preview?.nextIntent ?? 'na'}`} value={Number.isFinite(intentNow)?intentNow:undefined} forecast={isFinalWeek?undefined:preview?.nextIntent} colorClass="stroke-blue-500" />
               <TooltipWrapper content="Intent to Buy: readiness to purchase. Grows faster when awareness is already high and you focus on performance channels (Search) or promotions. Volatile if discounts change erratically.">
                 <div>
                   <div className="text-sm text-gray-700">Intent to Buy</div>
