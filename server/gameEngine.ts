@@ -1,6 +1,5 @@
-import { WeeklyState, GameSession, ExtendedWeeklyState, ProductKey, SupplierKey, MaterialKey } from "@shared/schema";
+import { WeeklyState, GameSession, ExtendedWeeklyState, ProductKey, SupplierKey, MaterialKey, cashLedger } from "@shared/schema";
 import { db } from "./db";
-import { cashLedgerTable } from "@shared/schema";
 
 // Game constants from the specification
 export const GAME_CONSTANTS = {
@@ -818,7 +817,7 @@ export class GameEngine {
           refId: e.refId || null,
           amount: Number(e.amount || 0) as any,
         }));
-        await db.insert(cashLedgerTable).values(rows as any);
+        await db.insert(cashLedger).values(rows as any);
       }
     } catch (error) {
       console.error('Failed to write cash ledger entries:', error);
