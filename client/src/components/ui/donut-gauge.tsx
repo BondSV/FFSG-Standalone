@@ -43,6 +43,7 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
           {/* Forecast arc: semi-opaque in growth; for decay, draw only the red delta segment on top */}
           {Number.isFinite(forecast as number) && !isDecay && growthDash > 0 && (
             <circle
+              key={`growth-${Math.round(growthDash)}-${Math.round(growthOffset)}`}
               r={radius}
               strokeLinecap="round"
               className={`stroke-green-500 opacity-50 transition-all duration-500`}
@@ -55,6 +56,7 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
           )}
           {Number.isFinite(forecast as number) && isDecay && decayDash > 0 && (
             <circle
+              key={`decay-${Math.round(decayDash)}-${Math.round(decayOffset)}`}
               r={radius}
               strokeLinecap="round"
               className={`stroke-red-500 opacity-75 transition-all duration-500`}
