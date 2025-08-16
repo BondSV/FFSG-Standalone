@@ -170,10 +170,7 @@ export class GameEngine {
     const locked = contract.lockedUnitPrice != null ? Number(contract.lockedUnitPrice) : undefined;
     const unitPrice = locked != null ? locked : this.computeContractUnitPrice(contract);
 
-    if (contract.type === 'FVC') {
-      // Deliver full quantity after supplier lead time
-      contract.deliveries = [{ week: contract.weekSigned + lead, units: contract.units, unitPrice }];
-    } else if (contract.type === 'GMC') {
+    if (contract.type === 'GMC') {
       // For GMC, deliveries are driven by iterative weekly orders, map each order to a delivery with its own unit price
       const orders = (contract as any).gmcOrders || [];
       contract.deliveries = orders.map((o: any) => ({ week: this.toNumber(o.week) + lead, units: this.toNumber(o.units), unitPrice: this.toNumber(o.unitPrice) }));
@@ -379,25 +376,7 @@ export class GameEngine {
       const unitPrice = this.computeContractUnitPrice(c);
       const contractValue = unitPrice * this.toNumber(c.units);
       c.paidSoFar = this.toNumber(c.paidSoFar);
-      if (c.type === 'FVC') {
-        if (week === c.weekSigned && !(c as any).__prepaidDepositWeek) {
-          // 30% on signing
-          const due = contractValue * 0.30;
-          operationalOutflows += due;
-          costMaterials += due;
-          c.paidSoFar += due;
-          // ledger: FVC deposit
-          // collected later in the unified ledger push
-        }
-        // 70% due 8 weeks after signing (settlement period), regardless of delivery
-        if (week === c.weekSigned + 8 && !(c as any).__prepaidBalanceWeek) {
-          const due = contractValue * 0.70;
-          operationalOutflows += due;
-          costMaterials += due;
-          c.paidSoFar += due;
-          // ledger: FVC balance
-        }
-      } else if (c.type === 'GMC') {
+      if (c.type === 'GMC') {
         // Payment per delivery with 2-week settlement AFTER arrival; good units only
         const deliveries = (c as any).deliveries || [];
         for (const d of deliveries) {
@@ -718,18 +697,9 @@ export class GameEngine {
     if (costInterest > 0) ledger.push({ type: 'interest', amount: costInterest });
 
     // Procurement-specific ledger entries (materials)
-    // FVC 30% and 70% instalments for contracts signed such weeks
     for (const c of contracts) {
       const unitPrice = this.computeContractUnitPrice(c);
-      if (c.type === 'FVC') {
-        const contractValue = unitPrice * this.toNumber(c.units);
-        if (week === c.weekSigned) {
-          ledger.push({ type: 'materials_fvc_deposit', amount: contractValue * 0.30, refId: `${c.supplier}:${c.material}` });
-        }
-        if (week === c.weekSigned + 8) {
-          ledger.push({ type: 'materials_fvc_balance', amount: contractValue * 0.70, refId: `${c.supplier}:${c.material}` });
-        }
-      } else if (c.type === 'SPT') {
+      if (c.type === 'SPT') {
         for (const d of (c.deliveries || [])) {
           if (this.toNumber(d.week) === week) {
             const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
@@ -1130,11 +1100,7 @@ export class GameEngine {
     const procurement = currentState.procurementContracts as any;
     if (procurement) {
       const contracts = procurement.contracts || [];
-      for (const c of contracts) {
-        if (c.type === 'FVC' && c.weekSigned !== 1) {
-          errors.push('FVC contracts can only be signed in Week 1');
-        }
-      }
+      // FVC removed
       const seasonNeed = GAME_CONSTANTS.PRODUCTS.jacket.forecast + GAME_CONSTANTS.PRODUCTS.dress.forecast + GAME_CONSTANTS.PRODUCTS.pants.forecast;
       const gmcUnits = contracts.filter((c: any) => c.type === 'GMC').reduce((s: number, c: any) => s + Number(c.units || 0), 0);
       if (gmcUnits > 0 && gmcUnits < 0.7 * seasonNeed) {
@@ -1181,10 +1147,7 @@ export class GameEngine {
         const surcharge = (GAME_CONSTANTS.SUPPLIERS as any)[c.supplier]?.materials?.[c.material]?.printSurcharge || 0;
         const locked = this.toNumber((c as any).lockedUnitPrice);
         const unitPrice = locked > 0 ? locked : (unitBase + surcharge);
-        if (c.type === 'FVC') {
-          if (c.weekSigned === weekNumber) immediatePayments += (Number(c.units || 0) * unitPrice) * 0.30;
-          if ((c.weekSigned + 8) === weekNumber) immediatePayments += (Number(c.units || 0) * unitPrice) * 0.70;
-        } else if (c.type === 'GMC') {
+        if (c.type === 'GMC') {
           const orders = (c as any).gmcOrders || [];
           for (const o of orders) {
             if (this.toNumber(o.week) + 2 === weekNumber) {

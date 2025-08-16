@@ -106,7 +106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const supplier = String(c.supplier || '');
         const lead = Number((GAME_CONSTANTS.SUPPLIERS as any)?.[supplier]?.leadTime || 0);
         const material = String(c.material || 'unknown');
-        if (c.type === 'SPT' || c.type === 'FVC') {
+        if (c.type === 'SPT') {
           const week = Number(c.weekSigned || 0) + lead;
           const qty = Number(c.units || 0);
           if (week > currentWeek) addArrival(material, week, qty);
@@ -339,7 +339,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Process material purchases if they exist in updates
         if (updates.materialPurchases || updates.gmcCommitments || (updates.procurementContracts && typeof updates.procurementContracts.singleSupplierDeal !== 'undefined')) {
           // Convert material purchases UI into procurement contracts (iterative orders)
-          // We will append GMC/SPT/FVC entries under procurementContracts and ignore immediate cash effects.
+          // We will append GMC/SPT entries under procurementContracts and ignore immediate cash effects.
           const existing = (weeklyState as any).procurementContracts || { contracts: [] };
           const contracts = existing.contracts || [];
           const gmcCommitments = { ...(existing as any).gmcCommitments };
@@ -452,15 +452,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               (order as any).effectiveUnitPrice = effectiveUnitPrice;
               (order as any).effectiveLineTotal = effectiveUnitPrice * Number(order.quantity || 0);
 
-              if (p.type === 'fvc') {
-                contracts.push({
-                  ...contractBase,
-                  type: 'FVC',
-                  units: order.quantity,
-                  weekSigned: currentWeek,
-                });
-                existingOrderIds.add(orderId);
-              } else if (p.type === 'gmc') {
+              if (p.type === 'gmc') {
                 let contract = contracts.find((c: any) => c.type === 'GMC' && c.supplier === p.supplier && c.material === order.material);
                 if (!contract) {
                   contract = { ...contractBase, type: 'GMC', units: p.gmcCommitmentUnits || 0, weekSigned: 1, gmcOrders: [] };
@@ -677,30 +669,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Also set the live marketing plan for Week N
             nextWeekState.marketingPlan = (computed as any).plannedMarketingPlan;
           }
-          // Apply FVC instalments due in Week N
           const contractsFvc = (((nextWeekState as any).procurementContracts?.contracts) || []) as any[];
-          for (const c of contractsFvc) {
-            if (c.type === 'FVC') {
-              const unitPrice = ((): number => {
-                if (c.lockedUnitPrice != null) return Number(c.lockedUnitPrice);
-                const base = Number(c.unitBasePrice || 0);
-                const surcharge = Number(c.printSurcharge || 0);
-                const disc = Number(c.discountPercentApplied || 0);
-                return (base + surcharge) * (1 - disc);
-              })();
-              const contractValue = unitPrice * Number(c.units || 0);
-              if ((week + 1) === Number(c.weekSigned)) {
-                const due = contractValue * 0.30;
-                if (cash >= due) { cash -= due; } else { const short = due - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + short); }
-                c.__prepaidDepositWeek = week + 1;
-              }
-              if ((week + 1) === (Number(c.weekSigned) + 8)) {
-                const due = contractValue * 0.70;
-                if (cash >= due) { cash -= due; } else { const short = due - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + short); }
-                c.__prepaidBalanceWeek = week + 1;
-              }
-            }
-          }
           // Receive deliveries arriving in Week N (add RM) and pay SPT; mark flags so engine skips double actions
           const rm: any = (nextWeekState as any).rawMaterials || {};
           for (const c of contractsFvc) {

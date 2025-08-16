@@ -261,7 +261,7 @@ export interface ProductionBatchPlan {
 
 export interface ProcurementContract {
   id: string;
-  type: 'FVC' | 'GMC' | 'SPT';
+  type: 'GMC' | 'SPT';
   supplier: SupplierKey;
   material: MaterialKey;
   units: number; // committed units
@@ -270,7 +270,7 @@ export interface ProcurementContract {
   printSurcharge: number; // per unit if applicable
   // deprecated: dynamic discounts are no longer recomputed; kept for backward compatibility
   discountPercentApplied?: number;
-  // authoritative locked unit price for SPT/FVC
+  // authoritative locked unit price for SPT
   lockedUnitPrice?: number;
   // planned arrivals, each with a locked unit price
   deliveries?: Array<{ week: number; units: number; unitPrice?: number }>; // planned arrivals

@@ -59,11 +59,10 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
     return entries[0]?.[0] || 'N/A';
   })();
   const contractMix = (() => {
-    const counts: Record<string, number> = { FVC: 0, GMC: 0, SPT: 0 } as any;
+    const counts: Record<string, number> = { GMC: 0, SPT: 0 } as any;
     const total = allContracts.reduce((s, c) => s + Number(c.units || 0), 0) || 1;
     allContracts.forEach((c: any) => counts[c.type] = (counts[c.type] || 0) + Number(c.units || 0));
     return {
-      FVC: Math.round((counts.FVC || 0) / total * 100),
       GMC: Math.round((counts.GMC || 0) / total * 100),
       SPT: Math.round((counts.SPT || 0) / total * 100),
     };
@@ -185,7 +184,7 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
               </div>
               <div>
                 <div className="text-sm text-gray-600">Contract Mix</div>
-                <div className="font-semibold">FVC {contractMix.FVC}% / GMC {contractMix.GMC}% / SPT {contractMix.SPT}%</div>
+                <div className="font-semibold">GMC {contractMix.GMC}% / SPT {contractMix.SPT}%</div>
               </div>
               <div>
                 <div className="text-sm text-gray-600">Production Methods</div>
