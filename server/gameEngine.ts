@@ -1,4 +1,6 @@
 import { WeeklyState, GameSession, ExtendedWeeklyState, ProductKey, SupplierKey, MaterialKey } from "@shared/schema";
+import { db } from "./db";
+import { cashLedgerTable } from "@shared/schema";
 
 // Game constants from the specification
 export const GAME_CONSTANTS = {
@@ -329,7 +331,7 @@ export class GameEngine {
   // --------------------
   // Core weekly processing
   // --------------------
-  static commitWeek(currentState: WeeklyState): WeeklyState {
+  static async commitWeek(currentState: WeeklyState): Promise<WeeklyState> {
     const state = this.cloneJson(currentState) as any as WeeklyState & ExtendedWeeklyState;
     const week = state.weekNumber;
 
@@ -380,7 +382,7 @@ export class GameEngine {
         // Payment per delivery with 2-week settlement AFTER arrival; good units only
         const deliveries = (c as any).deliveries || [];
         for (const d of deliveries) {
-          if (week === this.toNumber(d.week) + 2 && !(d as any).settlementPrepaid) {
+          if (week === this.toNumber(d.week) + 2) {
             const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
             const u = this.toNumber(d.unitPrice ?? unitPrice);
             const due = goodUnits * u;
@@ -419,24 +421,17 @@ export class GameEngine {
           // Update raw materials inventory on-hand
           const matKey = c.material as MaterialKey;
           const entry: any = state.rawMaterials[matKey] || { onHand: 0, allocated: 0, inTransit: [] };
-          const already = Boolean((d as any).startApplied);
-          if (!already) {
-            entry.onHand = this.toNumber(entry.onHand) + goodUnits;
-          }
+          entry.onHand = this.toNumber(entry.onHand) + goodUnits;
           // Track simple moving average unit cost on-hand
           const unitPrice = this.toNumber(d.unitPrice ?? c.lockedUnitPrice ?? this.computeContractUnitPrice(c));
-          if (!already) {
-            entry.onHandValue = this.toNumber(entry.onHandValue) + goodUnits * unitPrice;
-          }
+          entry.onHandValue = this.toNumber(entry.onHandValue) + goodUnits * unitPrice;
           state.rawMaterials[matKey] = entry;
           c.deliveredUnits += goodUnits;
           // SPT and GMC per-batch settlements: pay on delivery for good units (defects not billed) when settlement hits
           if (c.type === 'SPT') {
             const deliveryCost = goodUnits * unitPrice;
-            if (!already) {
-              operationalOutflows += deliveryCost;
-              costMaterials += deliveryCost;
-            }
+            operationalOutflows += deliveryCost;
+            costMaterials += deliveryCost;
             // ledger: SPT paid on delivery (good units)
           }
         }
@@ -552,15 +547,10 @@ export class GameEngine {
     let awareness = this.toNumber((state as any).awareness, 0);
     let intent = this.toNumber((state as any).intent, 0);
 
-    // Apply A/I gains only if not already applied at start-of-week in routes
-    let dA = 0;
-    let dI = 0;
-    const prepaidAwareness = Boolean((state as any).prepaidAwareness);
-    if (!prepaidAwareness) {
-      const gains = this.computeChannelGains(totalSpendThisWeek, channelsThisWeek || [], awareness, intent);
-      dA = gains.dA;
-      dI = gains.dI;
-    }
+    // Apply A/I gains from this week's marketing plan
+    const gains = this.computeChannelGains(totalSpendThisWeek, channelsThisWeek || [], awareness, intent);
+    let dA = gains.dA;
+    let dI = gains.dI;
 
     // Progressive decay when underfunded or below optimal
     const baselineSpend = GAME_CONSTANTS.BASELINE_MARKETING_SPEND;
@@ -624,11 +614,8 @@ export class GameEngine {
     let cogsLogisticsSold = 0;
 
     const marketingSpend = this.toNumber(state.marketingPlan?.totalSpend ?? state.marketingSpend);
-    const prepaidMarketing = Boolean((state as any).prepaidMarketing);
-    if (!prepaidMarketing) {
-      costMarketing += marketingSpend;
-      operationalOutflows += marketingSpend;
-    }
+    costMarketing += marketingSpend;
+    operationalOutflows += marketingSpend;
 
     // Compute actual unit cost to enforce no-loss sales
     const totUnitsSold = this.toNumber((state.totals as any)?.unitsSoldToDate);
@@ -727,8 +714,8 @@ export class GameEngine {
       creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallOps);
       cashOnHand = 0;
     }
-    // Record marketing ledger only if not prepaid at start-of-week
-    if (!prepaidMarketing && marketingSpend > 0) ledger.push({ type: 'marketing', amount: marketingSpend });
+    // Record marketing ledger entry
+    if (marketingSpend > 0) ledger.push({ type: 'marketing', amount: marketingSpend });
     if (costProduction > 0) ledger.push({ type: 'production', amount: costProduction });
     if (costLogistics > 0) ledger.push({ type: 'logistics', amount: costLogistics });
     if (costHolding > 0) ledger.push({ type: 'holding', amount: costHolding });
@@ -819,9 +806,27 @@ export class GameEngine {
       cogsMarketingToDate: this.toNumber(prevTotals.cogsMarketingToDate) + marketingAllocated,
     } as any;
 
+    // Write cash ledger entries directly to database
+    try {
+      if (ledger.length > 0) {
+        const gameSessionId = (state as any).gameSessionId || currentState.gameSessionId;
+        const rows = ledger.map((e) => ({
+          id: `${gameSessionId}-${week}-${e.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          gameSessionId,
+          weekNumber: week,
+          entryType: e.type,
+          refId: e.refId || null,
+          amount: Number(e.amount || 0) as any,
+        }));
+        await db.insert(cashLedgerTable).values(rows as any);
+      }
+    } catch (error) {
+      console.error('Failed to write cash ledger entries:', error);
+    }
+
     // Mark committed
     (state as any).isCommitted = true;
-    (state as any).ledgerEntries = ledger;
+    (state as any).ledgerEntries = ledger; // Keep for backwards compatibility
     return state as any as WeeklyState;
   }
 

@@ -589,7 +589,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       // Commit the week via engine (full simulation); persist result
-      const computed = GameEngine.commitWeek(weeklyState as any);
+      const computed = await GameEngine.commitWeek(weeklyState as any);
       // Preserve Orders Log (materialPurchases) in the committed week
       (computed as any).materialPurchases = (weeklyState as any).materialPurchases || [];
       const { ledgerEntries, createdAt: _ca, updatedAt: _ua, ...toPersist } = (computed as any);
@@ -654,85 +654,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nextWeekState.plannedWeeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
         nextWeekState.plannedLocked = false;
 
-        // 1) Set next week's A/I to projection and apply start-of-week payments so balances reflect Week N immediately
-        try {
-          const preview = GameEngine.previewNextWeekMarketing(committedState as any, (computed as any).plannedMarketingPlan, (computed as any).plannedWeeklyDiscounts);
-          let cash = Number(nextWeekState.cashOnHand || 0);
-          let credit = Number(nextWeekState.creditUsed || 0);
-          nextWeekState.awareness = Number(preview.nextAwareness).toFixed(2);
-          nextWeekState.intent = Number(preview.nextIntent).toFixed(2);
-          // Apply start-of-week marketing spend for Week N
-          const marketingSpendNext = Number((computed as any).plannedMarketingPlan?.totalSpend || 0);
-          if (marketingSpendNext > 0) {
-            if (cash >= marketingSpendNext) { cash -= marketingSpendNext; } else { const shortfall = marketingSpendNext - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + shortfall); }
-            nextWeekState.prepaidMarketing = true;
-            nextWeekState.prepaidAwareness = true; // Flag that A/I were already computed by preview
-            // Also set the live marketing plan for Week N
-            nextWeekState.marketingPlan = (computed as any).plannedMarketingPlan;
-          }
-          const contractsFvc = (((nextWeekState as any).procurementContracts?.contracts) || []) as any[];
-          // Receive deliveries arriving in Week N (add RM) and pay SPT; mark flags so engine skips double actions
-          const rm: any = (nextWeekState as any).rawMaterials || {};
-          for (const c of contractsFvc) {
-            for (const d of (c.deliveries || [])) {
-              if (Number(d.week) === (week + 1)) {
-                const unitPrice = Number(d.unitPrice ?? c.lockedUnitPrice ?? 0);
-                const defectRate = Number(((GAME_CONSTANTS as any).SUPPLIERS?.[c.supplier]?.defectRate) || 0);
-                const goodUnits = Number((d as any).goodUnits ?? Math.round(Number(d.units || 0) * (1 - defectRate)));
-                const mat = String(c.material);
-                const entry = rm[mat] || { onHand: 0, allocated: 0, onHandValue: 0 };
-                entry.onHand = Number(entry.onHand || 0) + goodUnits;
-                entry.onHandValue = Number(entry.onHandValue || 0) + goodUnits * unitPrice;
-                rm[mat] = entry;
-                (d as any).startApplied = true; // prevent double add in engine
-                if (c.type === 'SPT') {
-                  const due = goodUnits * unitPrice;
-                  if (cash >= due) { cash -= due; } else { const short = due - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + short); }
-                }
-              }
-            }
-          }
-          // GMC settlements due in Week N (deliveries that arrived Week N-2)
-          for (const c of contractsFvc) {
-            if (c.type === 'GMC') {
-              for (const d of (c.deliveries || [])) {
-                if ((Number(d.week) + 2) === (week + 1)) {
-                  const unitPrice = Number(d.unitPrice ?? c.lockedUnitPrice ?? 0);
-                  const goodUnits = Number((d as any).goodUnits ?? Number(d.units || 0));
-                  const due = goodUnits * unitPrice;
-                  if (cash >= due) { cash -= due; } else { const short = due - cash; cash = 0; credit = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, credit + short); }
-                  (d as any).settlementPrepaid = true; // prevent engine double payment
-                }
-              }
-            }
-          }
-          (nextWeekState as any).rawMaterials = rm;
-          nextWeekState.cashOnHand = cash.toFixed(2);
-          nextWeekState.creditUsed = credit.toFixed(2);
-        } catch (e) {
-          // fallback: keep awareness/intent as-is
-        }
-
-        // 2) Do NOT mutate deliveries or raw materials here; the engine handles arrivals and settlements.
+        // GameEngine will handle all financial deductions and A/I updates when the new week is committed
 
         await storage.createWeeklyState(nextWeekState);
       }
       
-      // Persist cash ledger entries, if present
-      try {
-        const entries = ((computed as any).ledgerEntries as Array<{ type: string; amount: number; refId?: string }>) || [];
-        if (entries && entries.length > 0) {
-          const rows = entries.map((e) => ({
-            id: `${weeklyState.gameSessionId}-${week}-${e.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-            gameSessionId: weeklyState.gameSessionId,
-            weekNumber: week,
-            entryType: e.type,
-            refId: e.refId || null,
-            amount: Number(e.amount || 0) as any,
-          }));
-          await db.insert(cashLedgerTable).values(rows as any);
-        }
-      } catch {}
+      // Cash ledger entries are now written directly by gameEngine
       
       res.json(committedState);
     } catch (error) {
