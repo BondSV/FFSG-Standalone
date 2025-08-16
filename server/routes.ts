@@ -654,8 +654,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nextWeekState.plannedWeeklyDiscounts = (computed as any).plannedWeeklyDiscounts;
         nextWeekState.plannedLocked = false;
 
-        // GameEngine handles all financial deductions and calculates next week's A/I
-        // Apply the calculated next week A/I values if available
+        // GameEngine handles financial deductions and calculates next week's A/I
+        // Apply the calculated next week A/I values if available (purely visual)
         if ((computed as any).nextWeekAwareness !== undefined) {
           nextWeekState.awareness = (computed as any).nextWeekAwareness;
         }
@@ -666,7 +666,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await storage.createWeeklyState(nextWeekState);
       }
       
-      // Cash ledger entries are now written directly by gameEngine
+      // Cash ledger entries are written directly by gameEngine
       
       res.json(committedState);
     } catch (error) {
