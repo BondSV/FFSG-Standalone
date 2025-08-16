@@ -629,10 +629,8 @@ export class GameEngine {
     let cogsProductionSold = 0;
     let cogsLogisticsSold = 0;
 
-    // Current week's marketing (if any - this should normally be 0 since marketing is planned for next week)
+    // Current week's marketing: do NOT charge here. Marketing is planned for next week and charged at commit of current week
     const marketingSpend = this.toNumber(state.marketingPlan?.totalSpend ?? state.marketingSpend);
-    costMarketing += marketingSpend;
-    operationalOutflows += marketingSpend;
 
     // Next week's planned marketing - deduct immediately for instant UI feedback
     const nextWeekMarketingSpend = this.toNumber((state as any).plannedMarketingPlan?.totalSpend ?? 0);
@@ -696,7 +694,7 @@ export class GameEngine {
     operationalOutflows += costHolding;
 
     // 8) Apply cash waterfall (timing-aware) and collect ledger entries
-    const ledger: Array<{ type: string; amount: number; refId?: string }> = [];
+    const ledger: Array<{ type: string; amount: number; refId?: string; weekNumber?: number }> = [];
     // Start-of-week: pay interest accrued on last week's ending credit balance
     costInterest = this.calculateInterest(creditUsed);
     if (openingCash >= costInterest) {
@@ -738,9 +736,8 @@ export class GameEngine {
       creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallOps);
       cashOnHand = 0;
     }
-    // Record marketing ledger entries
-    if (marketingSpend > 0) ledger.push({ type: 'marketing', amount: marketingSpend });
-    if (nextWeekMarketingSpend > 0) ledger.push({ type: 'marketing', amount: nextWeekMarketingSpend });
+    // Record next week's marketing as week N+1, but write now at commit of week N
+    if (nextWeekMarketingSpend > 0) ledger.push({ type: 'marketing', amount: nextWeekMarketingSpend, weekNumber: week + 1 });
     if (costProduction > 0) ledger.push({ type: 'production', amount: costProduction });
     if (costLogistics > 0) ledger.push({ type: 'logistics', amount: costLogistics });
     if (costHolding > 0) ledger.push({ type: 'holding', amount: costHolding });
@@ -836,9 +833,9 @@ export class GameEngine {
       if (ledger.length > 0) {
         const gameSessionId = (state as any).gameSessionId || currentState.gameSessionId;
         const rows = ledger.map((e) => ({
-          id: `${gameSessionId}-${week}-${e.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          id: `${gameSessionId}-${(e.weekNumber ?? week)}-${e.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           gameSessionId,
-          weekNumber: week,
+          weekNumber: (e.weekNumber ?? week),
           entryType: e.type,
           refId: e.refId || null,
           amount: Number(e.amount || 0) as any,
