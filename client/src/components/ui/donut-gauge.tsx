@@ -22,6 +22,9 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
   const decayDash = ((pct - fPct) / 100) * circumference;
   // Start the red segment exactly at the forecast arc end so it overlays the tail of the current fill
   const decayOffset = circumference * (1 - (fPct / 100));
+  // For growth, draw only the positive delta segment (from current to forecast)
+  const growthDash = ((fPct - pct) / 100) * circumference;
+  const growthOffset = circumference * (1 - (pct / 100));
 
   return (
     <div className="flex items-center gap-3">
@@ -38,14 +41,15 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
             transform="rotate(-90)"
           />
           {/* Forecast arc: semi-opaque in growth; for decay, draw only the red delta segment on top */}
-          {Number.isFinite(forecast as number) && !isDecay && (
+          {Number.isFinite(forecast as number) && !isDecay && growthDash > 0 && (
             <circle
               r={radius}
               strokeLinecap="round"
               className={`stroke-green-500 opacity-50 transition-all duration-500`}
               strokeWidth={12}
               fill="none"
-              strokeDasharray={`${fDashFull} ${fRemainderFull}`}
+              strokeDasharray={`${growthDash} ${circumference - growthDash}`}
+              strokeDashoffset={growthOffset}
               transform="rotate(-90)"
             />
           )}
@@ -53,7 +57,7 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
             <circle
               r={radius}
               strokeLinecap="round"
-              className={`stroke-red-500 opacity-50 transition-all duration-500`}
+              className={`stroke-red-500 opacity-75 transition-all duration-500`}
               strokeWidth={12}
               fill="none"
               strokeDasharray={`${decayDash} ${circumference - decayDash}`}
