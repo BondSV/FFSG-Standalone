@@ -367,7 +367,7 @@ export class GameEngine {
     let costInterest = 0;
     let operationalOutflows = 0; // Sum of all operating cash payments for the week
 
-    // 1) Process procurement: schedule deliveries; pay deposits/instalments due this week
+    // 1) Process procurement: schedule deliveries only (no current-week payments here)
     const contracts = state.procurementContracts.contracts || [];
     const gmcCommitmentsBySupplier: Record<string, number> = (state.procurementContracts as any)?.gmcCommitments || {};
 
@@ -382,28 +382,10 @@ export class GameEngine {
       }
       this.scheduleDeliveriesForContract(c);
 
-      // Payments due
-      const unitPrice = this.computeContractUnitPrice(c);
-      const contractValue = unitPrice * this.toNumber(c.units);
-      c.paidSoFar = this.toNumber(c.paidSoFar);
-      if (c.type === 'GMC') {
-        // Payment per delivery with 2-week settlement AFTER arrival; good units only
-        const deliveries = (c as any).deliveries || [];
-        for (const d of deliveries) {
-          if (week === this.toNumber(d.week) + 2) {
-            const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
-            const u = this.toNumber(d.unitPrice ?? unitPrice);
-            const due = goodUnits * u;
-            operationalOutflows += due;
-            costMaterials += due;
-            c.paidSoFar += due;
-            // ledger: GMC settlement will be collected below with ref info
-          }
-        }
-      }
+      // No payments applied in Week N; they are staged below for Week N+1
     }
 
-    // 2) Receive material deliveries scheduled for this week; account for defects for Supplier-2
+    // 2) Do NOT add arrivals in current week; arrivals for this week were applied when this state (Week N) was created
     for (const c of contracts) {
       c.deliveredUnits = this.toNumber(c.deliveredUnits);
       // For GMC, build synthetic deliveries from gmcOrders (lead time), also carry goodUnits
@@ -420,30 +402,7 @@ export class GameEngine {
           return { week: arrWeek, units, goodUnits, unitPrice: uPrice } as any;
         });
       }
-      for (const d of c.deliveries || []) {
-        if (d.week === week) {
-          const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
-          const precomputedGood = this.toNumber((d as any).goodUnits, NaN);
-          const goodUnits = Number.isFinite(precomputedGood) ? precomputedGood : (d.units - Math.round(d.units * defectRate));
-          (d as any).goodUnits = goodUnits;
-          // Update raw materials inventory on-hand
-          const matKey = c.material as MaterialKey;
-          const entry: any = state.rawMaterials[matKey] || { onHand: 0, allocated: 0, inTransit: [] };
-          entry.onHand = this.toNumber(entry.onHand) + goodUnits;
-          // Track simple moving average unit cost on-hand
-          const unitPrice = this.toNumber(d.unitPrice ?? c.lockedUnitPrice ?? this.computeContractUnitPrice(c));
-          entry.onHandValue = this.toNumber(entry.onHandValue) + goodUnits * unitPrice;
-          state.rawMaterials[matKey] = entry;
-          c.deliveredUnits += goodUnits;
-          // SPT and GMC per-batch settlements: pay on delivery for good units (defects not billed) when settlement hits
-          if (c.type === 'SPT') {
-            const deliveryCost = goodUnits * unitPrice;
-            operationalOutflows += deliveryCost;
-            costMaterials += deliveryCost;
-            // ledger: SPT paid on delivery (good units)
-          }
-        }
-      }
+      // No current-week arrival mutation here
     }
 
     // 3) Start production batches in this week: allocate materials, pay production cost now
@@ -710,38 +669,10 @@ export class GameEngine {
 
     // 8) Apply cash waterfall (timing-aware) and collect ledger entries
     const ledger: Array<{ type: string; amount: number; refId?: string; weekNumber?: number }> = [];
-    // Start-of-week: pay interest accrued on last week's ending credit balance
-    costInterest = this.calculateInterest(creditUsed);
-    if (openingCash >= costInterest) {
-      openingCash -= costInterest;
-    } else {
-      const shortfallInt = costInterest - openingCash;
-      creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallInt);
-      openingCash = 0;
-    }
-    if (costInterest > 0) ledger.push({ type: 'interest', amount: costInterest });
+    // Do not charge current-week interest here; it was already applied when Week N was created
+    costInterest = 0;
 
-    // Procurement-specific ledger entries (materials)
-    for (const c of contracts) {
-      const unitPrice = this.computeContractUnitPrice(c);
-      if (c.type === 'SPT') {
-        for (const d of (c.deliveries || [])) {
-          if (this.toNumber(d.week) === week && !(d as any).prepaid) {
-            const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
-            const u = this.toNumber(d.unitPrice ?? unitPrice);
-            ledger.push({ type: 'materials_spt', amount: goodUnits * u, refId: `${c.supplier}:${c.material}` });
-          }
-        }
-      } else if (c.type === 'GMC') {
-        for (const d of (c.deliveries || [])) {
-          if (this.toNumber(d.week) + 2 === week && !(d as any).settlementPrepaid) {
-            const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
-            const u = this.toNumber(d.unitPrice ?? unitPrice);
-            ledger.push({ type: 'materials_gmc', amount: goodUnits * u, refId: `${c.supplier}:${c.material}` });
-          }
-        }
-      }
-    }
+    // No current-week procurement ledger entries; Week N+1 items are staged below
     // Then pay operational outflows scheduled for this week before sales cash arrives
     cashOnHand = openingCash;
     if (cashOnHand >= operationalOutflows) {
