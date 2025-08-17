@@ -662,6 +662,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           nextWeekState.intent = (computed as any).nextWeekIntent;
         }
 
+        // Apply staged N+1 arrivals and outflows into the new state's opening snapshot
+        const arrivals: Array<{ material: string; goodUnits: number; unitPrice: number }> = (computed as any).nextWeekArrivals || [];
+        nextWeekState.rawMaterials = nextWeekState.rawMaterials || {};
+        for (const a of arrivals) {
+          const mat = String(a.material || 'unknown');
+          const entry: any = nextWeekState.rawMaterials[mat] || { onHand: 0, allocated: 0, inTransit: [] };
+          entry.onHand = Number(entry.onHand || 0) + Number(a.goodUnits || 0);
+          entry.onHandValue = Number(entry.onHandValue || 0) + Number(a.goodUnits || 0) * Number(a.unitPrice || 0);
+          nextWeekState.rawMaterials[mat] = entry;
+        }
+
+        // Apply cash waterfall for N+1 outflows at start of week (interest + ops)
+        const out = (computed as any).nextWeekOutflows || {};
+        let cashOnHandN1 = Number(nextWeekState.cashOnHand || 0);
+        let creditUsedN1 = Number(nextWeekState.creditUsed || 0);
+        const costInterest = Number(out.interest || 0);
+        if (costInterest > 0) {
+          if (cashOnHandN1 >= costInterest) cashOnHandN1 -= costInterest; else { creditUsedN1 += (costInterest - cashOnHandN1); cashOnHandN1 = 0; }
+        }
+        const ops = Number(out.marketing || 0) + Number(out.materials_spt || 0) + Number(out.materials_gmc || 0);
+        if (ops > 0) {
+          if (cashOnHandN1 >= ops) cashOnHandN1 -= ops; else { creditUsedN1 += (ops - cashOnHandN1); cashOnHandN1 = 0; }
+        }
+        nextWeekState.cashOnHand = cashOnHandN1.toFixed(2);
+        nextWeekState.creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsedN1).toFixed(2);
+
+
         await storage.createWeeklyState(nextWeekState);
       }
       

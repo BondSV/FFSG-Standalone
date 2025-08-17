@@ -611,56 +611,44 @@ export class GameEngine {
     // Current week's marketing: do NOT charge here. Marketing is planned for next week and charged at commit of current week
     const marketingSpend = this.toNumber(state.marketingPlan?.totalSpend ?? state.marketingSpend);
 
-    // Next week's planned marketing - deduct immediately for instant UI feedback
+    // Next week's planned marketing: DO NOT deduct in Week N. Stage for Week N+1.
     const nextWeekMarketingSpend = this.toNumber((state as any).plannedMarketingPlan?.totalSpend ?? 0);
-    if (nextWeekMarketingSpend > 0) {
-      costMarketing += nextWeekMarketingSpend;
-      operationalOutflows += nextWeekMarketingSpend;
-    }
 
     // Apply start-of-next-week (Week N+1) procurement events: arrivals and payments
     const dueWeekNext = week + 1;
     const nextWeekLedger: Array<{ type: string; amount: number; refId?: string; weekNumber?: number }> = [];
+    const nextWeekArrivals: Array<{ material: MaterialKey; goodUnits: number; unitPrice: number }>
+      = [];
+    let nextWeekOutflowsMarketing = 0;
+    let nextWeekOutflowsSPT = 0;
+    let nextWeekOutflowsGMC = 0;
+    // Stage all N+1 effects without mutating Week N state
+    if (nextWeekMarketingSpend > 0) {
+      nextWeekOutflowsMarketing += nextWeekMarketingSpend;
+      nextWeekLedger.push({ type: 'marketing', amount: nextWeekMarketingSpend, weekNumber: dueWeekNext });
+    }
     for (const c of contracts) {
       const unitPriceC = this.computeContractUnitPrice(c);
       for (const d of (c.deliveries || [])) {
-        // 1) Arrivals scheduled for N+1 (both SPT and GMC): add to inventory now
-        if (this.toNumber(d.week) === dueWeekNext && !(d as any).arrived) {
+        if (this.toNumber(d.week) === dueWeekNext) {
           const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
           const units = this.toNumber(d.units);
           const goodUnits = Number.isFinite((d as any).goodUnits) ? this.toNumber((d as any).goodUnits) : Math.round(units * (1 - defectRate));
-          (d as any).goodUnits = goodUnits;
           const u = this.toNumber(d.unitPrice ?? unitPriceC);
-          const matKey = c.material as MaterialKey;
-          const entry: any = state.rawMaterials[matKey] || { onHand: 0, allocated: 0, inTransit: [] };
-          entry.onHand = this.toNumber(entry.onHand) + goodUnits;
-          entry.onHandValue = this.toNumber(entry.onHandValue) + goodUnits * u;
-          state.rawMaterials[matKey] = entry;
-          c.deliveredUnits = this.toNumber(c.deliveredUnits) + goodUnits;
-          (d as any).arrived = true;
+          nextWeekArrivals.push({ material: c.material as MaterialKey, goodUnits, unitPrice: u });
+          if (c.type === 'SPT') {
+            const due = goodUnits * u;
+            nextWeekOutflowsSPT += due;
+            nextWeekLedger.push({ type: 'materials_spt', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
+          }
         }
-        // 2) SPT: pay in the arrival week N+1
-        if (c.type === 'SPT' && this.toNumber(d.week) === dueWeekNext && !(d as any).prepaid) {
-          const units = this.toNumber(d.units);
+        if (c.type === 'GMC' && this.toNumber(d.week) + 2 === dueWeekNext) {
           const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
+          const units = this.toNumber(d.units);
           const goodUnits = Number.isFinite((d as any).goodUnits) ? this.toNumber((d as any).goodUnits) : Math.round(units * (1 - defectRate));
           const u = this.toNumber(d.unitPrice ?? unitPriceC);
           const due = goodUnits * u;
-          costMaterials += due;
-          operationalOutflows += due;
-          (d as any).prepaid = true;
-          nextWeekLedger.push({ type: 'materials_spt', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
-        }
-        // 3) GMC: pay in delivery+2; if due in N+1, pay now
-        if (c.type === 'GMC' && this.toNumber(d.week) + 2 === dueWeekNext && !(d as any).settlementPrepaid) {
-          const units = this.toNumber(d.units);
-          const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
-          const goodUnits = Number.isFinite((d as any).goodUnits) ? this.toNumber((d as any).goodUnits) : Math.round(units * (1 - defectRate));
-          const u = this.toNumber(d.unitPrice ?? unitPriceC);
-          const due = goodUnits * u;
-          costMaterials += due;
-          operationalOutflows += due;
-          (d as any).settlementPrepaid = true;
+          nextWeekOutflowsGMC += due;
           nextWeekLedger.push({ type: 'materials_gmc', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
         }
       }
@@ -763,9 +751,7 @@ export class GameEngine {
       creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + shortfallOps);
       cashOnHand = 0;
     }
-    // Record next week's marketing as week N+1, but write now at commit of week N
-    if (nextWeekMarketingSpend > 0) ledger.push({ type: 'marketing', amount: nextWeekMarketingSpend, weekNumber: week + 1 });
-    // Append pre-created next week material ledger entries
+    // Append staged next-week ledger entries (weekNumber = N+1). Do not affect Week N cash.
     for (const e of nextWeekLedger) ledger.push(e);
     if (costProduction > 0) ledger.push({ type: 'production', amount: costProduction });
     if (costLogistics > 0) ledger.push({ type: 'logistics', amount: costLogistics });
@@ -918,6 +904,15 @@ export class GameEngine {
     }
 
     // Mark committed
+    // Expose staged N+1 effects for routes.ts to apply when creating Week N+1 state
+    const nextWeekInterest = this.calculateInterest(creditUsed);
+    (state as any).nextWeekArrivals = nextWeekArrivals;
+    (state as any).nextWeekOutflows = {
+      marketing: nextWeekOutflowsMarketing,
+      materials_spt: nextWeekOutflowsSPT,
+      materials_gmc: nextWeekOutflowsGMC,
+      interest: nextWeekInterest,
+    };
     (state as any).isCommitted = true;
     (state as any).ledgerEntries = ledger; // Keep for backwards compatibility
     return state as any as WeeklyState;
