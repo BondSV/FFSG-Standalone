@@ -1190,12 +1190,7 @@ export class GameEngine {
     const procurement = currentState.procurementContracts as any;
     if (procurement) {
       const contracts = procurement.contracts || [];
-      // FVC removed
-      const seasonNeed = GAME_CONSTANTS.PRODUCTS.jacket.forecast + GAME_CONSTANTS.PRODUCTS.dress.forecast + GAME_CONSTANTS.PRODUCTS.pants.forecast;
-      const gmcUnits = contracts.filter((c: any) => c.type === 'GMC').reduce((s: number, c: any) => s + Number(c.units || 0), 0);
-      if (gmcUnits > 0 && gmcUnits < 0.7 * seasonNeed) {
-        errors.push('GMC total commitment must be at least 70% of season requirements');
-      }
+      // FVC removed; no minimum GMC commitment guardrail.
     }
     
     // Sales phase validations (Week 7-12) 
