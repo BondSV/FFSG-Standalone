@@ -844,6 +844,25 @@ export class GameEngine {
       materials_gmc: nextWeekOutflowsGMC,
       interest: nextWeekInterest,
     };
+    // Ensure interest appears in the ledger for Week N+1
+    if (nextWeekInterest > 0) {
+      const wk = week + 1;
+      const interestEntry = { type: 'interest', amount: nextWeekInterest, weekNumber: wk } as any;
+      try {
+        const gameSessionId = (state as any).gameSessionId || currentState.gameSessionId;
+        await db.insert(cashLedger).values([{
+          id: `${gameSessionId}-${wk}-interest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          gameSessionId,
+          weekNumber: wk,
+          entryType: 'interest',
+          refId: null,
+          amount: Number(nextWeekInterest) as any,
+        }] as any);
+      } catch (e) {
+        // Non-fatal; ledger push failure shouldn't break commit
+        console.error('Failed to write next-week interest to ledger', e);
+      }
+    }
     (state as any).isCommitted = true;
     (state as any).ledgerEntries = ledger; // Keep for backwards compatibility
     return state as any as WeeklyState;
