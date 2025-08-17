@@ -165,19 +165,28 @@ export class GameEngine {
   }
 
   private static scheduleDeliveriesForContract(contract: any): any {
-    // If deliveries already exist, keep them. Otherwise create based on type and supplier lead times.
-    if (contract.deliveries && contract.deliveries.length > 0) return contract;
+    // Always ensure deliveries reflect the latest orders; merge missing entries
     const lead = this.getSupplierLeadTime(contract.supplier);
     const locked = contract.lockedUnitPrice != null ? Number(contract.lockedUnitPrice) : undefined;
     const unitPrice = locked != null ? locked : this.computeContractUnitPrice(contract);
+    contract.deliveries = contract.deliveries || [];
 
     if (contract.type === 'GMC') {
-      // For GMC, deliveries are driven by iterative weekly orders, map each order to a delivery with its own unit price
       const orders = (contract as any).gmcOrders || [];
-      contract.deliveries = orders.map((o: any) => ({ week: this.toNumber(o.week) + lead, units: this.toNumber(o.units), unitPrice: this.toNumber(o.unitPrice) }));
+      for (const o of orders) {
+        const arrWeek = this.toNumber(o.week) + lead;
+        const units = this.toNumber(o.units);
+        const uPrice = this.toNumber(o.unitPrice ?? unitPrice);
+        // consider an entry existing if same week and units exist
+        const exists = (contract.deliveries as any[]).some((d: any) => this.toNumber(d.week) === arrWeek && this.toNumber(d.units) === units);
+        if (!exists) {
+          (contract.deliveries as any[]).push({ week: arrWeek, units, unitPrice: uPrice });
+        }
+      }
     } else {
-      // SPT: single shipment after lead
-      contract.deliveries = [{ week: contract.weekSigned + lead, units: contract.units, unitPrice }];
+      if ((contract.deliveries as any[]).length === 0) {
+        (contract.deliveries as any[]).push({ week: contract.weekSigned + lead, units: contract.units, unitPrice });
+      }
     }
     return contract;
   }
