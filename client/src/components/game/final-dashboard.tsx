@@ -1,4 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, PieChart, Pie, Cell } from 'recharts';
@@ -20,6 +21,17 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
   if (!weeks.length) return null;
 
   // Compute KPIs
+  const { data: ledgerData } = useQuery({
+    queryKey: ["/api/game", gameId, "ledger", "rollup"],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/game/${gameId}/ledger/rollup`);
+      return res.json();
+    },
+    enabled: !!gameId,
+    staleTime: 30_000,
+  });
+  const ledgerRows = (ledgerData?.rows || []) as Array<{ entryType: string; amount: number; weekNumber: number }>;
+  const sumByType = (type: string) => ledgerRows.filter(r => r.entryType === type).reduce((s, r) => s + Number(r.amount || 0), 0);
   const salesWeeks = weeks.filter((w: any) => w.weekNumber >= 7 && w.weekNumber <= 12);
   const totalDemand = salesWeeks.reduce((s: number, w: any) => s + Object.values(w.weeklyDemand || {}).reduce((a: number, b: any) => a + Number(b || 0), 0), 0);
   const totalSales = salesWeeks.reduce((s: number, w: any) => s + Object.values(w.weeklySales || {}).reduce((a: number, b: any) => a + Number(b || 0), 0), 0);
@@ -30,12 +42,12 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
   const finalCash = Number(finalState.cashOnHand || 0);
 
   const totalRevenue = weeks.reduce((sum: number, w: any) => sum + Number(w.weeklyRevenue || 0), 0);
-  const materialCosts = weeks.reduce((sum: number, w: any) => sum + Number(w.materialCosts || 0), 0);
-  const productionCosts = weeks.reduce((sum: number, w: any) => sum + Number(w.productionCosts || 0), 0);
-  const logisticsCosts = weeks.reduce((sum: number, w: any) => sum + Number(w.logisticsCosts || 0), 0);
-  const holdingCosts = weeks.reduce((sum: number, w: any) => sum + Number(w.holdingCosts || 0), 0);
-  const interestCosts = weeks.reduce((sum: number, w: any) => sum + Number(w.interestAccrued || 0), 0);
-  const marketingSpend = weeks.reduce((sum: number, w: any) => sum + Number((w as any).marketingPlan?.totalSpend ?? w.marketingSpend ?? 0), 0);
+  const materialCosts = sumByType('materials_spt') + sumByType('materials_gmc');
+  const productionCosts = sumByType('production');
+  const logisticsCosts = sumByType('logistics');
+  const holdingCosts = sumByType('holding');
+  const interestCosts = sumByType('interest');
+  const marketingSpend = sumByType('marketing');
   const totalCosts = materialCosts + productionCosts + logisticsCosts + holdingCosts + interestCosts + marketingSpend;
   const avgCapital = 1000000; // same as STARTING_CAPITAL
   const economicProfit = totalRevenue - totalCosts - avgCapital * 0.10;

@@ -746,6 +746,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Ledger rollup (returns raw rows; client will compute sums per type)
+  app.get('/api/game/:gameId/ledger/rollup', isAuthenticated, async (req: any, res) => {
+    try {
+      const { gameId } = req.params;
+      const rows = await db.select().from(cashLedgerTable).where(eq(cashLedgerTable.gameSessionId, gameId as any));
+      res.json({ rows });
+    } catch (error) {
+      console.error('Error fetching ledger rollup:', error);
+      res.status(500).json({ rows: [] });
+    }
+  });
+
   // Game data endpoints
   app.get('/api/game/constants', async (req, res) => {
     res.json(GAME_CONSTANTS);

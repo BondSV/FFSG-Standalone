@@ -609,6 +609,36 @@ export class GameEngine {
       operationalOutflows += nextWeekMarketingSpend;
     }
 
+    // Prepay next week's procurement payments so balances reflect at start of Week N+1
+    const dueWeekNext = week + 1;
+    const nextWeekLedger: Array<{ type: string; amount: number; refId?: string; weekNumber?: number }> = [];
+    for (const c of contracts) {
+      const unitPriceC = this.computeContractUnitPrice(c);
+      for (const d of (c.deliveries || [])) {
+        if (c.type === 'SPT') {
+          if (this.toNumber(d.week) === dueWeekNext && !(d as any).prepaid) {
+            const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
+            const u = this.toNumber(d.unitPrice ?? unitPriceC);
+            const due = goodUnits * u;
+            costMaterials += due;
+            operationalOutflows += due;
+            (d as any).prepaid = true;
+            nextWeekLedger.push({ type: 'materials_spt', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
+          }
+        } else if (c.type === 'GMC') {
+          if (this.toNumber(d.week) + 2 === dueWeekNext && !(d as any).settlementPrepaid) {
+            const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
+            const u = this.toNumber(d.unitPrice ?? unitPriceC);
+            const due = goodUnits * u;
+            costMaterials += due;
+            operationalOutflows += due;
+            (d as any).settlementPrepaid = true;
+            nextWeekLedger.push({ type: 'materials_gmc', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
+          }
+        }
+      }
+    }
+
     // Compute actual unit cost to enforce no-loss sales
     const totUnitsSold = this.toNumber((state.totals as any)?.unitsSoldToDate);
     const totRev = this.toNumber((state.totals as any)?.revenueToDate);
@@ -681,7 +711,7 @@ export class GameEngine {
       const unitPrice = this.computeContractUnitPrice(c);
       if (c.type === 'SPT') {
         for (const d of (c.deliveries || [])) {
-          if (this.toNumber(d.week) === week) {
+          if (this.toNumber(d.week) === week && !(d as any).prepaid) {
             const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
             const u = this.toNumber(d.unitPrice ?? unitPrice);
             ledger.push({ type: 'materials_spt', amount: goodUnits * u, refId: `${c.supplier}:${c.material}` });
@@ -689,7 +719,7 @@ export class GameEngine {
         }
       } else if (c.type === 'GMC') {
         for (const d of (c.deliveries || [])) {
-          if (this.toNumber(d.week) + 2 === week) {
+          if (this.toNumber(d.week) + 2 === week && !(d as any).settlementPrepaid) {
             const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
             const u = this.toNumber(d.unitPrice ?? unitPrice);
             ledger.push({ type: 'materials_gmc', amount: goodUnits * u, refId: `${c.supplier}:${c.material}` });
@@ -708,6 +738,8 @@ export class GameEngine {
     }
     // Record next week's marketing as week N+1, but write now at commit of week N
     if (nextWeekMarketingSpend > 0) ledger.push({ type: 'marketing', amount: nextWeekMarketingSpend, weekNumber: week + 1 });
+    // Append pre-created next week material ledger entries
+    for (const e of nextWeekLedger) ledger.push(e);
     if (costProduction > 0) ledger.push({ type: 'production', amount: costProduction });
     if (costLogistics > 0) ledger.push({ type: 'logistics', amount: costLogistics });
     if (costHolding > 0) ledger.push({ type: 'holding', amount: costHolding });
@@ -722,6 +754,48 @@ export class GameEngine {
 
     // 9) Final week penalties (GMC undelivered)
     if (week === 15) {
+      // Guardrail: bill any payments that would fall beyond week 15 now
+      // - SPT: pay on delivery week; if delivery week > 15, bill now
+      // - GMC: pay delivery+2; if > 15, bill now
+      for (const c of contracts) {
+        const unitPriceForced = this.computeContractUnitPrice(c);
+        for (const d of (c.deliveries || [])) {
+          if (c.type === 'SPT') {
+            if (this.toNumber(d.week) > 15 && !(d as any).__endPrepaid) {
+              const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
+              const u = this.toNumber(d.unitPrice ?? unitPriceForced);
+              const due = goodUnits * u;
+              if (cashOnHand >= due) {
+                cashOnHand -= due;
+              } else {
+                const short = due - cashOnHand;
+                creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + short);
+                cashOnHand = 0;
+              }
+              costMaterials += due;
+              ledger.push({ type: 'materials_spt', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: 15 });
+              (d as any).__endPrepaid = true;
+            }
+          } else if (c.type === 'GMC') {
+            if (this.toNumber(d.week) + 2 > 15 && !(d as any).__endSettlementPrepaid) {
+              const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
+              const u = this.toNumber(d.unitPrice ?? unitPriceForced);
+              const due = goodUnits * u;
+              if (cashOnHand >= due) {
+                cashOnHand -= due;
+              } else {
+                const short = due - cashOnHand;
+                creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsed + short);
+                cashOnHand = 0;
+              }
+              costMaterials += due;
+              ledger.push({ type: 'materials_gmc', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: 15 });
+              (d as any).__endSettlementPrepaid = true;
+            }
+          }
+        }
+      }
+
       let gmcPenalty = 0;
       // Penalty per supplier based on GMC commitment minus delivered GMC units
       for (const [sup, commit] of Object.entries(gmcCommitmentsBySupplier)) {
