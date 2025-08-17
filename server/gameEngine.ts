@@ -609,32 +609,50 @@ export class GameEngine {
       operationalOutflows += nextWeekMarketingSpend;
     }
 
-    // Prepay next week's procurement payments so balances reflect at start of Week N+1
+    // Apply start-of-next-week (Week N+1) procurement events: arrivals and payments
     const dueWeekNext = week + 1;
     const nextWeekLedger: Array<{ type: string; amount: number; refId?: string; weekNumber?: number }> = [];
     for (const c of contracts) {
       const unitPriceC = this.computeContractUnitPrice(c);
       for (const d of (c.deliveries || [])) {
-        if (c.type === 'SPT') {
-          if (this.toNumber(d.week) === dueWeekNext && !(d as any).prepaid) {
-            const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
-            const u = this.toNumber(d.unitPrice ?? unitPriceC);
-            const due = goodUnits * u;
-            costMaterials += due;
-            operationalOutflows += due;
-            (d as any).prepaid = true;
-            nextWeekLedger.push({ type: 'materials_spt', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
-          }
-        } else if (c.type === 'GMC') {
-          if (this.toNumber(d.week) + 2 === dueWeekNext && !(d as any).settlementPrepaid) {
-            const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
-            const u = this.toNumber(d.unitPrice ?? unitPriceC);
-            const due = goodUnits * u;
-            costMaterials += due;
-            operationalOutflows += due;
-            (d as any).settlementPrepaid = true;
-            nextWeekLedger.push({ type: 'materials_gmc', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
-          }
+        // 1) Arrivals scheduled for N+1 (both SPT and GMC): add to inventory now
+        if (this.toNumber(d.week) === dueWeekNext && !(d as any).arrived) {
+          const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
+          const units = this.toNumber(d.units);
+          const goodUnits = Number.isFinite((d as any).goodUnits) ? this.toNumber((d as any).goodUnits) : Math.round(units * (1 - defectRate));
+          (d as any).goodUnits = goodUnits;
+          const u = this.toNumber(d.unitPrice ?? unitPriceC);
+          const matKey = c.material as MaterialKey;
+          const entry: any = state.rawMaterials[matKey] || { onHand: 0, allocated: 0, inTransit: [] };
+          entry.onHand = this.toNumber(entry.onHand) + goodUnits;
+          entry.onHandValue = this.toNumber(entry.onHandValue) + goodUnits * u;
+          state.rawMaterials[matKey] = entry;
+          c.deliveredUnits = this.toNumber(c.deliveredUnits) + goodUnits;
+          (d as any).arrived = true;
+        }
+        // 2) SPT: pay in the arrival week N+1
+        if (c.type === 'SPT' && this.toNumber(d.week) === dueWeekNext && !(d as any).prepaid) {
+          const units = this.toNumber(d.units);
+          const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
+          const goodUnits = Number.isFinite((d as any).goodUnits) ? this.toNumber((d as any).goodUnits) : Math.round(units * (1 - defectRate));
+          const u = this.toNumber(d.unitPrice ?? unitPriceC);
+          const due = goodUnits * u;
+          costMaterials += due;
+          operationalOutflows += due;
+          (d as any).prepaid = true;
+          nextWeekLedger.push({ type: 'materials_spt', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
+        }
+        // 3) GMC: pay in delivery+2; if due in N+1, pay now
+        if (c.type === 'GMC' && this.toNumber(d.week) + 2 === dueWeekNext && !(d as any).settlementPrepaid) {
+          const units = this.toNumber(d.units);
+          const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
+          const goodUnits = Number.isFinite((d as any).goodUnits) ? this.toNumber((d as any).goodUnits) : Math.round(units * (1 - defectRate));
+          const u = this.toNumber(d.unitPrice ?? unitPriceC);
+          const due = goodUnits * u;
+          costMaterials += due;
+          operationalOutflows += due;
+          (d as any).settlementPrepaid = true;
+          nextWeekLedger.push({ type: 'materials_gmc', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
         }
       }
     }
