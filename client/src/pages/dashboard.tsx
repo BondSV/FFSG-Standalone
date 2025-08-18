@@ -138,24 +138,8 @@ export default function Dashboard() {
 
   // Build/refresh the overview summary when currentState changes (requires prev week & ledger)
   useEffect(() => {
-    (async () => {
-      try {
-        const session = (gameData as any)?.gameSession;
-        const nextState = (gameData as any)?.currentState;
-        if (!session || !nextState) { setOverviewSummary(null); return; }
-        const w = Number(nextState.weekNumber || 0);
-        if (!Number.isFinite(w) || w <= 1) { setOverviewSummary(null); return; }
-        const prev = await apiRequest('GET', `/api/game/${session.id}/week/${w - 1}`).then(r => r.json());
-        const roll = await apiRequest('GET', `/api/game/${session.id}/ledger/rollup`).then(r => r.json());
-        const rows: LedgerEntry[] = (roll?.rows || [])
-          .filter((r: any) => Number(r.weekNumber) === w)
-          .map((r: any) => ({ weekNumber: Number(r.weekNumber), entryType: r.entryType, refId: r.refId, amount: Number(r.amount) }));
-        const s = computeWeekSummary({ gameSessionId: session.id, prevState: prev, nextState, ledgerRowsN1: rows });
-        setOverviewSummary(s);
-      } catch {
-        setOverviewSummary(null);
-      }
-    })();
+    // Temporarily disabled to unblock runtime error on first-load; modal summary still works post-commit
+    setOverviewSummary(null);
   }, [ (gameData as any)?.currentState?.weekNumber, (gameData as any)?.gameSession?.id ]);
 
   const renderTabContent = () => {
