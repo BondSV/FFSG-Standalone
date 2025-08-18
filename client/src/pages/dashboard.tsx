@@ -140,20 +140,23 @@ export default function Dashboard() {
   useEffect(() => {
     (async () => {
       try {
-        const w = Number((gameData as any)?.currentState?.weekNumber || 1);
-        if (!w || w <= 1) { setOverviewSummary(null); return; }
-        const prev = await apiRequest('GET', `/api/game/${gameSession.id}/week/${w - 1}`).then(r => r.json());
-        const roll = await apiRequest('GET', `/api/game/${gameSession.id}/ledger/rollup`).then(r => r.json());
+        const session = (gameData as any)?.gameSession;
+        const nextState = (gameData as any)?.currentState;
+        if (!session || !nextState) { setOverviewSummary(null); return; }
+        const w = Number(nextState.weekNumber || 0);
+        if (!Number.isFinite(w) || w <= 1) { setOverviewSummary(null); return; }
+        const prev = await apiRequest('GET', `/api/game/${session.id}/week/${w - 1}`).then(r => r.json());
+        const roll = await apiRequest('GET', `/api/game/${session.id}/ledger/rollup`).then(r => r.json());
         const rows: LedgerEntry[] = (roll?.rows || [])
           .filter((r: any) => Number(r.weekNumber) === w)
           .map((r: any) => ({ weekNumber: Number(r.weekNumber), entryType: r.entryType, refId: r.refId, amount: Number(r.amount) }));
-        const s = computeWeekSummary({ gameSessionId: gameSession.id, prevState: prev, nextState: (gameData as any).currentState, ledgerRowsN1: rows });
+        const s = computeWeekSummary({ gameSessionId: session.id, prevState: prev, nextState, ledgerRowsN1: rows });
         setOverviewSummary(s);
       } catch {
         setOverviewSummary(null);
       }
     })();
-  }, [gameData, gameSession?.id]);
+  }, [ (gameData as any)?.currentState?.weekNumber, (gameData as any)?.gameSession?.id ]);
 
   const renderTabContent = () => {
     switch (activeTab) {
