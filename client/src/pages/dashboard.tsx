@@ -7,9 +7,6 @@ import { apiRequest } from "@/lib/queryClient";
 import Header from "@/components/layout/header";
 import Sidebar from "@/components/layout/sidebar";
 import KpiCards from "@/components/game/kpi-cards";
-import { OverviewSummaryPane } from "@/components/game/overview-summary-pane";
-import { computeWeekSummary } from "@/lib/summary/summarizeWeek";
-import type { WeeklySummary, LedgerEntry } from "@/types/weekly-summary";
 import ProductPortfolio from "@/components/game/product-portfolio";
 import Timeline from "@/components/game/timeline";
 import Pricing from "@/components/game/pricing";
@@ -32,7 +29,6 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [showCommitModal, setShowCommitModal] = useState(false);
-  const [overviewSummary, setOverviewSummary] = useState<WeeklySummary | null>(null);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Always reset scroll to top when switching tabs (must run before any conditional returns)
@@ -137,17 +133,13 @@ export default function Dashboard() {
   const currentState = (gameData as any)?.currentState || null;
 
   // Build/refresh the overview summary when currentState changes (requires prev week & ledger)
-  useEffect(() => {
-    // Temporarily disabled to unblock runtime error on first-load; modal summary still works post-commit
-    setOverviewSummary(null);
-  }, [ (gameData as any)?.currentState?.weekNumber, (gameData as any)?.gameSession?.id ]);
+  // Summary pane is temporarily disabled
 
   const renderTabContent = () => {
     switch (activeTab) {
       case 'overview':
         return (
           <div className="p-6 space-y-8">
-            {overviewSummary && <OverviewSummaryPane summary={overviewSummary} />}
             <KpiCards currentState={currentState} />
             <ProductPortfolio currentState={currentState} />
             <Timeline currentState={currentState} />
