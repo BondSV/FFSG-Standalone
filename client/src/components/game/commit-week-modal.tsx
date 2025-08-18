@@ -140,6 +140,7 @@ export default function CommitWeekModal({
   const currentWeek = currentState?.weekNumber || 1;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
@@ -284,9 +285,10 @@ export default function CommitWeekModal({
           </div>
         </div>
       </DialogContent>
-      {summary && (
-        <WeeklySummaryModal open={showSummary} onOpenChange={setShowSummary} summary={summary} />
-      )}
     </Dialog>
+    {summary && (
+      <WeeklySummaryModal open={showSummary} onOpenChange={setShowSummary} summary={summary} />
+    )}
+    </>
   );
 }

@@ -7,6 +7,9 @@ import { apiRequest } from "@/lib/queryClient";
 import Header from "@/components/layout/header";
 import Sidebar from "@/components/layout/sidebar";
 import KpiCards from "@/components/game/kpi-cards";
+import { OverviewSummaryPane } from "@/components/game/overview-summary-pane";
+import { computeWeekSummary } from "@/lib/summary/summarizeWeek";
+import type { WeeklySummary, LedgerEntry } from "@/types/weekly-summary";
 import ProductPortfolio from "@/components/game/product-portfolio";
 import Timeline from "@/components/game/timeline";
 import Pricing from "@/components/game/pricing";
@@ -29,6 +32,7 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const [activeTab, setActiveTab] = useState<Tab>('overview');
   const [showCommitModal, setShowCommitModal] = useState(false);
+  const [overviewSummary, setOverviewSummary] = useState<WeeklySummary | null>(null);
   const mainScrollRef = useRef<HTMLDivElement | null>(null);
 
   // Always reset scroll to top when switching tabs (must run before any conditional returns)
@@ -132,11 +136,31 @@ export default function Dashboard() {
   const gameSession = (gameData as any)?.gameSession || null;
   const currentState = (gameData as any)?.currentState || null;
 
+  // Build/refresh the overview summary when currentState changes (requires prev week & ledger)
+  useEffect(() => {
+    (async () => {
+      try {
+        const w = Number((gameData as any)?.currentState?.weekNumber || 1);
+        if (!w || w <= 1) { setOverviewSummary(null); return; }
+        const prev = await apiRequest('GET', `/api/game/${gameSession.id}/week/${w - 1}`).then(r => r.json());
+        const roll = await apiRequest('GET', `/api/game/${gameSession.id}/ledger/rollup`).then(r => r.json());
+        const rows: LedgerEntry[] = (roll?.rows || [])
+          .filter((r: any) => Number(r.weekNumber) === w)
+          .map((r: any) => ({ weekNumber: Number(r.weekNumber), entryType: r.entryType, refId: r.refId, amount: Number(r.amount) }));
+        const s = computeWeekSummary({ gameSessionId: gameSession.id, prevState: prev, nextState: (gameData as any).currentState, ledgerRowsN1: rows });
+        setOverviewSummary(s);
+      } catch {
+        setOverviewSummary(null);
+      }
+    })();
+  }, [gameData, gameSession?.id]);
+
   const renderTabContent = () => {
     switch (activeTab) {
       case 'overview':
         return (
           <div className="p-6 space-y-8">
+            {overviewSummary && <OverviewSummaryPane summary={overviewSummary} />}
             <KpiCards currentState={currentState} />
             <ProductPortfolio currentState={currentState} />
             <Timeline currentState={currentState} />
