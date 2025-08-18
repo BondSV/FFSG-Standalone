@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useMutation, useQueryClient, useQuery } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -13,9 +13,6 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { CheckCircle, AlertTriangle, Clock, ArrowRight } from "lucide-react";
-import { computeWeekSummary } from '@/lib/summary/summarizeWeek';
-import type { WeeklySummary, LedgerEntry } from '@/types/weekly-summary';
-import { WeeklySummaryModal } from './weekly-summary-modal';
 
 interface CommitWeekModalProps {
   open: boolean;
@@ -34,8 +31,7 @@ export default function CommitWeekModal({
   const queryClient = useQueryClient();
   const [validationData, setValidationData] = useState<any>(null);
   const [isValidating, setIsValidating] = useState(false);
-  const [summary, setSummary] = useState<WeeklySummary | null>(null);
-  const [showSummary, setShowSummary] = useState(false);
+  // Summary modal temporarily disabled to address startup runtime error
 
   const validateMutation = useMutation({
     mutationFn: async () => {
@@ -72,28 +68,12 @@ export default function CommitWeekModal({
       await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentState.weekNumber}/commit`);
     },
     onSuccess: async () => {
-      // Refresh current (now N+1) and full weeks list
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: ['/api/game/current'] }),
         queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession.id, 'weeks'] }),
       ]);
-
-      // Fetch latest current state (N+1), previous state (N), and ledger rows for N+1
-      const latest = await apiRequest('GET', '/api/game/current').then(r => r.json());
-      const nextState = latest?.currentState;
-      const wN1 = Number(nextState?.weekNumber);
-      const prevWeek = wN1 - 1;
-      const prevState = await apiRequest('GET', `/api/game/${gameSession.id}/week/${prevWeek}`).then(r => r.json());
-      const ledgerRoll = await apiRequest('GET', `/api/game/${gameSession.id}/ledger/rollup`).then(r => r.json());
-      const ledgerRowsN1: LedgerEntry[] = (ledgerRoll?.rows || [])
-        .filter((r: any) => Number(r.weekNumber) === wN1)
-        .map((r: any) => ({ weekNumber: Number(r.weekNumber), entryType: r.entryType, refId: r.refId, amount: Number(r.amount) }));
-
-      const s = computeWeekSummary({ gameSessionId: gameSession.id, prevState, nextState, ledgerRowsN1 });
-      setSummary(s);
-      setShowSummary(true);
       onOpenChange(false);
-      toast({ title: 'Week Committed', description: `Week ${prevWeek} committed. Week ${wN1} is live.` });
+      toast({ title: 'Week Committed', description: `Week ${currentState.weekNumber} has been successfully committed!` });
     },
     onError: (error) => {
       if (isUnauthorizedError(error)) {
@@ -140,7 +120,6 @@ export default function CommitWeekModal({
   const currentWeek = currentState?.weekNumber || 1;
 
   return (
-    <>
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
@@ -286,9 +265,5 @@ export default function CommitWeekModal({
         </div>
       </DialogContent>
     </Dialog>
-    {summary && (
-      <WeeklySummaryModal open={showSummary} onOpenChange={setShowSummary} summary={summary} />
-    )}
-    </>
   );
 }
