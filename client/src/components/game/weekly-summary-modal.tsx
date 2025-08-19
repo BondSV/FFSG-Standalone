@@ -32,7 +32,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
         </DialogHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-11 gap-3">
-          <Card className="p-3 md:col-span-3">
+          <Card className="p-3 md:col-span-3 h-64 overflow-hidden">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Banknote className="h-4 w-4 text-blue-600" /> Cash Flow</div>
             </div>
@@ -77,7 +77,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             })()}
           </Card>
 
-          <Card className="p-3 md:col-span-3">
+          <Card className="p-3 md:col-span-3 h-64 overflow-hidden">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Receipt className="h-4 w-4 text-blue-600" /> Supplier Invoices Settled</div>
             </div>
@@ -133,7 +133,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             </div>
           </Card>
 
-          <Card className="p-3 md:col-span-2">
+          <Card className="p-3 md:col-span-6">
             <div className="font-medium flex items-center gap-2"><Boxes className="h-4 w-4 text-blue-600" /> Raw Materials Arrivals</div>
             <Separator className="my-2" />
             <div className="space-y-2 max-h-32 overflow-auto pr-1">
@@ -151,7 +151,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             </div>
           </Card>
 
-          <Card className="p-3 md:col-span-2">
+          <Card className="p-3 md:col-span-5">
             <div className="font-medium flex items-center gap-2"><Factory className="h-4 w-4 text-blue-600" /> Production & Finished Goods</div>
             <Separator className="my-2" />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
