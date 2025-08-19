@@ -18,7 +18,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
     { name: 'Fabrics', value: cash.outflows.materialsSPT + cash.outflows.materialsGMC },
     { name: 'Production', value: cash.outflows.production },
     { name: 'Logistics', value: cash.outflows.logistics },
-    { name: 'Holding', value: cash.outflows.holding },
+    { name: 'Stock Holding', value: cash.outflows.holding },
   ].filter(x => x.value > 0);
 
   return (
@@ -32,7 +32,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
         </DialogHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Card className="p-3">
+          <Card className="p-2">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Banknote className="h-4 w-4 text-blue-600" /> Cash Flow</div>
             </div>
@@ -52,7 +52,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
               const net = inflows.reduce((s, x) => s + x.value, 0) - outflowsFull.reduce((s, x) => s + x.value, 0);
               const netColor = net >= 0 ? 'text-green-800' : 'text-red-800';
               return (
-                <div className="text-sm">
+                <div className="text-xs">
                   <div className="font-medium mb-1">Inflows</div>
                   {inflows.map(x => (
                     <div key={x.name} className="flex items-center justify-between">
@@ -68,7 +68,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
                     </div>
                   ))}
                   <Separator className="my-2" />
-                  <div className="flex items-center justify-between font-semibold">
+                  <div className="flex items-center justify-between font-semibold text-sm">
                     <span>Net Cash Flow</span>
                     <span className={netColor}>£{net.toLocaleString()}</span>
                   </div>
@@ -77,12 +77,12 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             })()}
           </Card>
 
-          <Card className="p-3">
+          <Card className="p-2">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Receipt className="h-4 w-4 text-blue-600" /> Supplier Invoices Settled</div>
             </div>
             <Separator className="my-2" />
-            <div className="space-y-2 max-h-32 overflow-auto pr-1">
+            <div className="space-y-1 max-h-28 overflow-auto pr-1">
               {procurement.settlements.length === 0 && <div className="text-xs text-muted-foreground">No invoices this week.</div>}
               {['SPT','GMC'].map(kind => {
                 const subset = procurement.settlements.filter(s => s.kind === kind);
@@ -93,10 +93,10 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
                 }, {});
                 return (
                   <div key={kind}>
-                    <div className="text-xs font-medium text-muted-foreground mb-1">{kind}</div>
+                    <div className="text-[11px] font-medium text-muted-foreground mb-1">{kind}</div>
                     <div className="space-y-1">
                       {Object.entries(bySupplier).map(([supplier, amount]) => (
-                        <div key={supplier} className="flex items-center justify-between text-sm">
+                        <div key={supplier} className="flex items-center justify-between text-xs">
                           <div className="flex-1 truncate">{supplier}</div>
                           <div className="text-red-800">£{Number(amount).toLocaleString()}</div>
                         </div>
@@ -108,7 +108,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             </div>
           </Card>
 
-          <Card className="p-3">
+          <Card className="p-2">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Percent className="h-4 w-4 text-blue-600" /> Demand</div>
             </div>
@@ -116,18 +116,18 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             <div className="mt-1">
               <ChartContainer
                 config={{ awareness: { label: 'Awareness', color: 'hsl(217, 91%, 60%)' }, intent: { label: 'Intent', color: 'hsl(142, 71%, 45%)' }, demand: { label: 'Demand', color: 'hsl(10, 78%, 45%)' } }}
-                className="h-40"
+                className="h-56"
               >
-                <LineChart data={demandData}>
+                <LineChart data={demandData} margin={{ top: 4, right: 6, left: 4, bottom: 0 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
                   <XAxis dataKey="week" tickLine={false} axisLine={false} />
-                  <YAxis yAxisId="left" tickLine={false} axisLine={false} domain={[0, 100]} />
-                  <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} />
+                  <YAxis yAxisId="left" tickLine={false} axisLine={false} domain={[0, 100]} width={26} />
+                  <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} width={32} />
                   <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
                   <Line yAxisId="left" type="monotone" dataKey="awareness" stroke="var(--color-awareness)" strokeWidth={2} dot={false} />
                   <Line yAxisId="left" type="monotone" dataKey="intent" stroke="var(--color-intent)" strokeWidth={2} dot={false} />
                   <Line yAxisId="right" type="monotone" dataKey="demand" stroke="var(--color-demand)" strokeWidth={2} dot={false} />
-                  <ChartLegend content={<ChartLegendContent />} />
+                  <ChartLegend verticalAlign="top" content={<ChartLegendContent className="!pb-1" />} />
                 </LineChart>
               </ChartContainer>
             </div>
