@@ -319,9 +319,12 @@ export class GameEngine {
     // Apply and cap; Intent growth limited by Awareness ceiling
     const nextAwareness = this.clamp(awareness + dA, 0, 100);
     const nextIntent = this.clamp(intent + Math.min(dI, nextAwareness - intent + 10), 0, 100);
+    // Precision alignment: round A/I to 2 decimals for forecasting to match persisted values
+    const nextAwarenessRounded = Number(nextAwareness.toFixed(2));
+    const nextIntentRounded = Number(nextIntent.toFixed(2));
 
     // Demand forecast using next A/I and planned discounts for nextWeek
-    const marketingFactor = this.computeMarketingFactor(nextAwareness, nextIntent);
+    const marketingFactor = this.computeMarketingFactor(nextAwarenessRounded, nextIntentRounded);
     const productKeys: ProductKey[] = ['jacket', 'dress', 'pants'];
     const demandByProduct: Record<string, number> = {};
     for (const p of productKeys) {
@@ -331,11 +334,12 @@ export class GameEngine {
       const discount = this.toNumber((nextDiscounts as any)[p]);
       if (!rrp) { demandByProduct[p] = 0; continue; }
       const base = this.calculateDemand(p, nextWeek, rrp, discount, 0, hasPrint);
+      // Single rounding at the end for determinism
       demandByProduct[p] = Math.round(base * marketingFactor);
     }
     const forecastDemandTotal = Object.values(demandByProduct).reduce((s, v) => s + this.toNumber(v), 0);
 
-    return { nextAwareness, nextIntent, demandByProduct, forecastDemandTotal };
+    return { nextAwareness: nextAwarenessRounded, nextIntent: nextIntentRounded, demandByProduct, forecastDemandTotal };
   }
 
   // --------------------
@@ -667,7 +671,6 @@ export class GameEngine {
     const fgValue = (state.finishedGoods as any).lots.reduce((s: number, l: any) => s + this.toNumber(l.quantity) * this.toNumber(l.unitCostBasis), 0);
     const invValue = rmValue + wipValue + fgValue;
     costHolding = this.calculateHoldingCosts(invValue);
-    operationalOutflows += costHolding;
 
     // 8) Apply cash waterfall (timing-aware) and collect ledger entries
     const ledger: Array<{ type: string; amount: number; refId?: string; weekNumber?: number }> = [];
@@ -688,7 +691,7 @@ export class GameEngine {
     for (const e of nextWeekLedger) ledger.push(e);
     if (costProduction > 0) ledger.push({ type: 'production', amount: costProduction });
     if (costLogistics > 0) ledger.push({ type: 'logistics', amount: costLogistics });
-    if (costHolding > 0) ledger.push({ type: 'holding', amount: costHolding });
+    // Holding is staged for Week N+1 (cash impact next week)
     // Add this week's revenue from sales
     cashOnHand += weeklyRevenue;
     // Auto paydown principal at end of week if cash remains
@@ -751,11 +754,29 @@ export class GameEngine {
           weeklyRevenueN1 += sell * price;
         }
 
+        // Precision alignment: freeze demand/sales and revenue with the same rounding used in preview
+        const weeklyDemandFinal: Record<string, number> = {
+          jacket: Math.round(this.toNumber(demandN1.jacket)),
+          dress: Math.round(this.toNumber(demandN1.dress)),
+          pants: Math.round(this.toNumber(demandN1.pants)),
+        } as any;
+        const weeklySalesFinal: Record<string, number> = {
+          jacket: Math.round(this.toNumber(weeklySalesN1.jacket)),
+          dress: Math.round(this.toNumber(weeklySalesN1.dress)),
+          pants: Math.round(this.toNumber(weeklySalesN1.pants)),
+        } as any;
+        const lostSalesFinal: Record<string, number> = {
+          jacket: Math.round(this.toNumber(lostSalesN1.jacket)),
+          dress: Math.round(this.toNumber(lostSalesN1.dress)),
+          pants: Math.round(this.toNumber(lostSalesN1.pants)),
+        } as any;
+        const weeklyRevenueFinal = Number(weeklyRevenueN1.toFixed(2));
+
         (state as any).nextWeekMetrics = {
-          weeklyDemand: demandN1,
-          weeklySales: weeklySalesN1,
-          lostSales: lostSalesN1,
-          weeklyRevenue: Number(weeklyRevenueN1.toFixed(2)),
+          weeklyDemand: weeklyDemandFinal,
+          weeklySales: weeklySalesFinal,
+          lostSales: lostSalesFinal,
+          weeklyRevenue: weeklyRevenueFinal,
         };
       } catch {}
     }
@@ -907,6 +928,7 @@ export class GameEngine {
       materials_spt: nextWeekOutflowsSPT,
       materials_gmc: nextWeekOutflowsGMC,
       interest: nextWeekInterest,
+      holding: costHolding,
     };
     // Ensure interest appears in the ledger for Week N+1
     if (nextWeekInterest > 0) {
@@ -925,6 +947,23 @@ export class GameEngine {
       } catch (e) {
         // Non-fatal; ledger push failure shouldn't break commit
         console.error('Failed to write next-week interest to ledger', e);
+      }
+    }
+    // Ensure holding appears in the ledger for Week N+1
+    if (costHolding > 0) {
+      const wk = week + 1;
+      try {
+        const gameSessionId = (state as any).gameSessionId || currentState.gameSessionId;
+        await db.insert(cashLedger).values([{
+          id: `${gameSessionId}-${wk}-holding-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          gameSessionId,
+          weekNumber: wk,
+          entryType: 'holding',
+          refId: null,
+          amount: Number(costHolding) as any,
+        }] as any);
+      } catch (e) {
+        console.error('Failed to write next-week holding to ledger', e);
       }
     }
     (state as any).isCommitted = true;

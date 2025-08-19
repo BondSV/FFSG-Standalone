@@ -690,7 +690,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (costInterest > 0) {
           if (cashOnHandN1 >= costInterest) cashOnHandN1 -= costInterest; else { creditUsedN1 += (costInterest - cashOnHandN1); cashOnHandN1 = 0; }
         }
-        const ops = Number(out.marketing || 0) + Number(out.materials_spt || 0) + Number(out.materials_gmc || 0);
+        const ops = Number(out.marketing || 0) + Number(out.materials_spt || 0) + Number(out.materials_gmc || 0) + Number(out.holding || 0);
         if (ops > 0) {
           if (cashOnHandN1 >= ops) cashOnHandN1 -= ops; else { creditUsedN1 += (ops - cashOnHandN1); cashOnHandN1 = 0; }
         }
