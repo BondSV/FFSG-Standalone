@@ -81,16 +81,18 @@ export default function CommitWeekModal({
         // Build Weekly Summary for Week N+1
         const prevWeek = Number(currentState.weekNumber);
         const nextWeek = prevWeek + 1;
-        const [prevRes, nextRes, ledgerRes] = await Promise.all([
+        const [prevRes, nextRes, ledgerRes, weeksRes] = await Promise.all([
           apiRequest('GET', `/api/game/${gameSession.id}/week/${prevWeek}`),
           apiRequest('GET', `/api/game/${gameSession.id}/week/${nextWeek}`),
           apiRequest('GET', `/api/game/${gameSession.id}/ledger/rollup`),
+          apiRequest('GET', `/api/game/${gameSession.id}/weeks`),
         ]);
         const prevState = await prevRes.json();
         const nextState = await nextRes.json();
         const ledgerAll = await ledgerRes.json();
         const rows: LedgerEntry[] = (ledgerAll?.rows || []).filter((r: any) => Number(r.weekNumber) === nextWeek);
-        const built = computeWeekSummary({ gameSessionId: gameSession.id, prevState, nextState, ledgerRowsN1: rows });
+        const weeksPayload = await weeksRes.json();
+        const built = computeWeekSummary({ gameSessionId: gameSession.id, prevState, nextState, ledgerRowsN1: rows, allWeeks: weeksPayload?.weeks || [] });
         setSummary(built);
         setShowSummary(true);
       } catch (e) {

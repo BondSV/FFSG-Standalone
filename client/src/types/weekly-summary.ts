@@ -13,9 +13,10 @@ export type LedgerEntry = {
 };
 
 export type ProcurementArrival = {
-  supplier: string;
+  supplier?: string;
   material: string;
   goodUnits: number;
+  defectiveUnits?: number;
   unitPrice: number;
   amount: number;
 };
@@ -113,6 +114,8 @@ export type WeeklySummary = {
   };
 
   ledgerRows: LedgerEntry[];
+
+  demandSeries?: Array<{ week: number; awareness: number; intent: number; demand: number }>;
 };
 
 
