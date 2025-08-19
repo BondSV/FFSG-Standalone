@@ -3,7 +3,7 @@ import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import type { WeeklySummary } from '@/types/weekly-summary';
-import { TrendingUp, Percent, Boxes, CreditCard, Factory } from 'lucide-react';
+import { TrendingUp, Percent, Boxes, CreditCard, Factory, Banknote } from 'lucide-react';
 import { ChartContainer, ChartLegend, ChartLegendContent, ChartTooltip, ChartTooltipContent } from '@/components/ui/chart';
 import { Line, LineChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer } from 'recharts';
 
@@ -11,6 +11,7 @@ type Props = { open: boolean; onOpenChange: (v: boolean) => void; summary: Weekl
 
 export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
   const { cash, procurement, inventory, production, marketing } = summary;
+  const demandData = (summary.demandSeries || []).filter(d => Number(d.week) <= Number(summary.weekNumber));
 
   const outflows = [
     { name: 'Marketing', value: cash.outflows.marketing },
@@ -33,59 +34,65 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Card className="p-4">
             <div className="flex items-center justify-between">
-              <div className="font-medium">Cash Flow</div>
-              <Badge variant="secondary">Interest £{cash.interest.toLocaleString()}</Badge>
+              <div className="font-medium flex items-center gap-2"><Banknote className="h-4 w-4 text-blue-600" /> Cash Flow</div>
             </div>
-            <div className="mt-3 text-sm">
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Opening cash</span>
-                <span className="text-green-800">£{cash.openingCash.toLocaleString()}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Opening credit</span>
-                <span className="text-red-800">£{cash.openingCredit.toLocaleString()}</span>
-              </div>
-              <div className="mt-2 font-medium">Outflows</div>
-              <div className="mt-1 grid grid-cols-2 gap-2">
-                {outflows.map(x => (
-                  <div key={x.name} className="flex items-center justify-between">
-                    <span className="text-muted-foreground">{x.name}</span>
-                    <span className="text-red-800">£{x.value.toLocaleString()}</span>
+            <Separator className="my-3" />
+            {(() => {
+              const inflows = [
+                { name: 'Revenue', value: Number(cash.revenue || 0) },
+              ];
+              const outflowsFull = [
+                { name: 'Marketing', value: Number(cash.outflows.marketing || 0) },
+                { name: 'Fabrics', value: Number(cash.outflows.materialsSPT || 0) + Number(cash.outflows.materialsGMC || 0) },
+                { name: 'Production', value: Number(cash.outflows.production || 0) },
+                { name: 'Logistics', value: Number(cash.outflows.logistics || 0) },
+                { name: 'Holding', value: Number(cash.outflows.holding || 0) },
+                { name: 'Interest', value: Number(cash.interest || 0) },
+              ];
+              const net = inflows.reduce((s, x) => s + x.value, 0) - outflowsFull.reduce((s, x) => s + x.value, 0);
+              const netColor = net >= 0 ? 'text-green-800' : 'text-red-800';
+              return (
+                <div className="text-sm">
+                  <div className="font-medium mb-1">Inflows</div>
+                  {inflows.map(x => (
+                    <div key={x.name} className="flex items-center justify-between">
+                      <span className="text-muted-foreground">{x.name}</span>
+                      <span className="text-green-800">£{x.value.toLocaleString()}</span>
+                    </div>
+                  ))}
+                  <div className="font-medium mt-3 mb-1">Outflows</div>
+                  {outflowsFull.map(x => (
+                    <div key={x.name} className="flex items-center justify-between">
+                      <span className="text-muted-foreground">{x.name}</span>
+                      <span className="text-red-800">£{x.value.toLocaleString()}</span>
+                    </div>
+                  ))}
+                  <Separator className="my-3" />
+                  <div className="flex items-center justify-between font-semibold">
+                    <span>Net Cash Flow</span>
+                    <span className={netColor}>£{net.toLocaleString()}</span>
                   </div>
-                ))}
-              </div>
-              <div className="mt-2 font-medium">Inflows</div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Revenue</span>
-                <span className="text-green-800">£{cash.revenue.toLocaleString()}</span>
-              </div>
-              <div className="mt-2 flex items-center justify-between">
-                <span className="text-muted-foreground">Closing cash</span>
-                <span className="text-green-800">£{cash.closingCash.toLocaleString()}</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <span className="text-muted-foreground">Closing credit</span>
-                <span className="text-red-800">£{cash.closingCredit.toLocaleString()}</span>
-              </div>
-            </div>
+                </div>
+              );
+            })()}
           </Card>
 
           <Card className="p-4">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Percent className="h-4 w-4 text-blue-600" /> Demand</div>
-              <Badge>{marketing.planApplied?.length ? 'Plan applied' : 'No spend'}</Badge>
             </div>
+            <Separator className="my-3" />
             <div className="mt-3">
               <ChartContainer
                 config={{ awareness: { label: 'Awareness', color: 'hsl(217, 91%, 60%)' }, intent: { label: 'Intent', color: 'hsl(142, 71%, 45%)' }, demand: { label: 'Demand', color: 'hsl(10, 78%, 45%)' } }}
                 className="h-48"
               >
-                <LineChart data={summary.demandSeries || []}>
+                <LineChart data={demandData}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
                   <XAxis dataKey="week" tickLine={false} axisLine={false} />
                   <YAxis yAxisId="left" tickLine={false} axisLine={false} domain={[0, 100]} />
                   <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent />} />
+                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
                   <Line yAxisId="left" type="monotone" dataKey="awareness" stroke="var(--color-awareness)" strokeWidth={2} dot={false} />
                   <Line yAxisId="left" type="monotone" dataKey="intent" stroke="var(--color-intent)" strokeWidth={2} dot={false} />
                   <Line yAxisId="right" type="monotone" dataKey="demand" stroke="var(--color-demand)" strokeWidth={2} dot={false} />
