@@ -31,8 +31,8 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Card className="p-3">
+        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
+          <Card className="p-3 md:col-span-2">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Banknote className="h-4 w-4 text-blue-600" /> Cash Flow</div>
             </div>
@@ -55,20 +55,20 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
                 <div className="text-sm">
                   <div className="font-medium mb-1">Inflows</div>
                   {inflows.map(x => (
-                    <div key={x.name} className="grid grid-cols-[auto_auto] items-center gap-x-3 w-fit">
+                    <div key={x.name} className="flex items-center justify-between w-full">
                       <span className="text-muted-foreground">{x.name}</span>
                       <span className="text-green-800 font-mono tabular-nums">£{x.value.toLocaleString()}</span>
                     </div>
                   ))}
                   <div className="font-medium mt-2 mb-1">Outflows</div>
                   {outflowsFull.map(x => (
-                    <div key={x.name} className="grid grid-cols-[auto_auto] items-center gap-x-3 w-fit">
+                    <div key={x.name} className="flex items-center justify-between w-full">
                       <span className="text-muted-foreground">{x.name}</span>
                       <span className="text-red-800 font-mono tabular-nums">£{x.value.toLocaleString()}</span>
                     </div>
                   ))}
                   <Separator className="my-2" />
-                  <div className="grid grid-cols-[auto_auto] items-center gap-x-3 w-fit font-semibold">
+                  <div className="flex items-center justify-between w-full font-semibold">
                     <span>Net Cash Flow</span>
                     <span className={`${netColor} font-mono tabular-nums`}>£{net.toLocaleString()}</span>
                   </div>
@@ -77,7 +77,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             })()}
           </Card>
 
-          <Card className="p-3">
+          <Card className="p-3 md:col-span-2">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Receipt className="h-4 w-4 text-blue-600" /> Supplier Invoices Settled</div>
             </div>
@@ -96,8 +96,8 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
                     <div className="text-sm font-medium text-muted-foreground mb-1">{kind}</div>
                     <div className="space-y-1">
                       {Object.entries(bySupplier).map(([supplier, amount]) => (
-                        <div key={supplier} className="grid grid-cols-[auto_auto] items-center gap-x-3 w-fit text-sm">
-                          <div className="flex-1 truncate">{supplier}</div>
+                        <div key={supplier} className="flex items-center justify-between w-full text-sm">
+                          <div className="truncate">{supplier}</div>
                           <div className="text-red-800 font-mono tabular-nums">£{Number(amount).toLocaleString()}</div>
                         </div>
                       ))}
@@ -108,15 +108,15 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             </div>
           </Card>
 
-          <Card className="p-3">
+          <Card className="p-3 md:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-4 h-64 overflow-hidden">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Percent className="h-4 w-4 text-blue-600" /> Demand</div>
             </div>
             <Separator className="my-2" />
-            <div className="mt-1">
+            <div className="mt-1 h-[calc(100%-1.75rem)]">
               <ChartContainer
                 config={{ awareness: { label: 'Awareness', color: 'hsl(217, 91%, 60%)' }, intent: { label: 'Intent', color: 'hsl(142, 71%, 45%)' }, demand: { label: 'Demand', color: 'hsl(10, 78%, 45%)' } }}
-                className="h-48"
+                className="h-full aspect-auto overflow-hidden"
               >
                 <LineChart data={demandData} margin={{ top: 6, right: 8, left: 8, bottom: 6 }}>
                   <CartesianGrid vertical={false} strokeDasharray="3 3" />
