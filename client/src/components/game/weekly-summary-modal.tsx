@@ -31,8 +31,8 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
           </DialogTitle>
         </DialogHeader>
 
-        <div className="grid grid-cols-1 md:grid-cols-6 gap-3">
-          <Card className="p-3 md:col-span-2">
+        <div className="grid grid-cols-1 md:grid-cols-11 gap-3">
+          <Card className="p-3 md:col-span-3">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Banknote className="h-4 w-4 text-blue-600" /> Cash Flow</div>
             </div>
@@ -52,7 +52,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
               const net = inflows.reduce((s, x) => s + x.value, 0) - outflowsFull.reduce((s, x) => s + x.value, 0);
               const netColor = net >= 0 ? 'text-green-800' : 'text-red-800';
               return (
-                <div className="text-sm">
+                <div className="text-sm w-full">
                   <div className="font-medium mb-1">Inflows</div>
                   {inflows.map(x => (
                     <div key={x.name} className="flex items-center justify-between w-full">
@@ -77,12 +77,12 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             })()}
           </Card>
 
-          <Card className="p-3 md:col-span-2">
+          <Card className="p-3 md:col-span-3">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Receipt className="h-4 w-4 text-blue-600" /> Supplier Invoices Settled</div>
             </div>
             <Separator className="my-2" />
-            <div className="space-y-1 max-h-28 overflow-auto pr-1">
+            <div className="space-y-1 max-h-28 overflow-auto pr-1 w-full">
               {procurement.settlements.length === 0 && <div className="text-sm text-muted-foreground">No invoices this week.</div>}
               {['SPT','GMC'].map(kind => {
                 const subset = procurement.settlements.filter(s => s.kind === kind);
@@ -108,7 +108,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             </div>
           </Card>
 
-          <Card className="p-3 md:col-span-2 md:col-span-2 lg:col-span-2 xl:col-span-4 h-64 overflow-hidden">
+          <Card className="p-3 md:col-span-5 h-64 overflow-hidden">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Percent className="h-4 w-4 text-blue-600" /> Demand</div>
             </div>
