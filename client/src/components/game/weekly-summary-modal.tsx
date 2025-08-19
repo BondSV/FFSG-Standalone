@@ -135,7 +135,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             </div>
           </Card>
 
-          <Card className="p-3 md:col-span-4">
+          <Card className="p-3 md:col-span-5">
             <div className="font-medium flex items-center gap-2"><Boxes className="h-4 w-4 text-blue-600" /> Raw Materials Arrivals</div>
             <Separator className="my-2" />
             <div className="space-y-2 max-h-32 overflow-auto pr-1">
@@ -153,7 +153,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             </div>
           </Card>
 
-          <Card className="p-3 md:col-span-7">
+          <Card className="p-3 md:col-span-6">
             <div className="font-medium flex items-center gap-2"><Factory className="h-4 w-4 text-blue-600" /> Production & Finished Goods</div>
             <Separator className="my-2" />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
