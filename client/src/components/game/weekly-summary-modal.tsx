@@ -32,6 +32,39 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
         </DialogHeader>
 
         <div className="grid grid-cols-1 md:grid-cols-11 gap-3">
+          {/* Left: Supplier Invoices Settled */}
+          <Card className="p-3 md:col-span-3 h-64 overflow-hidden">
+            <div className="flex items-center justify-between">
+              <div className="font-medium flex items-center gap-2"><Receipt className="h-4 w-4 text-blue-600" /> Supplier Invoices Settled</div>
+            </div>
+            <Separator className="my-2" />
+            <div className="space-y-1 max-h-28 overflow-auto pr-1 w-full">
+              {procurement.settlements.length === 0 && <div className="text-sm text-muted-foreground">No invoices this week.</div>}
+              {['SPT','GMC'].map(kind => {
+                const subset = procurement.settlements.filter(s => s.kind === kind);
+                if (subset.length === 0) return null;
+                const bySupplier = subset.reduce<Record<string, number>>((m, s) => {
+                  m[s.supplier] = (m[s.supplier] || 0) + Number(s.amount || 0);
+                  return m;
+                }, {});
+                return (
+                  <div key={kind}>
+                    <div className="text-sm font-medium text-muted-foreground mb-1">{kind}</div>
+                    <div className="space-y-1">
+                      {Object.entries(bySupplier).map(([supplier, amount]) => (
+                        <div key={supplier} className="flex items-center justify-between w-full text-sm">
+                          <div className="truncate">{supplier}</div>
+                          <div className="text-red-800 font-mono tabular-nums">£{Number(amount).toLocaleString()}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          {/* Middle: Cash Flow */}
           <Card className="p-3 md:col-span-3 h-64 overflow-hidden">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Banknote className="h-4 w-4 text-blue-600" /> Cash Flow</div>
@@ -77,37 +110,6 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             })()}
           </Card>
 
-          <Card className="p-3 md:col-span-3 h-64 overflow-hidden">
-            <div className="flex items-center justify-between">
-              <div className="font-medium flex items-center gap-2"><Receipt className="h-4 w-4 text-blue-600" /> Supplier Invoices Settled</div>
-            </div>
-            <Separator className="my-2" />
-            <div className="space-y-1 max-h-28 overflow-auto pr-1 w-full">
-              {procurement.settlements.length === 0 && <div className="text-sm text-muted-foreground">No invoices this week.</div>}
-              {['SPT','GMC'].map(kind => {
-                const subset = procurement.settlements.filter(s => s.kind === kind);
-                if (subset.length === 0) return null;
-                const bySupplier = subset.reduce<Record<string, number>>((m, s) => {
-                  m[s.supplier] = (m[s.supplier] || 0) + Number(s.amount || 0);
-                  return m;
-                }, {});
-                return (
-                  <div key={kind}>
-                    <div className="text-sm font-medium text-muted-foreground mb-1">{kind}</div>
-                    <div className="space-y-1">
-                      {Object.entries(bySupplier).map(([supplier, amount]) => (
-                        <div key={supplier} className="flex items-center justify-between w-full text-sm">
-                          <div className="truncate">{supplier}</div>
-                          <div className="text-red-800 font-mono tabular-nums">£{Number(amount).toLocaleString()}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </Card>
-
           <Card className="p-3 md:col-span-5 h-64 overflow-hidden">
             <div className="flex items-center justify-between">
               <div className="font-medium flex items-center gap-2"><Percent className="h-4 w-4 text-blue-600" /> Demand</div>
@@ -133,7 +135,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             </div>
           </Card>
 
-          <Card className="p-3 md:col-span-6">
+          <Card className="p-3 md:col-span-4">
             <div className="font-medium flex items-center gap-2"><Boxes className="h-4 w-4 text-blue-600" /> Raw Materials Arrivals</div>
             <Separator className="my-2" />
             <div className="space-y-2 max-h-32 overflow-auto pr-1">
@@ -151,7 +153,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             </div>
           </Card>
 
-          <Card className="p-3 md:col-span-5">
+          <Card className="p-3 md:col-span-7">
             <div className="font-medium flex items-center gap-2"><Factory className="h-4 w-4 text-blue-600" /> Production & Finished Goods</div>
             <Separator className="my-2" />
             <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
