@@ -263,11 +263,13 @@ export class GameEngine {
   }
 
   private static computeMarketingFactor(awareness: number, intent: number): number {
-    const A = this.clamp(awareness, 0, 100) / 100;
-    const I = this.clamp(intent, 0, 100) / 100;
-    const fA = 0.3 + 0.7 * Math.pow(A, 0.6);
-    const gI = 0.7 + 0.6 * Math.pow(I, 0.7);
-    return this.clamp(fA * gI, 0.3, 1.3);
+    // Awareness gates demand. When A=0, MF=0 (no one knows about the product → no demand).
+    // As A grows, MF rises smoothly; Intent modulates the effect but cannot create demand by itself.
+    const A = this.clamp(awareness, 0, 100) / 100; // 0..1
+    const I = this.clamp(intent, 0, 100) / 100;    // 0..1
+    const fA = Math.pow(A, 0.6);                   // 0 at A=0, ~1 at A=1
+    const gI = 0.7 + 0.6 * Math.pow(I, 0.7);       // 0.7..1.3
+    return this.clamp(fA * gI, 0, 1.3);
   }
 
   // Preview next week's Awareness/Intent and demand without mutating state
@@ -696,7 +698,69 @@ export class GameEngine {
       cashOnHand -= payDown;
     }
 
-    // 9) Final week penalties (GMC undelivered)
+    // 9) Stage next-week demand/sales/revenue to align with universal N→N+1 logging
+    if (week < 15) {
+      try {
+        const nextWeek = week + 1;
+        // Use preview with planned marketing/discounts to get next-week A/I and demand baseline
+        const preview = this.previewNextWeekMarketing(
+          state as any,
+          (state as any).plannedMarketingPlan,
+          (state as any).plannedWeeklyDiscounts
+        );
+        const nextA = this.toNumber((preview as any).nextAwareness);
+        const nextI = this.toNumber((preview as any).nextIntent);
+        const mfN1 = this.computeMarketingFactor(nextA, nextI);
+        const discountsN1 = (state as any).plannedWeeklyDiscounts || { jacket: 0, dress: 0, pants: 0 };
+        const demandN1: Record<string, number> = {};
+        for (const p of productKeys) {
+          const dec = (state.productData as any)[p];
+          const rrp = this.toNumber(dec?.rrp);
+          const hasPrint = !!dec?.hasPrint;
+          const disc = this.toNumber((discountsN1 as any)[p]);
+          if (!rrp) { demandN1[p] = 0; continue; }
+          const base = this.calculateDemand(p, nextWeek, rrp, disc, 0, hasPrint);
+          demandN1[p] = Math.round(base * mfN1);
+        }
+
+        // Available FG at start of next week = current FG lots + shipments arriving nextWeek
+        const availableByProduct: Record<string, number> = { jacket: 0, dress: 0, pants: 0 };
+        for (const lot of ((state.finishedGoods as any).lots || [])) {
+          availableByProduct[lot.product] = (availableByProduct[lot.product] || 0) + this.toNumber(lot.quantity);
+        }
+        for (const sh of (state.shipmentsInTransit || [])) {
+          if (this.toNumber((sh as any).arrivalWeek) === nextWeek) {
+            availableByProduct[(sh as any).product] = (availableByProduct[(sh as any).product] || 0) + this.toNumber((sh as any).quantity);
+          }
+        }
+
+        // Compute sales, lost sales, and revenue for next week
+        const weeklySalesN1: Record<string, number> = { jacket: 0, dress: 0, pants: 0 };
+        const lostSalesN1: Record<string, number> = { jacket: 0, dress: 0, pants: 0 };
+        let weeklyRevenueN1 = 0;
+        for (const p of productKeys) {
+          const dec = (state.productData as any)[p];
+          const rrp = this.toNumber(dec?.rrp);
+          const disc = this.toNumber((discountsN1 as any)[p]);
+          const price = rrp * (1 - disc);
+          const demand = this.toNumber(demandN1[p]);
+          const available = this.toNumber(availableByProduct[p]);
+          const sell = Math.min(available, demand);
+          weeklySalesN1[p] = sell;
+          lostSalesN1[p] = Math.max(0, demand - sell);
+          weeklyRevenueN1 += sell * price;
+        }
+
+        (state as any).nextWeekMetrics = {
+          weeklyDemand: demandN1,
+          weeklySales: weeklySalesN1,
+          lostSales: lostSalesN1,
+          weeklyRevenue: Number(weeklyRevenueN1.toFixed(2)),
+        };
+      } catch {}
+    }
+
+    // 10) Final week penalties (GMC undelivered)
     if (week === 15) {
       // Guardrail: bill any payments that would fall beyond week 15 now
       // - SPT: pay on delivery week; if delivery week > 15, bill now

@@ -662,6 +662,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           nextWeekState.intent = (computed as any).nextWeekIntent;
         }
 
+        // Persist next-week demand/sales/revenue metrics computed by the engine
+        if ((computed as any).nextWeekMetrics) {
+          const nx: any = (computed as any).nextWeekMetrics;
+          if (nx.weeklyDemand) nextWeekState.weeklyDemand = nx.weeklyDemand;
+          if (nx.weeklySales) nextWeekState.weeklySales = nx.weeklySales;
+          if (nx.lostSales) nextWeekState.lostSales = nx.lostSales;
+          if (nx.weeklyRevenue != null) nextWeekState.weeklyRevenue = `${Number(nx.weeklyRevenue || 0).toFixed(2)}`;
+        }
+
         // Apply staged N+1 arrivals and outflows into the new state's opening snapshot
         const arrivals: Array<{ material: string; goodUnits: number; unitPrice: number }> = (computed as any).nextWeekArrivals || [];
         nextWeekState.rawMaterials = nextWeekState.rawMaterials || {};
