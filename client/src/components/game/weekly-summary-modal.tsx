@@ -117,7 +117,7 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             <Separator className="my-2" />
             <div className="mt-1 h-[calc(100%-1.75rem)]">
               <ChartContainer
-                config={{ awareness: { label: 'Awareness', color: 'hsl(217, 91%, 60%)' }, intent: { label: 'Intent', color: 'hsl(142, 71%, 45%)' }, demand: { label: 'Demand', color: 'hsl(10, 78%, 45%)' } }}
+                config={{ awareness: { label: 'Awareness', color: 'hsl(217, 91%, 60%)' }, intent: { label: 'Intent to buy', color: 'hsl(142, 71%, 45%)' }, demand: { label: 'Demand', color: 'hsl(10, 78%, 45%)' } }}
                 className="h-full aspect-auto overflow-hidden"
               >
                 <LineChart data={demandData} margin={{ top: 6, right: 8, left: 8, bottom: 6 }}>
