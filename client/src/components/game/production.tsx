@@ -438,6 +438,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
               const maxRungsAllWeeks = Math.max(...WEEKS_ALL.map((w) => rungPerWeek[w] || 0), 1);
               const BAR_HEIGHT = 220; // px: unified bar height for all weeks
               const RUNG_GAP = 3; // px vertical space between rungs
+              const RUNG_SIDE_MARGIN = 2; // px left/right inside the bar
+              const RUNG_TOP_BOTTOM_MARGIN = 3; // px from top and bottom of bar
 
               // In-house lane rendering
                   return (
@@ -481,7 +483,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   <div className="absolute inset-0 bg-gradient-to-t from-slate-200 via-slate-100 to-white"></div>
                                   
                                   {/* Available Capacity (Emerald glow) */}
-                                  <div className="absolute left-0 right-0 bg-gradient-to-t from-emerald-400/20 via-emerald-500/15 to-emerald-300/20 shadow-inner" style={{ bottom: 0, top: 0 }} />
+                                  <div className="absolute left-0 right-0 bg-gradient-to-t from-emerald-400/20 via-emerald-500/15 to-emerald-300/20 shadow-inner" style={{ bottom: RUNG_TOP_BOTTOM_MARGIN, top: RUNG_TOP_BOTTOM_MARGIN }} />
                                   
                                   {/* Used Capacity (Red glow with better visibility) */}
                                   {rungCount > 0 && usedCount > 0 && (
@@ -492,21 +494,28 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     </div>
                                   )}
                                   
-                                  {/* Rung Separators with Glow */}
-                                  {maxRungsAllWeeks > 1 && [...Array(maxRungsAllWeeks - 1)].map((_, i) => (
-                                    <div key={i} className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent" 
-                                         style={{ bottom: `${((i+1)/maxRungsAllWeeks)*100}%` }}>
-                                      <div className="absolute inset-0 bg-emerald-300/20"></div>
-                                    </div>
-                                  ))}
+                                  {/* Rung Separators with Glow (positioned by normalized heights) */}
+                                  {(() => {
+                                    const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
+                                    const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
+                                    return maxRungsAllWeeks > 1 && [...Array(maxRungsAllWeeks - 1)].map((_, i) => {
+                                      const bottomPx = RUNG_TOP_BOTTOM_MARGIN + Math.floor((i + 1) * (rungHeight + RUNG_GAP) - RUNG_GAP / 2);
+                                      return (
+                                        <div key={i} className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent" 
+                                             style={{ bottom: bottomPx }}>
+                                          <div className="absolute inset-0 bg-emerald-300/20"></div>
+                                        </div>
+                                      );
+                                    });
+                                  })()}
                                   
                                   {/* Used Batch Blocks with Enhanced Styling */}
                                   {rungCount > 0 && rungs.map((id, r) => {
                                     if (!id) return null;
-                                    const base = (h - (maxRungsAllWeeks - 1) * RUNG_GAP) / Math.max(1, maxRungsAllWeeks);
-                                    const rungHeight = Math.max(2, Math.floor(base));
-                                    const bottomPx = Math.floor(r * (base + RUNG_GAP));
-                                    const style = { bottom: bottomPx, height: rungHeight, left: 2, right: 2 } as React.CSSProperties;
+                                    const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
+                                    const rungHeight = Math.floor((usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks);
+                                    const bottomPx = RUNG_TOP_BOTTOM_MARGIN + Math.floor(r * (rungHeight + RUNG_GAP));
+                                    const style = { bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN } as React.CSSProperties;
                                     const isHovered = hoverId === id;
                                     return (
                                       <div
