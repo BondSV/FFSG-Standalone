@@ -392,23 +392,29 @@ export default function Production({ gameSession, currentState }: ProductionProp
                         const h = Math.max(48, Math.round((cap / maxCap) * maxH));
                         const rungCount = Math.max(0, rungPerWeek[w] || 0);
                         const rungs = taken[w] || [];
+                        const usedCount = rungs.filter((x) => x !== null).length;
                         return (
                           <div key={`ih-col-${w}`} className="border rounded p-2 flex flex-col items-stretch" style={{ minWidth: 88 }}>
                             <div className="relative mx-auto w-8" style={{ height: h }} title={`Cap ${(cap/25000)|0}×25k`}>
-                              {/* Rung background grid */}
+                              {/* Background */}
                               <div className="absolute inset-0 bg-gray-100 rounded" />
+                              {/* Available capacity underlay (green) from bottom-up */}
+                              {rungCount > 0 && (
+                                <div className="absolute left-0 right-0 bg-green-300/30 rounded-b" style={{ bottom: 0, height: `${(Math.max(0,rungCount - usedCount)/Math.max(1,rungCount))*100}%` }} />
+                              )}
+                              {/* Used capacity underlay (red) from bottom-up */}
+                              {rungCount > 0 && (
+                                <div className="absolute left-0 right-0 bg-red-200/60 rounded-b" style={{ bottom: 0, height: `${(usedCount/Math.max(1,rungCount))*100}%` }} />
+                              )}
                               {rungCount > 0 && [...Array(rungCount)].map((_, i) => (
                                 <div key={i} className="absolute left-0 right-0 border-t border-gray-200" style={{ top: `${((i+1)/rungCount)*100}%` }} />
                               ))}
-                              {/* Free rungs (green) and used rungs (red) */}
+                              {/* Used rungs (red blocks) at their assigned rung positions to show chain continuity */}
                               {rungCount > 0 && [...Array(rungCount)].map((_, r) => {
                                 const id = rungs[r];
+                                if (!id) return null;
                                 const style = { bottom: `${(r/rungCount)*100}%`, height: `${(1/rungCount)*100}%` } as React.CSSProperties;
-                                return id ? (
-                                  <div key={`used-${r}`} className="absolute left-0 right-0 bg-red-500 rounded-sm" style={style} />
-                                ) : (
-                                  <div key={`free-${r}`} className="absolute left-0 right-0 bg-green-400/30 rounded-sm" style={style} />
-                                );
+                                return <div key={`used-${r}`} className="absolute left-0 right-0 bg-red-500 rounded-sm" style={style} />;
                               })}
                               {/* Batch chips on chain start */}
                               {ihChains.filter((ch) => ch.start === w && rungOf[ch.id] !== null).map((ch) => (
