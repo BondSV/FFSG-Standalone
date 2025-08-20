@@ -225,6 +225,12 @@ export default function Production({ gameSession, currentState }: ProductionProp
     queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
   };
 
+  const formatUnits = (units: number) => {
+    const u = Math.max(0, Math.round(units));
+    if (u >= 1000) return `${Math.round(u / 1000)}k units`;
+    return `${u} units`;
+  };
+
   // UI
   return (
     <div className="p-6">
@@ -394,17 +400,6 @@ export default function Production({ gameSession, currentState }: ProductionProp
               </div>
             </div>
             <div className="p-6">
-              {/* Header weeks */}
-              <div className="grid grid-cols-11 gap-2 mb-4">
-                {WEEKS_ALL.map((w) => (
-                  <div key={`hdr-${w}`} className="relative">
-                    <div className="bg-white rounded-lg p-2 text-center border border-slate-200 shadow-sm">
-                      <div className="text-slate-600 font-semibold text-xs">W{w}</div>
-                      <div className="w-full h-px bg-gradient-to-r from-transparent via-emerald-300/50 to-transparent mt-2"></div>
-                    </div>
-                  </div>
-                ))}
-              </div>
 
             {(() => {
               // Build rung model per week
@@ -449,7 +444,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                       <h4 className="text-emerald-300 font-semibold text-lg">In-House Manufacturing</h4>
                       <div className="text-slate-400 text-sm">Shared Capacity Allocation</div>
                     </div>
-                    <div className="grid grid-cols-11 gap-3">
+                    <div className="grid grid-cols-11 gap-[3px] items-end">
                       {WEEKS_ALL.map((w) => {
                         const cap = Number(capacityByWeek[w]?.capacity || 0);
                         const maxH = 200; // px
@@ -477,7 +472,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                 </div>
                                 
                                 {/* Capacity Bar */}
-                                <div className="relative w-10 mx-auto rounded-lg overflow-hidden border border-slate-300/60" style={{ height: h }} title={`Capacity: ${(cap/25000)|0} × 25k units`}>
+                                <div className="relative w-full mx-auto rounded-lg overflow-hidden border border-slate-300/60" style={{ height: h }} title={`Capacity: ${(cap/25000)|0} × 25k units`}>
                                   {/* Background Gradient */}
                                   <div className="absolute inset-0 bg-gradient-to-t from-slate-200 via-slate-100 to-white"></div>
                                   
@@ -510,12 +505,15 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   {rungCount > 0 && [...Array(rungCount)].map((_, r) => {
                                     const id = rungs[r];
                                     if (!id) return null;
-                                    const style = { bottom: `${(r/rungCount)*100}%`, height: `${(1/rungCount)*100}%` } as React.CSSProperties;
+                                    const base = h / Math.max(1, rungCount);
+                                    const rungHeight = Math.max(2, Math.floor(base) - 2);
+                                    const bottomPx = Math.floor(r * base) + 1;
+                                    const style = { bottom: bottomPx, height: rungHeight, left: 1, right: 1 } as React.CSSProperties;
                                     const isHovered = hoverId === id;
                                     return (
                                       <div
                                         key={`used-${r}`}
-                                        className={`absolute left-0 right-0 transition-all duration-300 rounded-sm ${
+                                        className={`absolute transition-all duration-300 rounded-sm ${
                                           isHovered 
                                             ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] scale-105 z-10' 
                                             : 'bg-gradient-to-t from-red-600 via-red-500 to-red-400 shadow-lg shadow-red-500/30'
@@ -533,11 +531,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   })}
                                 </div>
                                 
-                                {/* Capacity Info */}
-                                <div className="mt-2 text-center">
-                                  <div className="text-[11px] text-emerald-600 font-mono">{(cap/25000)|0}×25k</div>
-                                  <div className="text-[11px] text-slate-500">units</div>
-                                </div>
+                                {/* Capacity Info removed; shown in week badges */}
                               </div>
                               
                               {/* Drag Target Indicator */}
@@ -579,7 +573,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                       <h4 className="text-orange-700 font-semibold text-lg">Outsourced Manufacturing</h4>
                       <div className="text-slate-500 text-sm">Unlimited Capacity</div>
                     </div>
-                    <div className="grid grid-cols-11 gap-3">
+                    <div className="grid grid-cols-11 gap-[3px]">
                       {WEEKS_ALL.map((w) => {
                         const outsourcedBatches = scheduledBatches.filter((b) => b.method === 'outsourced' && Number(b.startWeek) === w);
                         return (
@@ -636,6 +630,23 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 })}
                     </div>
                   </div>
+                </div>
+                {/* Week badges with available capacity moved between lanes */}
+                <div className="grid grid-cols-11 gap-[3px] my-4">
+                  {WEEKS_ALL.map((w) => {
+                    const cap = Number(capacityByWeek[w]?.capacity || 0);
+                    const usedCount = (taken[w] || []).filter((x) => x !== null).length;
+                    const availableUnits = Math.max(0, cap - usedCount * STANDARD_BATCH_UNITS);
+                    return (
+                      <div key={`mid-hdr-${w}`} className="relative">
+                        <div className="bg-white rounded-lg p-2 text-center border border-slate-200 shadow-sm">
+                          <div className="text-[11px] text-emerald-700 font-medium mb-1">{formatUnits(availableUnits)}</div>
+                          <div className="w-full h-px bg-gradient-to-r from-transparent via-emerald-300/60 to-transparent mb-1"></div>
+                          <div className="text-slate-600 font-semibold text-xs">W{w}</div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })()}
