@@ -501,8 +501,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   ))}
                                   
                                   {/* Used Batch Blocks with Enhanced Styling */}
-                                  {maxRungsAllWeeks > 0 && [...Array(maxRungsAllWeeks)].map((_, r) => {
-                                    const id = rungs[r];
+                                  {rungCount > 0 && rungs.map((id, r) => {
+                                    if (!id) return null;
                                     const base = (h - (maxRungsAllWeeks - 1) * RUNG_GAP) / Math.max(1, maxRungsAllWeeks);
                                     const rungHeight = Math.max(2, Math.floor(base));
                                     const bottomPx = Math.floor(r * (base + RUNG_GAP));
@@ -512,18 +512,16 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                       <div
                                         key={`used-${r}`}
                                         className={`absolute transition-all duration-300 rounded-sm ${
-                                          id
-                                            ? (isHovered 
-                                                ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] scale-105 z-10' 
-                                                : 'bg-gradient-to-t from-red-600 via-red-500 to-red-400 shadow-lg shadow-red-500/30')
-                                            : 'bg-gradient-to-t from-emerald-200 via-emerald-100 to-emerald-50'
+                                          isHovered 
+                                            ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] scale-105 z-10' 
+                                            : 'bg-gradient-to-t from-red-600 via-red-500 to-red-400 shadow-lg shadow-red-500/30'
                                         }`}
                                         style={style}
-                                        onMouseEnter={() => id && setHoverId(id)}
-                                        onMouseLeave={() => id && setHoverId(null)}
+                                        onMouseEnter={() => setHoverId(id)}
+                                        onMouseLeave={() => setHoverId(null)}
                                       >
                                         <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
-                                        {id && isHovered && (
+                                        {isHovered && (
                                           <div className="absolute inset-0 bg-gradient-to-t from-amber-400/20 to-amber-300/10 animate-pulse rounded-sm"></div>
                                         )}
                                       </div>
