@@ -124,7 +124,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
         const used = capacityByWeek[w]?.used || 0;
         if (used + STANDARD_BATCH_UNITS > cap) {
           toast({ title: "Capacity exceeded", description: `Week ${w} free: ${(cap - used).toLocaleString()} units`, variant: "destructive" });
-          return;
+      return;
         }
       }
     }
@@ -309,7 +309,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
               <div className="bg-gray-50 border rounded p-2">
                 <div className="text-gray-600">Lead time</div>
                 <div className="font-mono">{getLead(sku, method)} w</div>
-              </div>
+          </div>
               <div className="bg-gray-50 border rounded p-2">
                 <div className="text-gray-600">Unit prod cost</div>
                 <div className="font-mono">£{getUnitCost(sku, method).toLocaleString()}</div>
@@ -382,9 +382,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
               }
 
               // In-house lane rendering
-              return (
+                  return (
                 <div className="space-y-4">
-                  <div>
+                          <div>
                     <div className="text-xs text-gray-600 mb-1">In‑house (capacity shared)</div>
                     <div className="grid grid-cols-11 gap-2">
                       {WEEKS_ALL.map((w) => {
@@ -421,7 +421,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                 const id = rungs[r];
                                 if (!id) return null;
                                 const style = { bottom: `${(r/rungCount)*100}%`, height: `${(1/rungCount)*100}%` } as React.CSSProperties;
-                                const cls = hoverId === id ? 'ring-2 ring-red-400 ring-offset-1' : '';
+                                const cls = hoverId === id ? 'ring-1 ring-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.85)]' : '';
                                 return (
                                   <div
                                     key={`used-${r}`}
@@ -437,7 +437,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                 <div
                                   key={`chip-${ch.id}`}
                                   draggable
-                                  onDragStart={() => setDragId(ch.id)}
+                                  onDragStart={(e) => { setDragId(ch.id); try { e.dataTransfer.setData('text/plain', ch.id); e.dataTransfer.effectAllowed = 'move'; } catch {} }}
                                   onDragEnd={() => setDragId(null)}
                                   className="absolute -left-12 px-2 py-0.5 rounded bg-red-100 border border-red-300 text-[10px] font-medium cursor-grab"
                                   style={{ bottom: `${(Number(rungOf[ch.id]!)/Math.max(1,rungCount))*100}%` }}
@@ -451,10 +451,10 @@ export default function Production({ gameSession, currentState }: ProductionProp
                           </div>
                         );
                       })}
-                    </div>
-                  </div>
-
-                  <div>
+                        </div>
+                      </div>
+                      
+                        <div>
                     <div className="text-xs text-gray-600 mb-1">Outsourced (uncapped)</div>
                     <div className="grid grid-cols-11 gap-2">
                       {WEEKS_ALL.map((w) => (
@@ -467,15 +467,15 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               <div key={b.id} className="text-[10px] px-2 py-1 rounded border border-gray-400 flex items-center justify-between">
                                 <span>{b.product}</span>
                                 <button className="text-red-600" onClick={() => removeBatch.mutate(b.id)}>Remove</button>
-                              </div>
+                        </div>
                             ))}
-                          </div>
+                        </div>
                         </div>
                       ))}
+                        </div>
+                      </div>
                     </div>
-                  </div>
-                </div>
-              );
+                  );
             })()}
           </Card>
 
@@ -500,7 +500,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
             )}
           </Card>
         </div>
-      </div>
+          </div>
     </div>
   );
 }
