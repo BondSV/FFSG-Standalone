@@ -482,29 +482,15 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   {/* Background Gradient */}
                                   <div className="absolute inset-0 bg-gradient-to-t from-slate-200 via-slate-100 to-white"></div>
                                   
-                                  {/* Available Capacity (Emerald glow) */}
-                                  <div className="absolute left-0 right-0 bg-gradient-to-t from-emerald-400/20 via-emerald-500/15 to-emerald-300/20 shadow-inner" style={{ bottom: RUNG_TOP_BOTTOM_MARGIN, top: RUNG_TOP_BOTTOM_MARGIN }} />
-                                  
-                                  {/* Used Capacity (Red glow with better visibility) */}
-                                  {rungCount > 0 && usedCount > 0 && (
-                                    <div className="absolute left-0 right-0 bg-gradient-to-t from-red-500/80 via-red-400/60 to-red-500/40 shadow-lg rounded-b" 
-                                         style={{ bottom: 0, height: `${(usedCount/Math.max(1,maxRungsAllWeeks))*100}%` }}>
-                                      <div className="absolute inset-0 bg-gradient-to-t from-red-600/30 to-transparent"></div>
-                                      <div className="absolute inset-0 shadow-[inset_0_0_10px_rgba(239,68,68,0.3)]"></div>
-                                    </div>
-                                  )}
-                                  
-                                  {/* Rung Separators with Glow (positioned by normalized heights) */}
+                                  {/* Free rung backgrounds (exactly rungCount) */}
                                   {(() => {
                                     const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
-                                    const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
-                                    return maxRungsAllWeeks > 1 && [...Array(maxRungsAllWeeks - 1)].map((_, i) => {
-                                      const bottomPx = RUNG_TOP_BOTTOM_MARGIN + Math.floor((i + 1) * (rungHeight + RUNG_GAP) - RUNG_GAP / 2);
+                                    const rungHeight = Math.floor((usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks);
+                                    return [...Array(rungCount)].map((_, r) => {
+                                      const bottomPx = RUNG_TOP_BOTTOM_MARGIN + Math.floor(r * (rungHeight + RUNG_GAP));
                                       return (
-                                        <div key={i} className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent" 
-                                             style={{ bottom: bottomPx }}>
-                                          <div className="absolute inset-0 bg-emerald-300/20"></div>
-                                        </div>
+                                        <div key={`bg-${r}`} className="absolute rounded-sm bg-emerald-200/35"
+                                             style={{ bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN }} />
                                       );
                                     });
                                   })()}
