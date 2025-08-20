@@ -394,7 +394,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                         const rungs = taken[w] || [];
                         const usedCount = rungs.filter((x) => x !== null).length;
                         return (
-                          <div key={`ih-col-${w}`} className="border rounded p-2 flex flex-col items-stretch" style={{ minWidth: 88 }}>
+                          <div key={`ih-col-${w}`} className="border rounded p-2 flex flex-col justify-end items-center" style={{ minWidth: 88 }}>
                             <div className="relative mx-auto w-8" style={{ height: h }} title={`Cap ${(cap/25000)|0}×25k`}>
                               {/* Background */}
                               <div className="absolute inset-0 bg-gray-100 rounded" />
