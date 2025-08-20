@@ -434,6 +434,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 }
               }
 
+              // Normalization targets
+              const maxRungsAllWeeks = Math.max(...WEEKS_ALL.map((w) => rungPerWeek[w] || 0), 1);
+              const BAR_HEIGHT = 220; // px: unified bar height for all weeks
+              const RUNG_GAP = 3; // px vertical space between rungs
+
               // In-house lane rendering
                   return (
                 <div className="space-y-8">
@@ -447,8 +452,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                     <div className="grid grid-cols-11 gap-[3px] items-end">
                       {WEEKS_ALL.map((w) => {
                         const cap = Number(capacityByWeek[w]?.capacity || 0);
-                        const maxH = 200; // px
-                        const h = Math.max(60, Math.round((cap / maxCap) * maxH));
+                        const h = BAR_HEIGHT; // unified height across weeks
                         const rungCount = Math.max(0, rungPerWeek[w] || 0);
                         const rungs = taken[w] || [];
                         const usedCount = rungs.filter((x) => x !== null).length;
@@ -477,53 +481,49 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   <div className="absolute inset-0 bg-gradient-to-t from-slate-200 via-slate-100 to-white"></div>
                                   
                                   {/* Available Capacity (Emerald glow) */}
-                                  {rungCount > 0 && (
-                                    <div className="absolute left-0 right-0 bg-gradient-to-t from-emerald-400/30 via-emerald-500/20 to-emerald-300/30 shadow-inner" 
-                                         style={{ bottom: 0, top: 0 }}>
-                                      <div className="absolute inset-0 bg-gradient-to-t from-emerald-400/10 to-transparent animate-pulse"></div>
-                                    </div>
-                                  )}
+                                  <div className="absolute left-0 right-0 bg-gradient-to-t from-emerald-400/20 via-emerald-500/15 to-emerald-300/20 shadow-inner" style={{ bottom: 0, top: 0 }} />
                                   
                                   {/* Used Capacity (Red glow with better visibility) */}
                                   {rungCount > 0 && usedCount > 0 && (
                                     <div className="absolute left-0 right-0 bg-gradient-to-t from-red-500/80 via-red-400/60 to-red-500/40 shadow-lg rounded-b" 
-                                         style={{ bottom: 0, height: `${(usedCount/Math.max(1,rungCount))*100}%` }}>
+                                         style={{ bottom: 0, height: `${(usedCount/Math.max(1,maxRungsAllWeeks))*100}%` }}>
                                       <div className="absolute inset-0 bg-gradient-to-t from-red-600/30 to-transparent"></div>
                                       <div className="absolute inset-0 shadow-[inset_0_0_10px_rgba(239,68,68,0.3)]"></div>
                                     </div>
                                   )}
                                   
                                   {/* Rung Separators with Glow */}
-                                  {rungCount > 1 && [...Array(rungCount - 1)].map((_, i) => (
+                                  {maxRungsAllWeeks > 1 && [...Array(maxRungsAllWeeks - 1)].map((_, i) => (
                                     <div key={i} className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent" 
-                                         style={{ bottom: `${((i+1)/rungCount)*100}%` }}>
+                                         style={{ bottom: `${((i+1)/maxRungsAllWeeks)*100}%` }}>
                                       <div className="absolute inset-0 bg-emerald-300/20"></div>
                                     </div>
                                   ))}
                                   
                                   {/* Used Batch Blocks with Enhanced Styling */}
-                                  {rungCount > 0 && [...Array(rungCount)].map((_, r) => {
+                                  {maxRungsAllWeeks > 0 && [...Array(maxRungsAllWeeks)].map((_, r) => {
                                     const id = rungs[r];
-                                    if (!id) return null;
-                                    const base = h / Math.max(1, rungCount);
-                                    const rungHeight = Math.max(2, Math.floor(base) - 2);
-                                    const bottomPx = Math.floor(r * base) + 1;
-                                    const style = { bottom: bottomPx, height: rungHeight, left: 1, right: 1 } as React.CSSProperties;
+                                    const base = (h - (maxRungsAllWeeks - 1) * RUNG_GAP) / Math.max(1, maxRungsAllWeeks);
+                                    const rungHeight = Math.max(2, Math.floor(base));
+                                    const bottomPx = Math.floor(r * (base + RUNG_GAP));
+                                    const style = { bottom: bottomPx, height: rungHeight, left: 2, right: 2 } as React.CSSProperties;
                                     const isHovered = hoverId === id;
                                     return (
                                       <div
                                         key={`used-${r}`}
                                         className={`absolute transition-all duration-300 rounded-sm ${
-                                          isHovered 
-                                            ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] scale-105 z-10' 
-                                            : 'bg-gradient-to-t from-red-600 via-red-500 to-red-400 shadow-lg shadow-red-500/30'
+                                          id
+                                            ? (isHovered 
+                                                ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] scale-105 z-10' 
+                                                : 'bg-gradient-to-t from-red-600 via-red-500 to-red-400 shadow-lg shadow-red-500/30')
+                                            : 'bg-gradient-to-t from-emerald-200 via-emerald-100 to-emerald-50'
                                         }`}
                                         style={style}
-                                        onMouseEnter={() => setHoverId(id)}
-                                        onMouseLeave={() => setHoverId(null)}
+                                        onMouseEnter={() => id && setHoverId(id)}
+                                        onMouseLeave={() => id && setHoverId(null)}
                                       >
                                         <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
-                                        {isHovered && (
+                                        {id && isHovered && (
                                           <div className="absolute inset-0 bg-gradient-to-t from-amber-400/20 to-amber-300/10 animate-pulse rounded-sm"></div>
                                         )}
                                       </div>
