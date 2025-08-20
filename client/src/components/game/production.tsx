@@ -41,6 +41,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
   const [method, setMethod] = useState<Method>("inhouse");
   const [startWeek, setStartWeek] = useState<number>(Math.max(3, currentWeek + 1));
   const [confirmPartial, setConfirmPartial] = useState(false);
+  const [dragId, setDragId] = useState<string | null>(null);
 
   // Helpers
   const getLead = (p: string, m: Method) => (m === "inhouse" ? Number(MFG[p]?.inHouseTime || 2) : Number(MFG[p]?.outsourceTime || 1));
@@ -168,6 +169,60 @@ export default function Production({ gameSession, currentState }: ProductionProp
       queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
     },
   });
+
+  // Drag-n-drop utils
+  const placeChain = async (chainId: string, newStart: number) => {
+    const moving = scheduledBatches.find((b) => String(b.id) === String(chainId));
+    if (!moving) return;
+    const lead = getLead(moving.product, moving.method);
+    if (moving.method !== 'inhouse') {
+      // Outsourced: just change start within window
+      if (newStart < currentWeek + 1 || newStart > 10) return;
+      const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart } : b));
+      await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { productionSchedule: { batches: next } });
+      queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
+      return;
+    }
+    // In-house: validate rung availability across span (no reflow of other chains)
+    // Rebuild taken map excluding the moving chain
+    const chains = scheduledBatches
+      .filter((b) => b.method === 'inhouse' && b.id !== moving.id)
+      .map((b) => ({ id: b.id, product: b.product, start: Number(b.startWeek), span: getLead(b.product, 'inhouse') }));
+    const takenLocal: Record<number, (string | null)[]> = {};
+    WEEKS_ALL.forEach((w) => { takenLocal[w] = Array.from({ length: Math.max(0, Math.floor((capacityByWeek[w]?.capacity || 0)/STANDARD_BATCH_UNITS)) }, () => null); });
+    for (const ch of chains) {
+      // place the existing chain on the lowest rung that is free across its span (greedy)
+      const maxR = takenLocal[WEEKS_ALL[0]].length || 0;
+      let assigned: number | null = null;
+      for (let r = 0; r < maxR; r++) {
+        let ok = true;
+        for (let w = ch.start; w < ch.start + ch.span; w++) {
+          if (!takenLocal[w] || r >= takenLocal[w].length || takenLocal[w][r] !== null) { ok = false; break; }
+        }
+        if (ok) { assigned = r; break; }
+      }
+      if (assigned !== null) {
+        for (let w = ch.start; w < ch.start + ch.span; w++) takenLocal[w][assigned] = ch.id;
+      }
+    }
+    // Try to place moving chain at the lowest rung available across its new span
+    const lowestRungs = Math.min(...WEEKS_ALL.map((w) => (takenLocal[w]?.length ?? 0)));
+    let assigned: number | null = null;
+    for (let r = 0; r < lowestRungs; r++) {
+      let ok = true;
+      for (let w = newStart; w < newStart + lead; w++) {
+        if (!takenLocal[w] || r >= takenLocal[w].length || takenLocal[w][r] !== null) { ok = false; break; }
+      }
+      if (ok) { assigned = r; break; }
+    }
+    if (assigned === null) {
+      toast({ title: 'Overbooked', description: 'No free 25k rung across the full span.', variant: 'destructive' });
+      return;
+    }
+    const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart } : b));
+    await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { productionSchedule: { batches: next } });
+    queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
+  };
 
   // UI
   return (
@@ -357,8 +412,14 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               })}
                               {/* Batch chips on chain start */}
                               {ihChains.filter((ch) => ch.start === w && rungOf[ch.id] !== null).map((ch) => (
-                                <div key={`chip-${ch.id}`} className="absolute -left-10 px-2 py-0.5 rounded bg-red-100 border border-red-300 text-[10px] font-medium"
-                                  style={{ bottom: `${(Number(rungOf[ch.id]!)/Math.max(1,rungCount))*100}%` }}>
+                                <div
+                                  key={`chip-${ch.id}`}
+                                  draggable
+                                  onDragStart={() => setDragId(ch.id)}
+                                  onDragEnd={() => setDragId(null)}
+                                  className="absolute -left-12 px-2 py-0.5 rounded bg-red-100 border border-red-300 text-[10px] font-medium cursor-grab"
+                                  style={{ bottom: `${(Number(rungOf[ch.id]!)/Math.max(1,rungCount))*100}%` }}
+                                >
                                   {ch.product}
                                 </div>
                               ))}
@@ -373,7 +434,10 @@ export default function Production({ gameSession, currentState }: ProductionProp
                     <div className="text-xs text-gray-600 mb-1">Outsourced (uncapped)</div>
                     <div className="grid grid-cols-11 gap-2">
                       {WEEKS_ALL.map((w) => (
-                        <div key={`os-col-${w}`} className="border rounded p-2" style={{ minWidth: 88 }}>
+                        <div key={`os-col-${w}`} className="border rounded p-2" style={{ minWidth: 88 }}
+                          onDragOver={(e) => { if (dragId) e.preventDefault(); }}
+                          onDrop={(e) => { if (dragId) { placeChain(dragId, w); setDragId(null); } }}
+                        >
                           <div className="space-y-1">
                             {scheduledBatches.filter((b) => b.method === 'outsourced' && Number(b.startWeek) === w).map((b) => (
                               <div key={b.id} className="text-[10px] px-2 py-1 rounded border border-gray-400 flex items-center justify-between">
