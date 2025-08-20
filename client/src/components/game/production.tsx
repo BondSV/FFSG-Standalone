@@ -566,6 +566,24 @@ export default function Production({ gameSession, currentState }: ProductionProp
                         </div>
                       </div>
                       
+                  {/* Week badges with available capacity moved between lanes */}
+                  <div className="grid grid-cols-11 gap-[3px] my-4">
+                    {WEEKS_ALL.map((w) => {
+                      const cap = Number(capacityByWeek[w]?.capacity || 0);
+                      const usedCount = (taken[w] || []).filter((x) => x !== null).length;
+                      const availableUnits = Math.max(0, cap - usedCount * STANDARD_BATCH_UNITS);
+                      return (
+                        <div key={`mid-hdr-${w}`} className="relative">
+                          <div className="bg-white rounded-lg p-2 text-center border border-slate-200 shadow-sm">
+                            <div className="text-[11px] text-emerald-700 font-medium mb-[2px]">{formatUnits(availableUnits)}</div>
+                            <div className="w-full h-px bg-gradient-to-r from-transparent via-emerald-300/60 to-transparent mb-[2px]"></div>
+                            <div className="text-slate-600 font-semibold text-xs">W{w}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
                   {/* Outsourced Manufacturing Lane */}
                   <div className="relative">
                     <div className="flex items-center gap-3 mb-4">
@@ -630,23 +648,6 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 })}
                     </div>
                   </div>
-                </div>
-                {/* Week badges with available capacity moved between lanes */}
-                <div className="grid grid-cols-11 gap-[3px] my-4">
-                  {WEEKS_ALL.map((w) => {
-                    const cap = Number(capacityByWeek[w]?.capacity || 0);
-                    const usedCount = (taken[w] || []).filter((x) => x !== null).length;
-                    const availableUnits = Math.max(0, cap - usedCount * STANDARD_BATCH_UNITS);
-                    return (
-                      <div key={`mid-hdr-${w}`} className="relative">
-                        <div className="bg-white rounded-lg p-2 text-center border border-slate-200 shadow-sm">
-                          <div className="text-[11px] text-emerald-700 font-medium mb-1">{formatUnits(availableUnits)}</div>
-                          <div className="w-full h-px bg-gradient-to-r from-transparent via-emerald-300/60 to-transparent mb-1"></div>
-                          <div className="text-slate-600 font-semibold text-xs">W{w}</div>
-                        </div>
-                      </div>
-                    );
-                  })}
                 </div>
               );
             })()}
