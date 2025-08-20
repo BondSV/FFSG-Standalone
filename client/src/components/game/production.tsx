@@ -42,6 +42,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
   const [startWeek, setStartWeek] = useState<number>(Math.max(3, currentWeek + 1));
   const [confirmPartial, setConfirmPartial] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
+  const [hoverId, setHoverId] = useState<string | null>(null);
 
   // Helpers
   const getLead = (p: string, m: Method) => (m === "inhouse" ? Number(MFG[p]?.inHouseTime || 2) : Number(MFG[p]?.outsourceTime || 1));
@@ -394,13 +395,19 @@ export default function Production({ gameSession, currentState }: ProductionProp
                         const rungs = taken[w] || [];
                         const usedCount = rungs.filter((x) => x !== null).length;
                         return (
-                          <div key={`ih-col-${w}`} className="border rounded p-2 flex flex-col justify-end items-center" style={{ minWidth: 88 }}>
+                          <div
+                            key={`ih-col-${w}`}
+                            className="border rounded p-2 flex flex-col justify-end items-center"
+                            style={{ minWidth: 88 }}
+                            onDragOver={(e) => { if (dragId) e.preventDefault(); }}
+                            onDrop={(e) => { if (dragId) { placeChain(dragId, w); setDragId(null); } }}
+                          >
                             <div className="relative mx-auto w-8" style={{ height: h }} title={`Cap ${(cap/25000)|0}×25k`}>
                               {/* Background */}
                               <div className="absolute inset-0 bg-gray-100 rounded" />
-                              {/* Available capacity underlay (green) from bottom-up */}
+                              {/* Available capacity underlay (green) full bar, red will overlay used area */}
                               {rungCount > 0 && (
-                                <div className="absolute left-0 right-0 bg-green-300/30 rounded-b" style={{ bottom: 0, height: `${(Math.max(0,rungCount - usedCount)/Math.max(1,rungCount))*100}%` }} />
+                                <div className="absolute left-0 right-0 bg-green-300/25 rounded" style={{ bottom: 0, top: 0 }} />
                               )}
                               {/* Used capacity underlay (red) from bottom-up */}
                               {rungCount > 0 && (
@@ -414,7 +421,16 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                 const id = rungs[r];
                                 if (!id) return null;
                                 const style = { bottom: `${(r/rungCount)*100}%`, height: `${(1/rungCount)*100}%` } as React.CSSProperties;
-                                return <div key={`used-${r}`} className="absolute left-0 right-0 bg-red-500 rounded-sm" style={style} />;
+                                const cls = hoverId === id ? 'ring-2 ring-red-400 ring-offset-1' : '';
+                                return (
+                                  <div
+                                    key={`used-${r}`}
+                                    className={`absolute left-0 right-0 bg-red-500 rounded-sm ${cls}`}
+                                    style={style}
+                                    onMouseEnter={() => setHoverId(id)}
+                                    onMouseLeave={() => setHoverId(null)}
+                                  />
+                                );
                               })}
                               {/* Batch chips on chain start */}
                               {ihChains.filter((ch) => ch.start === w && rungOf[ch.id] !== null).map((ch) => (
@@ -425,6 +441,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   onDragEnd={() => setDragId(null)}
                                   className="absolute -left-12 px-2 py-0.5 rounded bg-red-100 border border-red-300 text-[10px] font-medium cursor-grab"
                                   style={{ bottom: `${(Number(rungOf[ch.id]!)/Math.max(1,rungCount))*100}%` }}
+                                  onMouseEnter={() => setHoverId(ch.id)}
+                                  onMouseLeave={() => setHoverId(null)}
                                 >
                                   {ch.product}
                                 </div>
