@@ -335,23 +335,32 @@ export default function Production({ gameSession, currentState }: ProductionProp
                         const cap = Number(capacityByWeek[w]?.capacity || 0);
                         const maxH = 180; // px
                         const h = Math.max(48, Math.round((cap / maxCap) * maxH));
+                        const rungCount = Math.max(0, rungPerWeek[w] || 0);
                         const rungs = taken[w] || [];
-                        const freeRungs = Math.max(0, (rungPerWeek[w] || 0) - rungs.filter((x) => x !== null).length);
                         return (
                           <div key={`ih-col-${w}`} className="border rounded p-2 flex flex-col items-stretch" style={{ minWidth: 88 }}>
                             <div className="relative mx-auto w-8" style={{ height: h }} title={`Cap ${(cap/25000)|0}×25k`}>
                               {/* Rung background grid */}
                               <div className="absolute inset-0 bg-gray-100 rounded" />
-                              {[...Array(Math.max(1, rungPerWeek[w]))].map((_, i) => (
-                                <div key={i} className="absolute left-0 right-0 border-t border-gray-200" style={{ top: `${((i+1)/(rungPerWeek[w]||1))*100}%` }} />
+                              {rungCount > 0 && [...Array(rungCount)].map((_, i) => (
+                                <div key={i} className="absolute left-0 right-0 border-t border-gray-200" style={{ top: `${((i+1)/rungCount)*100}%` }} />
                               ))}
-                              {/* Used blocks by rung */}
-                              {rungs.map((id, r) => id && (
-                                <div key={r} className="absolute left-0 right-0 bg-red-500 rounded-sm" style={{ bottom: `${(r/(rungPerWeek[w]||1))*100}%`, height: `${(1/(rungPerWeek[w]||1))*100}%` }} />
-                              ))}
-                              {/* Free rungs as translucent green */}
-                              {[...Array(freeRungs)].map((_, i) => (
-                                <div key={`free-${i}`} className="absolute left-0 right-0 bg-green-400/30 rounded-sm" style={{ bottom: `${((rungs.length + i)/(rungPerWeek[w]||1))*100}%`, height: `${(1/(rungPerWeek[w]||1))*100}%` }} />
+                              {/* Free rungs (green) and used rungs (red) */}
+                              {rungCount > 0 && [...Array(rungCount)].map((_, r) => {
+                                const id = rungs[r];
+                                const style = { bottom: `${(r/rungCount)*100}%`, height: `${(1/rungCount)*100}%` } as React.CSSProperties;
+                                return id ? (
+                                  <div key={`used-${r}`} className="absolute left-0 right-0 bg-red-500 rounded-sm" style={style} />
+                                ) : (
+                                  <div key={`free-${r}`} className="absolute left-0 right-0 bg-green-400/30 rounded-sm" style={style} />
+                                );
+                              })}
+                              {/* Batch chips on chain start */}
+                              {ihChains.filter((ch) => ch.start === w && rungOf[ch.id] !== null).map((ch) => (
+                                <div key={`chip-${ch.id}`} className="absolute -left-10 px-2 py-0.5 rounded bg-red-100 border border-red-300 text-[10px] font-medium"
+                                  style={{ bottom: `${(Number(rungOf[ch.id]!)/Math.max(1,rungCount))*100}%` }}>
+                                  {ch.product}
+                                </div>
                               ))}
                             </div>
                           </div>
