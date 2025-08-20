@@ -283,56 +283,103 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
         {/* Right column: Schedule board */}
         <div className="lg:col-span-7 space-y-4">
-          <Card className="p-4">
+          <Card className="p-4 overflow-x-auto">
             <div className="font-medium mb-3">Production Schedule (W3–W13)</div>
-            {/* In-house lane */}
-            <div className="mb-3">
-              <div className="text-xs text-gray-600 mb-1">In‑house (capacity shared)</div>
-              <div className="grid grid-cols-11 gap-2">
-                {WEEKS_ALL.map((w) => {
-                  const cap = capacityByWeek[w]?.capacity || 0;
-                  const used = capacityByWeek[w]?.used || 0;
-                  const pct = cap > 0 ? Math.min(100, Math.round((used / cap) * 100)) : 0;
-                  return (
-                    <div key={`ih-${w}`} className="border rounded p-2">
-                      <div className="text-[10px] text-gray-600 mb-1">W{w}</div>
-                      <div className="h-2 w-full bg-gray-200 rounded overflow-hidden">
-                        <div className={`h-full ${pct >= 80 ? 'bg-red-600' : 'bg-red-400'}`} style={{ width: `${pct}%` }} />
-                      </div>
-                      <div className="mt-1 text-[10px] font-mono text-right">{used.toLocaleString()}/{cap.toLocaleString()}</div>
-                      {/* chips for this week */}
-                      <div className="mt-2 space-y-1">
-                        {scheduledBatches.filter((b) => b.method === 'inhouse' && w >= b.startWeek && w < b.startWeek + getLead(b.product, 'inhouse')).map((b) => (
-                          <div key={b.id} className="text-[10px] px-2 py-1 rounded bg-red-50 border border-red-200 flex items-center justify-between">
-                            <span>{b.product}</span>
-                            <button className="text-red-600" onClick={() => removeBatch.mutate(b.id)}>Remove</button>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            {/* Header weeks */}
+            <div className="grid grid-cols-11 gap-2 sticky top-0 bg-white z-10 pb-1">
+              {WEEKS_ALL.map((w) => (
+                <div key={`hdr-${w}`} className="text-[11px] text-gray-600 text-center font-mono">W{w}</div>
+              ))}
             </div>
-            {/* Outsourced lane */}
-            <div>
-              <div className="text-xs text-gray-600 mb-1">Outsourced (uncapped)</div>
-              <div className="grid grid-cols-11 gap-2">
-                {WEEKS_ALL.map((w) => (
-                  <div key={`os-${w}`} className="border rounded p-2">
-                    <div className="text-[10px] text-gray-600 mb-2">W{w}</div>
-                    <div className="space-y-1">
-                      {scheduledBatches.filter((b) => b.method === 'outsourced' && Number(b.startWeek) === w).map((b) => (
-                        <div key={b.id} className="text-[10px] px-2 py-1 rounded border border-gray-400 flex items-center justify-between">
-                          <span>{b.product}</span>
-                          <button className="text-red-600" onClick={() => removeBatch.mutate(b.id)}>Remove</button>
+
+            {(() => {
+              // Build rung model per week
+              const maxCap = Math.max(...WEEKS_ALL.map((w) => Number(capacityByWeek[w]?.capacity || 0)), 1);
+              const rungPerWeek: Record<number, number> = {};
+              WEEKS_ALL.forEach((w) => {
+                rungPerWeek[w] = Math.floor((capacityByWeek[w]?.capacity || 0) / STANDARD_BATCH_UNITS);
+              });
+
+              // Greedy full-span rung assignment for in-house chains
+              const ihChains = scheduledBatches
+                .filter((b) => b.method === 'inhouse')
+                .map((b) => ({ id: b.id, product: b.product, start: Number(b.startWeek), span: getLead(b.product, 'inhouse') }));
+              ihChains.sort((a, b) => a.start - b.start);
+
+              const taken: Record<number, (string | null)[]> = {};
+              WEEKS_ALL.forEach((w) => { taken[w] = Array.from({ length: rungPerWeek[w] }, () => null); });
+              const rungOf: Record<string, number | null> = {};
+              for (const ch of ihChains) {
+                let assigned: number | null = null;
+                const possible = Math.max(...WEEKS_ALL.map((w) => rungPerWeek[w]));
+                for (let r = 0; r < possible; r++) {
+                  let ok = true;
+                  for (let w = ch.start; w < ch.start + ch.span; w++) {
+                    if (!taken[w] || r >= taken[w].length || taken[w][r] !== null) { ok = false; break; }
+                  }
+                  if (ok) { assigned = r; break; }
+                }
+                rungOf[ch.id] = assigned;
+                if (assigned !== null) {
+                  for (let w = ch.start; w < ch.start + ch.span; w++) taken[w][assigned] = ch.id;
+                }
+              }
+
+              // In-house lane rendering
+              return (
+                <div className="space-y-4">
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">In‑house (capacity shared)</div>
+                    <div className="grid grid-cols-11 gap-2">
+                      {WEEKS_ALL.map((w) => {
+                        const cap = Number(capacityByWeek[w]?.capacity || 0);
+                        const maxH = 180; // px
+                        const h = Math.max(48, Math.round((cap / maxCap) * maxH));
+                        const rungs = taken[w] || [];
+                        const freeRungs = Math.max(0, (rungPerWeek[w] || 0) - rungs.filter((x) => x !== null).length);
+                        return (
+                          <div key={`ih-col-${w}`} className="border rounded p-2 flex flex-col items-stretch" style={{ minWidth: 88 }}>
+                            <div className="relative mx-auto w-8" style={{ height: h }} title={`Cap ${(cap/25000)|0}×25k`}>
+                              {/* Rung background grid */}
+                              <div className="absolute inset-0 bg-gray-100 rounded" />
+                              {[...Array(Math.max(1, rungPerWeek[w]))].map((_, i) => (
+                                <div key={i} className="absolute left-0 right-0 border-t border-gray-200" style={{ top: `${((i+1)/(rungPerWeek[w]||1))*100}%` }} />
+                              ))}
+                              {/* Used blocks by rung */}
+                              {rungs.map((id, r) => id && (
+                                <div key={r} className="absolute left-0 right-0 bg-red-500 rounded-sm" style={{ bottom: `${(r/(rungPerWeek[w]||1))*100}%`, height: `${(1/(rungPerWeek[w]||1))*100}%` }} />
+                              ))}
+                              {/* Free rungs as translucent green */}
+                              {[...Array(freeRungs)].map((_, i) => (
+                                <div key={`free-${i}`} className="absolute left-0 right-0 bg-green-400/30 rounded-sm" style={{ bottom: `${((rungs.length + i)/(rungPerWeek[w]||1))*100}%`, height: `${(1/(rungPerWeek[w]||1))*100}%` }} />
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="text-xs text-gray-600 mb-1">Outsourced (uncapped)</div>
+                    <div className="grid grid-cols-11 gap-2">
+                      {WEEKS_ALL.map((w) => (
+                        <div key={`os-col-${w}`} className="border rounded p-2" style={{ minWidth: 88 }}>
+                          <div className="space-y-1">
+                            {scheduledBatches.filter((b) => b.method === 'outsourced' && Number(b.startWeek) === w).map((b) => (
+                              <div key={b.id} className="text-[10px] px-2 py-1 rounded border border-gray-400 flex items-center justify-between">
+                                <span>{b.product}</span>
+                                <button className="text-red-600" onClick={() => removeBatch.mutate(b.id)}>Remove</button>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       ))}
                     </div>
                   </div>
-                ))}
-              </div>
-            </div>
+                </div>
+              );
+            })()}
           </Card>
 
           {/* Scheduled list (compact) */}
