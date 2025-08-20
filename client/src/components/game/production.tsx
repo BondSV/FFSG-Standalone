@@ -237,10 +237,10 @@ export default function Production({ gameSession, currentState }: ProductionProp
       {/* Production Capabilities Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         {(["jacket", "dress", "pants"] as const).map((p) => (
-          <Card key={p} className="overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300">
-            <div className="bg-gradient-to-r from-slate-700 to-slate-800 p-3">
+          <Card key={p} className="overflow-hidden bg-white border-slate-200 shadow-md hover:shadow-lg transition-all duration-300">
+            <div className="bg-white border-b border-slate-200 p-3">
               <div className="flex items-center justify-between">
-                <span className="font-bold text-white text-lg">{p.charAt(0).toUpperCase() + p.slice(1)}</span>
+                <span className="font-bold text-slate-800 text-lg">{p.charAt(0).toUpperCase() + p.slice(1)}</span>
                 <Badge className="bg-emerald-600 text-white font-bold">SKU</Badge>
               </div>
             </div>
@@ -276,14 +276,14 @@ export default function Production({ gameSession, currentState }: ProductionProp
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left column: Planner + Info */}
         <div className="lg:col-span-5 space-y-6">
-          <Card className="overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 shadow-lg">
-            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4">
+          <Card className="overflow-hidden bg-white border-slate-200 shadow-md">
+            <div className="bg-white border-b border-slate-200 p-3">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-blue-300 rounded-full animate-pulse shadow-lg shadow-blue-300/50"></div>
-                <h3 className="font-bold text-white text-lg">Batch Planner</h3>
+                <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                <h3 className="font-bold text-slate-800 text-base">Batch Planner</h3>
               </div>
             </div>
-            <div className="p-6">
+            <div className="p-5">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
                 <div className="text-xs text-gray-600 mb-1">SKU</div>
@@ -344,14 +344,14 @@ export default function Production({ gameSession, currentState }: ProductionProp
           </Card>
 
           {/* Info Panels */}
-          <Card className="overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 shadow-lg">
-            <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 p-4">
+          <Card className="overflow-hidden bg-white border-slate-200 shadow-md">
+            <div className="bg-white border-b border-slate-200 p-3">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-emerald-300 rounded-full animate-pulse shadow-lg shadow-emerald-300/50"></div>
-                <h3 className="font-bold text-white text-lg">Resources & Inventory</h3>
+                <div className="w-2 h-2 bg-emerald-400 rounded-full"></div>
+                <h3 className="font-bold text-slate-800 text-base">Resources & Inventory</h3>
               </div>
             </div>
-            <div className="p-6">
+            <div className="p-5">
               <div className="mb-4">
                 <h4 className="font-semibold mb-3 text-emerald-700">Materials</h4>
                 <div className="text-sm grid grid-cols-2 gap-3">
@@ -385,22 +385,22 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
         {/* Right column: Schedule board */}
         <div className="lg:col-span-7 space-y-6">
-          <Card className="overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-slate-700 shadow-2xl">
-            <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-4">
+          <Card className="overflow-hidden bg-white border-slate-200 shadow-xl">
+            <div className="bg-white border-b border-slate-200 p-3">
               <div className="flex items-center gap-3">
-                <div className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse shadow-lg shadow-cyan-400/50"></div>
-                <h3 className="text-xl font-bold text-white">Production Schedule Matrix</h3>
-                <div className="text-cyan-300 text-sm font-mono">W3–W13</div>
+                <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full"></div>
+                <h3 className="text-lg font-bold text-slate-800">Production Schedule</h3>
+                <div className="text-slate-500 text-xs font-mono">W3–W13</div>
               </div>
             </div>
             <div className="p-6">
               {/* Header weeks */}
-              <div className="grid grid-cols-11 gap-3 mb-6">
+              <div className="grid grid-cols-11 gap-2 mb-4">
                 {WEEKS_ALL.map((w) => (
                   <div key={`hdr-${w}`} className="relative">
-                    <div className="bg-gradient-to-b from-slate-700 to-slate-800 rounded-lg p-3 text-center border border-slate-600 shadow-lg">
-                      <div className="text-cyan-300 font-bold text-sm">W{w}</div>
-                      <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent mt-2 opacity-60"></div>
+                    <div className="bg-white rounded-lg p-2 text-center border border-slate-200 shadow-sm">
+                      <div className="text-slate-600 font-semibold text-xs">W{w}</div>
+                      <div className="w-full h-px bg-gradient-to-r from-transparent via-emerald-300/50 to-transparent mt-2"></div>
                     </div>
                   </div>
                 ))}
@@ -465,7 +465,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                             onDrop={(e) => { if (dragId) { placeChain(dragId, w); setDragId(null); } }}
                           >
                             {/* Capacity Container with Futuristic Design */}
-                            <div className="relative bg-gradient-to-b from-slate-800 to-slate-900 rounded-xl border border-slate-600 shadow-2xl overflow-hidden transition-all duration-300 hover:shadow-cyan-500/20 hover:border-cyan-500/50">
+                            <div className="relative bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-emerald-300/60">
                               {/* Capacity Visualization */}
                               <div className="relative p-4 flex flex-col justify-end items-center" style={{ minHeight: h + 40 }}>
                                 {/* Background Grid Effect */}
@@ -477,9 +477,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                 </div>
                                 
                                 {/* Capacity Bar */}
-                                <div className="relative w-10 mx-auto rounded-lg overflow-hidden border border-slate-500/30" style={{ height: h }} title={`Capacity: ${(cap/25000)|0} × 25k units`}>
+                                <div className="relative w-10 mx-auto rounded-lg overflow-hidden border border-slate-300/60" style={{ height: h }} title={`Capacity: ${(cap/25000)|0} × 25k units`}>
                                   {/* Background Gradient */}
-                                  <div className="absolute inset-0 bg-gradient-to-t from-slate-700 via-slate-600 to-slate-500"></div>
+                                  <div className="absolute inset-0 bg-gradient-to-t from-slate-200 via-slate-100 to-white"></div>
                                   
                                   {/* Available Capacity (Emerald glow) */}
                                   {rungCount > 0 && (
@@ -500,9 +500,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   
                                   {/* Rung Separators with Glow */}
                                   {rungCount > 1 && [...Array(rungCount - 1)].map((_, i) => (
-                                    <div key={i} className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent shadow-lg shadow-cyan-400/30" 
+                                    <div key={i} className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-emerald-400/50 to-transparent" 
                                          style={{ bottom: `${((i+1)/rungCount)*100}%` }}>
-                                      <div className="absolute inset-0 bg-cyan-400/20 blur-sm"></div>
+                                      <div className="absolute inset-0 bg-emerald-300/20"></div>
                                     </div>
                                   ))}
                                   
@@ -534,15 +534,15 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                 </div>
                                 
                                 {/* Capacity Info */}
-                                <div className="mt-3 text-center">
-                                  <div className="text-xs text-cyan-300 font-mono">{(cap/25000)|0}×25k</div>
-                                  <div className="text-xs text-slate-400">units</div>
+                                <div className="mt-2 text-center">
+                                  <div className="text-[11px] text-emerald-600 font-mono">{(cap/25000)|0}×25k</div>
+                                  <div className="text-[11px] text-slate-500">units</div>
                                 </div>
                               </div>
                               
                               {/* Drag Target Indicator */}
                               {dragId && (
-                                <div className="absolute inset-0 bg-cyan-400/10 border-2 border-dashed border-cyan-400/50 rounded-xl animate-pulse"></div>
+                                <div className="absolute inset-0 bg-emerald-400/10 border-2 border-dashed border-emerald-300/60 rounded-xl"></div>
                               )}
                             </div>
                             
@@ -576,8 +576,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                   <div className="relative">
                     <div className="flex items-center gap-3 mb-4">
                       <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse shadow-lg shadow-orange-400/50"></div>
-                      <h4 className="text-orange-300 font-semibold text-lg">Outsourced Manufacturing</h4>
-                      <div className="text-slate-400 text-sm">Unlimited Capacity</div>
+                      <h4 className="text-orange-700 font-semibold text-lg">Outsourced Manufacturing</h4>
+                      <div className="text-slate-500 text-sm">Unlimited Capacity</div>
                     </div>
                     <div className="grid grid-cols-11 gap-3">
                       {WEEKS_ALL.map((w) => {
@@ -589,11 +589,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                onDrop={(e) => { if (dragId) { placeChain(dragId, w); setDragId(null); } }}
                           >
                             {/* Outsourced Container */}
-                            <div className="relative bg-gradient-to-b from-slate-800 to-slate-900 rounded-xl border border-slate-600 shadow-2xl overflow-hidden transition-all duration-300 hover:shadow-orange-500/20 hover:border-orange-500/50 min-h-32">
+                            <div className="relative bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-orange-300/60 min-h-32">
                               {/* Background Pattern */}
-                              <div className="absolute inset-0 opacity-5">
-                                <div className="w-full h-full bg-gradient-to-t from-orange-500/20 via-transparent to-transparent"></div>
-                                <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,orange_10px,orange_11px)]"></div>
+                              <div className="absolute inset-0 opacity-10">
+                                <div className="w-full h-full bg-gradient-to-t from-orange-400/15 via-transparent to-transparent"></div>
+                                <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,#f97316_10px,#f97316_11px)]"></div>
                               </div>
                               
                               <div className="relative p-4 min-h-28">
@@ -628,7 +628,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               
                               {/* Drag Target Indicator */}
                               {dragId && (
-                                <div className="absolute inset-0 bg-orange-400/10 border-2 border-dashed border-orange-400/50 rounded-xl animate-pulse"></div>
+                                <div className="absolute inset-0 bg-orange-400/10 border-2 border-dashed border-orange-300/60 rounded-xl"></div>
                               )}
                       </div>
                     </div>
@@ -643,14 +643,14 @@ export default function Production({ gameSession, currentState }: ProductionProp
           </Card>
 
           {/* Scheduled list (compact) */}
-          <Card className="overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 shadow-lg">
-            <div className="bg-gradient-to-r from-purple-600 to-purple-700 p-4">
+          <Card className="overflow-hidden bg-white border-slate-200 shadow-md">
+            <div className="bg-white border-b border-slate-200 p-3">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-purple-300 rounded-full animate-pulse shadow-lg shadow-purple-300/50"></div>
-                <h3 className="font-bold text-white text-lg">Production Queue</h3>
+                <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+                <h3 className="font-bold text-slate-800 text-base">Production Queue</h3>
               </div>
             </div>
-            <div className="p-6">
+            <div className="p-5">
             {scheduledBatches.length === 0 ? (
               <div className="text-center py-8">
                 <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center">
