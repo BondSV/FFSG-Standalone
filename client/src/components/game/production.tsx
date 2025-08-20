@@ -340,6 +340,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 <div className="font-mono">£{getUnitCost(sku, method).toLocaleString()}</div>
               </div>
             </div>
+            </div>
           </Card>
 
           {/* Info Panels */}
