@@ -234,31 +234,56 @@ export default function Production({ gameSession, currentState }: ProductionProp
         <p className="text-sm text-gray-600">Plan manufacturing for Weeks 3–13. Starts allowed for next week through Week 10. In‑house capacity is shared across SKUs; outsourced is uncapped.</p>
       </div>
 
-      {/* Snapshot */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+      {/* Production Capabilities Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
         {(["jacket", "dress", "pants"] as const).map((p) => (
-          <Card key={p} className="p-3">
-            <div className="flex items-center justify-between mb-1"><span className="font-medium">{p.charAt(0).toUpperCase() + p.slice(1)}</span><Badge variant="secondary">SKU</Badge></div>
-            <div className="text-xs text-gray-600 grid grid-cols-2 gap-y-1">
-              <div>Lead (in‑house)</div>
-              <div className="text-right">{MFG[p]?.inHouseTime || 2} w</div>
-              <div>Lead (outsourced)</div>
-              <div className="text-right">{MFG[p]?.outsourceTime || 1} w</div>
-              <div>Cost (in‑house)</div>
-              <div className="text-right">£{Number(MFG[p]?.inHouseCost || 10).toLocaleString()}</div>
-              <div>Cost (outsourced)</div>
-              <div className="text-right">£{Number(MFG[p]?.outsourceCost || 15).toLocaleString()}</div>
+          <Card key={p} className="overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 shadow-lg hover:shadow-xl transition-all duration-300">
+            <div className="bg-gradient-to-r from-slate-700 to-slate-800 p-3">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-white text-lg">{p.charAt(0).toUpperCase() + p.slice(1)}</span>
+                <Badge className="bg-emerald-600 text-white font-bold">SKU</Badge>
+              </div>
             </div>
-          </Card>
+            <div className="p-4">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+              <div className="space-y-2">
+                  <div className="flex justify-between items-center p-2 bg-blue-50 rounded-lg border border-blue-100">
+                    <span className="text-blue-700 font-medium">In-House Lead:</span>
+                    <span className="font-bold text-blue-800">{MFG[p]?.inHouseTime || 2}w</span>
+                  </div>
+                  <div className="flex justify-between items-center p-2 bg-blue-50 rounded-lg border border-blue-100">
+                    <span className="text-blue-700 font-medium">In-House Cost:</span>
+                    <span className="font-bold text-blue-800">£{Number(MFG[p]?.inHouseCost || 10).toLocaleString()}</span>
+              </div>
+            </div>
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center p-2 bg-orange-50 rounded-lg border border-orange-100">
+                    <span className="text-orange-700 font-medium">Outsourced Lead:</span>
+                    <span className="font-bold text-orange-800">{MFG[p]?.outsourceTime || 1}w</span>
+              </div>
+                  <div className="flex justify-between items-center p-2 bg-orange-50 rounded-lg border border-orange-100">
+                    <span className="text-orange-700 font-medium">Outsourced Cost:</span>
+                    <span className="font-bold text-orange-800">£{Number(MFG[p]?.outsourceCost || 15).toLocaleString()}</span>
+            </div>
+                </div>
+              </div>
+            </div>
+        </Card>
         ))}
       </div>
 
       {/* Two-column layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Left column: Planner + Info */}
-        <div className="lg:col-span-5 space-y-4">
-          <Card className="p-4">
-            <div className="font-medium mb-3">Batch Planner</div>
+        <div className="lg:col-span-5 space-y-6">
+          <Card className="overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 shadow-lg">
+            <div className="bg-gradient-to-r from-blue-600 to-blue-700 p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 bg-blue-300 rounded-full animate-pulse shadow-lg shadow-blue-300/50"></div>
+                <h3 className="font-bold text-white text-lg">Batch Planner</h3>
+              </div>
+            </div>
+            <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
                 <div className="text-xs text-gray-600 mb-1">SKU</div>
@@ -318,35 +343,67 @@ export default function Production({ gameSession, currentState }: ProductionProp
           </Card>
 
           {/* Info Panels */}
-          <Card className="p-4">
-            <div className="font-medium mb-2">Materials</div>
-            <div className="text-xs grid grid-cols-2 gap-y-1">
-              <div>On‑hand ({fabricForSku || "—"})</div>
-              <div className="text-right font-mono">{Number(rawMaterials?.[fabricForSku || ""]?.onHand || 0).toLocaleString()} u</div>
-              <div>Arrivals ≤ W{startWeek}</div>
-              <div className="text-right font-mono">{materialPurchases.reduce((s, p) => s + ((p.shipmentWeek <= startWeek) ? (p.orders || []).filter((o: any) => o.material === fabricForSku).reduce((ss: number, o: any) => ss + Number(o.quantity || 0), 0) : 0), 0).toLocaleString()} u</div>
+          <Card className="overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 shadow-lg">
+            <div className="bg-gradient-to-r from-emerald-600 to-emerald-700 p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 bg-emerald-300 rounded-full animate-pulse shadow-lg shadow-emerald-300/50"></div>
+                <h3 className="font-bold text-white text-lg">Resources & Inventory</h3>
+              </div>
             </div>
-            <Separator className="my-3" />
-            <div className="font-medium mb-2">WIP & FG</div>
-            <div className="text-xs grid grid-cols-2 gap-y-1">
-              <div>Total WIP (started)</div>
-              <div className="text-right font-mono">{scheduledBatches.filter((b) => Number(b.startWeek) <= currentWeek).reduce((s, b) => s + Number(b.quantity || 0), 0).toLocaleString()} u</div>
-              <div>Scheduled (future)</div>
-              <div className="text-right font-mono">{scheduledBatches.filter((b) => Number(b.startWeek) > currentWeek).reduce((s, b) => s + Number(b.quantity || 0), 0).toLocaleString()} u</div>
+            <div className="p-6">
+              <div className="mb-4">
+                <h4 className="font-semibold mb-3 text-emerald-700">Materials</h4>
+                <div className="text-sm grid grid-cols-2 gap-3">
+                  <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                    <div className="text-emerald-600 font-medium mb-1">On‑hand ({fabricForSku || "—"})</div>
+                    <div className="text-emerald-800 font-bold font-mono">{Number(rawMaterials?.[fabricForSku || ""]?.onHand || 0).toLocaleString()} u</div>
+                  </div>
+                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                    <div className="text-blue-600 font-medium mb-1">Arrivals ≤ W{startWeek}</div>
+                    <div className="text-blue-800 font-bold font-mono">{materialPurchases.reduce((s, p) => s + ((p.shipmentWeek <= startWeek) ? (p.orders || []).filter((o: any) => o.material === fabricForSku).reduce((ss: number, o: any) => ss + Number(o.quantity || 0), 0) : 0), 0).toLocaleString()} u</div>
+                  </div>
+                </div>
+              </div>
+              <Separator className="my-4" />
+              <div className="mb-4">
+                <h4 className="font-semibold mb-3 text-emerald-700">Work in Progress & Finished Goods</h4>
+                <div className="text-sm grid grid-cols-2 gap-3">
+                  <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
+                    <div className="text-emerald-600 font-medium mb-1">Total WIP (started)</div>
+                    <div className="text-emerald-800 font-bold font-mono">{scheduledBatches.filter((b) => Number(b.startWeek) <= currentWeek).reduce((s, b) => s + Number(b.quantity || 0), 0).toLocaleString()} u</div>
+                  </div>
+                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
+                    <div className="text-blue-600 font-medium mb-1">Scheduled (future)</div>
+                    <div className="text-blue-800 font-bold font-mono">{scheduledBatches.filter((b) => Number(b.startWeek) > currentWeek).reduce((s, b) => s + Number(b.quantity || 0), 0).toLocaleString()} u</div>
+                      </div>
+                </div>
+              </div>
             </div>
           </Card>
-        </div>
+          </div>
 
         {/* Right column: Schedule board */}
-        <div className="lg:col-span-7 space-y-4">
-          <Card className="p-4 overflow-x-auto">
-            <div className="font-medium mb-3">Production Schedule (W3–W13)</div>
-            {/* Header weeks */}
-            <div className="grid grid-cols-11 gap-2 sticky top-0 bg-white z-10 pb-1">
-              {WEEKS_ALL.map((w) => (
-                <div key={`hdr-${w}`} className="text-[11px] text-gray-600 text-center font-mono">W{w}</div>
-              ))}
+        <div className="lg:col-span-7 space-y-6">
+          <Card className="overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 border-slate-700 shadow-2xl">
+            <div className="bg-gradient-to-r from-blue-600 to-purple-600 p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 bg-cyan-400 rounded-full animate-pulse shadow-lg shadow-cyan-400/50"></div>
+                <h3 className="text-xl font-bold text-white">Production Schedule Matrix</h3>
+                <div className="text-cyan-300 text-sm font-mono">W3–W13</div>
+              </div>
             </div>
+            <div className="p-6">
+              {/* Header weeks */}
+              <div className="grid grid-cols-11 gap-3 mb-6">
+                {WEEKS_ALL.map((w) => (
+                  <div key={`hdr-${w}`} className="relative">
+                    <div className="bg-gradient-to-b from-slate-700 to-slate-800 rounded-lg p-3 text-center border border-slate-600 shadow-lg">
+                      <div className="text-cyan-300 font-bold text-sm">W{w}</div>
+                      <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-cyan-400 to-transparent mt-2 opacity-60"></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
 
             {(() => {
               // Build rung model per week
@@ -383,121 +440,265 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
               // In-house lane rendering
                   return (
-                <div className="space-y-4">
-                          <div>
-                    <div className="text-xs text-gray-600 mb-1">In‑house (capacity shared)</div>
-                    <div className="grid grid-cols-11 gap-2">
+                <div className="space-y-8">
+                  {/* In-house Capacity Lane */}
+                  <div className="relative">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/50"></div>
+                      <h4 className="text-emerald-300 font-semibold text-lg">In-House Manufacturing</h4>
+                      <div className="text-slate-400 text-sm">Shared Capacity Allocation</div>
+                    </div>
+                    <div className="grid grid-cols-11 gap-3">
                       {WEEKS_ALL.map((w) => {
                         const cap = Number(capacityByWeek[w]?.capacity || 0);
-                        const maxH = 180; // px
-                        const h = Math.max(48, Math.round((cap / maxCap) * maxH));
+                        const maxH = 200; // px
+                        const h = Math.max(60, Math.round((cap / maxCap) * maxH));
                         const rungCount = Math.max(0, rungPerWeek[w] || 0);
                         const rungs = taken[w] || [];
                         const usedCount = rungs.filter((x) => x !== null).length;
                         return (
                           <div
                             key={`ih-col-${w}`}
-                            className="border rounded p-2 flex flex-col justify-end items-center"
-                            style={{ minWidth: 88 }}
+                            className="relative group"
                             onDragOver={(e) => { if (dragId) e.preventDefault(); }}
                             onDrop={(e) => { if (dragId) { placeChain(dragId, w); setDragId(null); } }}
                           >
-                            <div className="relative mx-auto w-8" style={{ height: h }} title={`Cap ${(cap/25000)|0}×25k`}>
-                              {/* Background */}
-                              <div className="absolute inset-0 bg-gray-100 rounded" />
-                              {/* Available capacity underlay (green) full bar, red will overlay used area */}
-                              {rungCount > 0 && (
-                                <div className="absolute left-0 right-0 bg-green-300/25 rounded" style={{ bottom: 0, top: 0 }} />
-                              )}
-                              {/* Used capacity underlay (red) from bottom-up */}
-                              {rungCount > 0 && (
-                                <div className="absolute left-0 right-0 bg-red-200/60 rounded-b" style={{ bottom: 0, height: `${(usedCount/Math.max(1,rungCount))*100}%` }} />
-                              )}
-                              {rungCount > 0 && [...Array(rungCount)].map((_, i) => (
-                                <div key={i} className="absolute left-0 right-0 border-t border-gray-200" style={{ top: `${((i+1)/rungCount)*100}%` }} />
-                              ))}
-                              {/* Used rungs (red blocks) at their assigned rung positions to show chain continuity */}
-                              {rungCount > 0 && [...Array(rungCount)].map((_, r) => {
-                                const id = rungs[r];
-                                if (!id) return null;
-                                const style = { bottom: `${(r/rungCount)*100}%`, height: `${(1/rungCount)*100}%` } as React.CSSProperties;
-                                const cls = hoverId === id ? 'ring-1 ring-amber-400 shadow-[0_0_8px_rgba(245,158,11,0.85)]' : '';
-                                return (
-                                  <div
-                                    key={`used-${r}`}
-                                    className={`absolute left-0 right-0 bg-red-500 rounded-sm ${cls}`}
-                                    style={style}
-                                    onMouseEnter={() => setHoverId(id)}
-                                    onMouseLeave={() => setHoverId(null)}
-                                  />
-                                );
-                              })}
-                              {/* Batch chips on chain start */}
-                              {ihChains.filter((ch) => ch.start === w && rungOf[ch.id] !== null).map((ch) => (
-                                <div
-                                  key={`chip-${ch.id}`}
-                                  draggable
-                                  onDragStart={(e) => { setDragId(ch.id); try { e.dataTransfer.setData('text/plain', ch.id); e.dataTransfer.effectAllowed = 'move'; } catch {} }}
-                                  onDragEnd={() => setDragId(null)}
-                                  className="absolute -left-12 px-2 py-0.5 rounded bg-red-100 border border-red-300 text-[10px] font-medium cursor-grab"
-                                  style={{ bottom: `${(Number(rungOf[ch.id]!)/Math.max(1,rungCount))*100}%` }}
-                                  onMouseEnter={() => setHoverId(ch.id)}
-                                  onMouseLeave={() => setHoverId(null)}
-                                >
-                                  {ch.product}
+                            {/* Capacity Container with Futuristic Design */}
+                            <div className="relative bg-gradient-to-b from-slate-800 to-slate-900 rounded-xl border border-slate-600 shadow-2xl overflow-hidden transition-all duration-300 hover:shadow-cyan-500/20 hover:border-cyan-500/50">
+                              {/* Capacity Visualization */}
+                              <div className="relative p-4 flex flex-col justify-end items-center" style={{ minHeight: h + 40 }}>
+                                {/* Background Grid Effect */}
+                                <div className="absolute inset-0 opacity-10">
+                                  <div className="w-full h-full bg-gradient-to-t from-cyan-500/20 via-transparent to-transparent"></div>
+                                  {[...Array(5)].map((_, i) => (
+                                    <div key={i} className="absolute w-full h-px bg-cyan-400/20" style={{ bottom: `${(i+1) * 20}%` }}></div>
+                                  ))}
                                 </div>
-                              ))}
+                                
+                                {/* Capacity Bar */}
+                                <div className="relative w-10 mx-auto rounded-lg overflow-hidden border border-slate-500/30" style={{ height: h }} title={`Capacity: ${(cap/25000)|0} × 25k units`}>
+                                  {/* Background Gradient */}
+                                  <div className="absolute inset-0 bg-gradient-to-t from-slate-700 via-slate-600 to-slate-500"></div>
+                                  
+                                  {/* Available Capacity (Emerald glow) */}
+                                  {rungCount > 0 && (
+                                    <div className="absolute left-0 right-0 bg-gradient-to-t from-emerald-400/30 via-emerald-500/20 to-emerald-300/30 shadow-inner" 
+                                         style={{ bottom: 0, top: 0 }}>
+                                      <div className="absolute inset-0 bg-gradient-to-t from-emerald-400/10 to-transparent animate-pulse"></div>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Used Capacity (Red glow with better visibility) */}
+                                  {rungCount > 0 && usedCount > 0 && (
+                                    <div className="absolute left-0 right-0 bg-gradient-to-t from-red-500/80 via-red-400/60 to-red-500/40 shadow-lg rounded-b" 
+                                         style={{ bottom: 0, height: `${(usedCount/Math.max(1,rungCount))*100}%` }}>
+                                      <div className="absolute inset-0 bg-gradient-to-t from-red-600/30 to-transparent"></div>
+                                      <div className="absolute inset-0 shadow-[inset_0_0_10px_rgba(239,68,68,0.3)]"></div>
+                                    </div>
+                                  )}
+                                  
+                                  {/* Rung Separators with Glow */}
+                                  {rungCount > 1 && [...Array(rungCount - 1)].map((_, i) => (
+                                    <div key={i} className="absolute left-0 right-0 h-px bg-gradient-to-r from-transparent via-cyan-400/60 to-transparent shadow-lg shadow-cyan-400/30" 
+                                         style={{ bottom: `${((i+1)/rungCount)*100}%` }}>
+                                      <div className="absolute inset-0 bg-cyan-400/20 blur-sm"></div>
+                                    </div>
+                                  ))}
+                                  
+                                  {/* Used Batch Blocks with Enhanced Styling */}
+                                  {rungCount > 0 && [...Array(rungCount)].map((_, r) => {
+                                    const id = rungs[r];
+                                    if (!id) return null;
+                                    const style = { bottom: `${(r/rungCount)*100}%`, height: `${(1/rungCount)*100}%` } as React.CSSProperties;
+                                    const isHovered = hoverId === id;
+                                    return (
+                                      <div
+                                        key={`used-${r}`}
+                                        className={`absolute left-0 right-0 transition-all duration-300 rounded-sm ${
+                                          isHovered 
+                                            ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] scale-105 z-10' 
+                                            : 'bg-gradient-to-t from-red-600 via-red-500 to-red-400 shadow-lg shadow-red-500/30'
+                                        }`}
+                                        style={style}
+                                        onMouseEnter={() => setHoverId(id)}
+                                        onMouseLeave={() => setHoverId(null)}
+                                      >
+                                        <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
+                                        {isHovered && (
+                                          <div className="absolute inset-0 bg-gradient-to-t from-amber-400/20 to-amber-300/10 animate-pulse rounded-sm"></div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                                
+                                {/* Capacity Info */}
+                                <div className="mt-3 text-center">
+                                  <div className="text-xs text-cyan-300 font-mono">{(cap/25000)|0}×25k</div>
+                                  <div className="text-xs text-slate-400">units</div>
+                                </div>
+                              </div>
+                              
+                              {/* Drag Target Indicator */}
+                              {dragId && (
+                                <div className="absolute inset-0 bg-cyan-400/10 border-2 border-dashed border-cyan-400/50 rounded-xl animate-pulse"></div>
+                              )}
                             </div>
+                            
+                            {/* Batch Chips with Modern Design */}
+                            {ihChains.filter((ch) => ch.start === w && rungOf[ch.id] !== null).map((ch) => (
+                              <div
+                                key={`chip-${ch.id}`}
+                                draggable
+                                onDragStart={(e) => { setDragId(ch.id); try { e.dataTransfer.setData('text/plain', ch.id); e.dataTransfer.effectAllowed = 'move'; } catch {} }}
+                                onDragEnd={() => setDragId(null)}
+                                className={`absolute -left-16 px-3 py-1.5 rounded-lg text-xs font-bold cursor-grab transition-all duration-300 z-20 ${
+                                  hoverId === ch.id 
+                                    ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-lg shadow-amber-500/50 scale-110' 
+                                    : 'bg-gradient-to-r from-red-500 to-red-400 text-white shadow-lg shadow-red-500/30 hover:scale-105'
+                                }`}
+                                style={{ bottom: `${(Number(rungOf[ch.id]!)/Math.max(1,rungCount))*100 + 10}%` }}
+                                onMouseEnter={() => setHoverId(ch.id)}
+                                onMouseLeave={() => setHoverId(null)}
+                              >
+                                {ch.product.toUpperCase()}
+                                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-white/10 rounded-lg"></div>
+                              </div>
+                            ))}
                           </div>
                         );
                       })}
                         </div>
                       </div>
                       
-                        <div>
-                    <div className="text-xs text-gray-600 mb-1">Outsourced (uncapped)</div>
-                    <div className="grid grid-cols-11 gap-2">
-                      {WEEKS_ALL.map((w) => (
-                        <div key={`os-col-${w}`} className="border rounded p-2" style={{ minWidth: 88 }}
-                          onDragOver={(e) => { if (dragId) e.preventDefault(); }}
-                          onDrop={(e) => { if (dragId) { placeChain(dragId, w); setDragId(null); } }}
-                        >
-                          <div className="space-y-1">
-                            {scheduledBatches.filter((b) => b.method === 'outsourced' && Number(b.startWeek) === w).map((b) => (
-                              <div key={b.id} className="text-[10px] px-2 py-1 rounded border border-gray-400 flex items-center justify-between">
-                                <span>{b.product}</span>
-                                <button className="text-red-600" onClick={() => removeBatch.mutate(b.id)}>Remove</button>
+                  {/* Outsourced Manufacturing Lane */}
+                  <div className="relative">
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse shadow-lg shadow-orange-400/50"></div>
+                      <h4 className="text-orange-300 font-semibold text-lg">Outsourced Manufacturing</h4>
+                      <div className="text-slate-400 text-sm">Unlimited Capacity</div>
+                    </div>
+                    <div className="grid grid-cols-11 gap-3">
+                      {WEEKS_ALL.map((w) => {
+                        const outsourcedBatches = scheduledBatches.filter((b) => b.method === 'outsourced' && Number(b.startWeek) === w);
+                        return (
+                          <div key={`os-col-${w}`} 
+                               className="relative group"
+                               onDragOver={(e) => { if (dragId) e.preventDefault(); }}
+                               onDrop={(e) => { if (dragId) { placeChain(dragId, w); setDragId(null); } }}
+                          >
+                            {/* Outsourced Container */}
+                            <div className="relative bg-gradient-to-b from-slate-800 to-slate-900 rounded-xl border border-slate-600 shadow-2xl overflow-hidden transition-all duration-300 hover:shadow-orange-500/20 hover:border-orange-500/50 min-h-32">
+                              {/* Background Pattern */}
+                              <div className="absolute inset-0 opacity-5">
+                                <div className="w-full h-full bg-gradient-to-t from-orange-500/20 via-transparent to-transparent"></div>
+                                <div className="absolute inset-0 bg-[repeating-linear-gradient(45deg,transparent,transparent_10px,orange_10px,orange_11px)]"></div>
+                              </div>
+                              
+                              <div className="relative p-4 min-h-28">
+                                {outsourcedBatches.length === 0 ? (
+                                  /* Empty State */
+                                  <div className="flex flex-col items-center justify-center h-full">
+                                    <div className="w-6 h-6 border-2 border-dashed border-slate-500 rounded-lg mb-2"></div>
+                                    <div className="text-xs text-slate-500">Available</div>
+                                  </div>
+                                ) : (
+                                  /* Batch Cards */
+                                  <div className="space-y-2">
+                                    {outsourcedBatches.map((b) => (
+                                      <div key={b.id} 
+                                           className="group/batch relative bg-gradient-to-r from-orange-500/80 to-orange-400/80 rounded-lg p-2 text-white shadow-lg shadow-orange-500/30 transition-all duration-300 hover:scale-105 hover:shadow-orange-400/50">
+                                        <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-white/10 rounded-lg"></div>
+                                        <div className="relative flex items-center justify-between">
+                                          <span className="text-xs font-bold">{b.product.toUpperCase()}</span>
+                                          <button 
+                                            className="opacity-0 group-hover/batch:opacity-100 text-white hover:text-red-200 transition-all duration-200 text-xs bg-red-500/50 hover:bg-red-500/80 rounded px-1.5 py-0.5"
+                                            onClick={() => removeBatch.mutate(b.id)}
+                                          >
+                                            ×
+                                          </button>
                         </div>
-                            ))}
+                                        <div className="text-xs text-orange-100 mt-1">{Number(b.quantity || 0).toLocaleString()} units</div>
                         </div>
+                                    ))}
                         </div>
-                      ))}
+                                )}
                         </div>
+                              
+                              {/* Drag Target Indicator */}
+                              {dragId && (
+                                <div className="absolute inset-0 bg-orange-400/10 border-2 border-dashed border-orange-400/50 rounded-xl animate-pulse"></div>
+                              )}
                       </div>
                     </div>
                   );
+                })}
+                    </div>
+                  </div>
+                </div>
+              );
             })()}
+            </div>
           </Card>
 
           {/* Scheduled list (compact) */}
-          <Card className="p-4">
-            <div className="font-medium mb-2">All Batches</div>
+          <Card className="overflow-hidden bg-gradient-to-br from-slate-50 to-slate-100 border-slate-200 shadow-lg">
+            <div className="bg-gradient-to-r from-purple-600 to-purple-700 p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-2 h-2 bg-purple-300 rounded-full animate-pulse shadow-lg shadow-purple-300/50"></div>
+                <h3 className="font-bold text-white text-lg">Production Queue</h3>
+              </div>
+            </div>
+            <div className="p-6">
             {scheduledBatches.length === 0 ? (
-              <div className="text-sm text-gray-500">No batches scheduled.</div>
+              <div className="text-center py-8">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center">
+                  <div className="w-8 h-8 border-2 border-dashed border-purple-400 rounded-lg"></div>
+                </div>
+                <div className="text-gray-500 font-medium">No batches scheduled</div>
+                <div className="text-xs text-gray-400 mt-1">Use the planner above to schedule production</div>
+              </div>
             ) : (
-              <div className="grid grid-cols-1 gap-2 text-sm">
+              <div className="space-y-3">
                 {scheduledBatches.map((b) => (
-                  <div key={b.id} className="border rounded p-2 grid grid-cols-6 gap-2 items-center">
-                    <div className="text-xs"><Badge variant={b.method === 'inhouse' ? 'default' : 'secondary'}>{b.method === 'inhouse' ? 'IH' : 'OS'}</Badge></div>
-                    <div>{b.product}</div>
-                    <div>Start W{b.startWeek}</div>
-                    <div>Qty {Number(b.quantity || 0).toLocaleString()}</div>
-                    <div className="text-right font-mono text-xs">£{getUnitCost(b.product, b.method).toLocaleString()}/u</div>
-                    <div className="text-right"><Button variant="outline" size="sm" onClick={() => removeBatch.mutate(b.id)}>Remove</Button></div>
+                  <div key={b.id} className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
+                    <div className="p-4">
+                      <div className="grid grid-cols-6 gap-4 items-center">
+                        <div>
+                          <Badge 
+                            className={`font-bold ${
+                              b.method === 'inhouse' 
+                                ? 'bg-gradient-to-r from-blue-600 to-blue-700 text-white' 
+                                : 'bg-gradient-to-r from-orange-600 to-orange-700 text-white'
+                            }`}
+                          >
+                            {b.method === 'inhouse' ? 'In-House' : 'Outsourced'}
+                          </Badge>
+                        </div>
+                        <div className="font-semibold text-slate-700">{b.product.charAt(0).toUpperCase() + b.product.slice(1)}</div>
+                        <div className="text-slate-600">Start <span className="font-mono font-bold">W{b.startWeek}</span></div>
+                        <div className="text-slate-600">Qty <span className="font-mono font-bold">{Number(b.quantity || 0).toLocaleString()}</span></div>
+                        <div className="text-right">
+                          <div className="text-xs text-slate-500">Cost per unit</div>
+                          <div className="font-mono font-bold text-slate-700">£{getUnitCost(b.product, b.method).toLocaleString()}</div>
+                        </div>
+                        <div className="text-right">
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => removeBatch.mutate(b.id)}
+                            className="hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition-colors"
+                          >
+                            Remove
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                 ))}
               </div>
             )}
+            </div>
           </Card>
         </div>
           </div>
