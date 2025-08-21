@@ -174,28 +174,46 @@ export default function Production({ gameSession, currentState }: ProductionProp
   });
 
   // Drag-n-drop utils
-  const placeChain = async (chainId: string, newStart: number) => {
+  const placeChain = async (
+    chainId: string,
+    newStart: number,
+    targetMethod?: Method,
+    targetRung?: number
+  ) => {
     const moving = scheduledBatches.find((b) => String(b.id) === String(chainId));
-    if (!moving) return;
-    const lead = getLead(moving.product, moving.method);
-    if (moving.method !== 'inhouse') {
-      // Outsourced: just change start within window
-      if (newStart < currentWeek + 1 || newStart > 10) return;
-      const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart } : b));
+    if (!moving) return false;
+    const finalMethod: Method = targetMethod || (moving.method as Method);
+
+    // Validate start week window (next week..W10)
+    if (newStart < currentWeek + 1 || newStart > 10) {
+      toast({ title: 'Invalid start', description: 'Batches can start from next week through W10 only.', variant: 'destructive' });
+      return false;
+    }
+
+    // Outsourced: capacity is uncapped, single week
+    if (finalMethod === 'outsourced') {
+      const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart, method: 'outsourced' } : b));
       await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { productionSchedule: { batches: next } });
       queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
-          return;
+      return true;
     }
-    // In-house: validate rung availability across span (no reflow of other chains)
-    // Rebuild taken map excluding the moving chain
+
+    // In-house: validate capacity across span and optional target rung
+    const lead = getLead(moving.product, 'inhouse');
+    if (newStart + lead - 1 > 13) {
+      toast({ title: 'Span exceeds season', description: 'Chain cannot extend beyond W13.', variant: 'destructive' });
+      return false;
+    }
+
+    // Build occupancy excluding the moving chain
     const chains = scheduledBatches
       .filter((b) => b.method === 'inhouse' && b.id !== moving.id)
       .map((b) => ({ id: b.id, product: b.product, start: Number(b.startWeek), span: getLead(b.product, 'inhouse') }));
     const takenLocal: Record<number, (string | null)[]> = {};
     WEEKS_ALL.forEach((w) => { takenLocal[w] = Array.from({ length: Math.max(0, Math.floor((capacityByWeek[w]?.capacity || 0)/STANDARD_BATCH_UNITS)) }, () => null); });
     for (const ch of chains) {
-      // place the existing chain on the lowest rung that is free across its span (greedy)
       const maxR = takenLocal[WEEKS_ALL[0]].length || 0;
+      // place at first available rung
       let assigned: number | null = null;
       for (let r = 0; r < maxR; r++) {
         let ok = true;
@@ -208,23 +226,35 @@ export default function Production({ gameSession, currentState }: ProductionProp
         for (let w = ch.start; w < ch.start + ch.span; w++) takenLocal[w][assigned] = ch.id;
       }
     }
-    // Try to place moving chain at the lowest rung available across its new span
-    const lowestRungs = Math.min(...WEEKS_ALL.map((w) => (takenLocal[w]?.length ?? 0)));
-    let assigned: number | null = null;
-    for (let r = 0; r < lowestRungs; r++) {
-      let ok = true;
+
+    // Try to place at target rung first (if provided)
+    const tryPlaceAtRung = (r: number): boolean => {
       for (let w = newStart; w < newStart + lead; w++) {
-        if (!takenLocal[w] || r >= takenLocal[w].length || takenLocal[w][r] !== null) { ok = false; break; }
+        if (!takenLocal[w] || r >= takenLocal[w].length || takenLocal[w][r] !== null) return false;
       }
-      if (ok) { assigned = r; break; }
+      return true;
+    };
+
+    let assigned: number | null = null;
+    const maxR = Math.min(...WEEKS_ALL.map((w) => (takenLocal[w]?.length ?? 0)));
+    if (typeof targetRung === 'number' && targetRung >= 0) {
+      if (tryPlaceAtRung(targetRung)) assigned = targetRung;
+    }
+    // Fallback to first available rung
+    if (assigned === null) {
+      for (let r = 0; r < maxR; r++) {
+        if (tryPlaceAtRung(r)) { assigned = r; break; }
+      }
     }
     if (assigned === null) {
       toast({ title: 'Overbooked', description: 'No free 25k rung across the full span.', variant: 'destructive' });
-      return;
+      return false;
     }
-    const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart } : b));
+
+    const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart, method: 'inhouse' } : b));
     await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { productionSchedule: { batches: next } });
     queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
+    return true;
   };
 
   const formatUnits = (units: number) => {
@@ -251,35 +281,38 @@ export default function Production({ gameSession, currentState }: ProductionProp
   const handleDragOver = (event: React.DragEvent, week: number, method: 'inhouse' | 'outsourced') => {
     if (!dragId) return;
     event.preventDefault();
-    setDragPreview({ week, method });
+    // Compute hovered rung based on mouse position inside the bar
+    let targetRung: number | undefined;
+    const container = (event.currentTarget as HTMLElement).querySelector('[data-capacity-bar]') as HTMLElement | null;
+    if (container) {
+      const rect = container.getBoundingClientRect();
+      const y = event.clientY - rect.top; // 0 .. height
+      const BAR_HEIGHT = rect.height;
+      // Use same rung layout as renderer
+      const RUNG_GAP = 2;
+      const RUNG_TOP_BOTTOM_MARGIN = 1;
+      const maxRungsAllWeeks = Math.max(...WEEKS_ALL.map((w) => Math.floor((capacityByWeek[w]?.capacity || 0) / STANDARD_BATCH_UNITS)) , 1);
+      const usableHeight = BAR_HEIGHT - 2 * RUNG_TOP_BOTTOM_MARGIN;
+      const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
+      const clampedY = Math.max(RUNG_TOP_BOTTOM_MARGIN, Math.min(BAR_HEIGHT - RUNG_TOP_BOTTOM_MARGIN, y));
+      const relativeY = clampedY - RUNG_TOP_BOTTOM_MARGIN;
+      const idx = Math.floor(relativeY / (rungHeight + RUNG_GAP));
+      targetRung = Math.max(0, Math.min(maxRungsAllWeeks - 1, idx));
+    }
+    setDragPreview({ week, method, targetRung });
   };
 
   const handleDrop = async (event: React.DragEvent, week: number, method: 'inhouse' | 'outsourced') => {
     event.preventDefault();
     if (!dragId || !draggedBatch) return;
     
-    try {
-      // Create updated batch with new method and start week
-      const updatedBatch = {
-        ...draggedBatch,
-        startWeek: week,
-        method: method
-      };
-      
-      const next = scheduledBatches.map((b) => (b.id === draggedBatch.id ? updatedBatch : b));
-      
-      await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { 
-        productionSchedule: { batches: next } 
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
-      toast({ 
-        title: 'Batch moved', 
-        description: `Moved to ${method === 'inhouse' ? 'In-House' : 'Outsourced'} manufacturing in W${week}` 
-      });
-    } catch (error) {
-      toast({ title: 'Move failed', description: 'Could not move batch', variant: 'destructive' });
+    // Use placement helper with validation
+    const success = await placeChain(dragId, week, method, dragPreview?.targetRung);
+    if (!success) {
+      // Revert in UI by clearing preview (batch snaps back visually already)
+      clearDrag();
+      return;
     }
-    
     clearDrag();
   };
 
@@ -539,7 +572,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                 </div>
                                 
                                 {/* Capacity Bar */}
-                                <div className="relative w-full mx-auto rounded-lg overflow-hidden border border-slate-300/60" style={{ height: h }} title={`Capacity: ${(cap/25000)|0} × 25k units`}>
+                                <div className="relative w-full mx-auto rounded-lg overflow-hidden border border-slate-300/60" data-capacity-bar style={{ height: h }} title={`Capacity: ${(cap/25000)|0} × 25k units`}>
                                   {/* Background Gradient */}
                                   <div className="absolute inset-0 bg-gradient-to-t from-slate-200 via-slate-100 to-white"></div>
                                   
