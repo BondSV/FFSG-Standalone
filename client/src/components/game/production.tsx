@@ -242,14 +242,24 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
       {/* Production Capabilities Overview */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-        {(["jacket", "dress", "pants"] as const).map((p) => (
-          <Card key={p} className="overflow-hidden bg-white border-slate-200 shadow-md hover:shadow-lg transition-all duration-300">
-            <div className="bg-white border-b border-slate-200 p-3">
-              <div className="flex items-center justify-between">
-                <span className="font-bold text-slate-800 text-lg">{p.charAt(0).toUpperCase() + p.slice(1)}</span>
-                <Badge className="bg-emerald-600 text-white font-bold">SKU</Badge>
+        {(["jacket", "dress", "pants"] as const).map((p) => {
+          const productNames = {
+            jacket: "Vintage Denim Jacket (VDJ)",
+            dress: "Floral Print Dress (FPD)", 
+            pants: "Corduroy Pants (CP)"
+          };
+          const headerColors = {
+            jacket: "bg-gradient-to-r from-red-600 to-red-700",
+            dress: "bg-gradient-to-r from-purple-600 to-purple-700",
+            pants: "bg-gradient-to-r from-blue-800 to-blue-900"
+          };
+          return (
+            <Card key={p} className="overflow-hidden bg-white border-slate-200 shadow-md hover:shadow-lg transition-all duration-300">
+              <div className={`${headerColors[p]} p-3`}>
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-white text-lg">{productNames[p]}</span>
+                </div>
               </div>
-            </div>
             <div className="p-4">
               <div className="grid grid-cols-2 gap-3 text-sm">
               <div className="space-y-2">
@@ -274,8 +284,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 </div>
               </div>
             </div>
-        </Card>
-        ))}
+          </Card>
+          );
+        })}
       </div>
 
       {/* Two-column layout */}
@@ -503,13 +514,32 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     const bottomPx = RUNG_TOP_BOTTOM_MARGIN + r * (rungHeight + RUNG_GAP);
                                     const style = { bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN } as React.CSSProperties;
                                     const isHovered = hoverId === id;
+                                    
+                                    // Find the batch to get product type
+                                    const batch = scheduledBatches.find(b => b.id === id);
+                                    const product = batch?.product || 'jacket';
+                                    
+                                    // Color gradients by product
+                                    const productColors = {
+                                      jacket: 'bg-gradient-to-t from-red-600 via-red-500 to-red-400',
+                                      dress: 'bg-gradient-to-t from-purple-600 via-purple-500 to-purple-400', 
+                                      pants: 'bg-gradient-to-t from-blue-800 via-blue-700 to-blue-600'
+                                    };
+                                    
+                                    // Product codes
+                                    const productCodes = {
+                                      jacket: 'VDJ',
+                                      dress: 'FPD',
+                                      pants: 'CP'
+                                    };
+                                    
                                     return (
                                       <div
                                         key={`used-${r}`}
-                                        className={`absolute transition-all duration-300 rounded-sm ${
+                                        className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center ${
                                           isHovered 
                                             ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] scale-105 z-10' 
-                                            : 'bg-gradient-to-t from-red-600 via-red-500 to-red-400 shadow-lg shadow-red-500/30'
+                                            : productColors[product] + ' shadow-lg'
                                         }`}
                                         style={style}
                                         onMouseEnter={() => setHoverId(id)}
@@ -519,6 +549,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                         {isHovered && (
                                           <div className="absolute inset-0 bg-gradient-to-t from-amber-400/20 to-amber-300/10 animate-pulse rounded-sm"></div>
                                         )}
+                                        <span className="relative text-black font-bold text-xs leading-none select-none">
+                                          {productCodes[product]}
+                                        </span>
                                       </div>
                                     );
                                   })}
@@ -533,26 +566,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               )}
                             </div>
                             
-                            {/* Batch Chips with Modern Design */}
-                            {ihChains.filter((ch) => ch.start === w && rungOf[ch.id] !== null).map((ch) => (
-                              <div
-                                key={`chip-${ch.id}`}
-                                draggable
-                                onDragStart={(e) => { setDragId(ch.id); try { e.dataTransfer.setData('text/plain', ch.id); e.dataTransfer.effectAllowed = 'move'; } catch {} }}
-                                onDragEnd={() => setDragId(null)}
-                                className={`absolute -left-16 px-3 py-1.5 rounded-lg text-xs font-bold cursor-grab transition-all duration-300 z-20 ${
-                                  hoverId === ch.id 
-                                    ? 'bg-gradient-to-r from-amber-500 to-amber-400 text-white shadow-lg shadow-amber-500/50 scale-110' 
-                                    : 'bg-gradient-to-r from-red-500 to-red-400 text-white shadow-lg shadow-red-500/30 hover:scale-105'
-                                }`}
-                                style={{ bottom: `${(Number(rungOf[ch.id]!)/Math.max(1,rungCount))*100 + 10}%` }}
-                                onMouseEnter={() => setHoverId(ch.id)}
-                                onMouseLeave={() => setHoverId(null)}
-                              >
-                                {ch.product.toUpperCase()}
-                                <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-white/10 rounded-lg"></div>
-                              </div>
-                            ))}
+
                           </div>
                         );
                       })}
