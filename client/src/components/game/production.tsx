@@ -485,9 +485,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   {/* Free rung backgrounds (exactly rungCount) */}
                                   {(() => {
                                     const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
-                                    const rungHeight = Math.floor((usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks);
+                                    const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
                                     return [...Array(rungCount)].map((_, r) => {
-                                      const bottomPx = RUNG_TOP_BOTTOM_MARGIN + Math.floor(r * (rungHeight + RUNG_GAP));
+                                      const bottomPx = RUNG_TOP_BOTTOM_MARGIN + r * (rungHeight + RUNG_GAP);
                                       return (
                                         <div key={`bg-${r}`} className="absolute rounded-sm bg-emerald-200/35"
                                              style={{ bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN }} />
@@ -499,8 +499,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   {rungCount > 0 && rungs.map((id, r) => {
                                     if (!id) return null;
                                     const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
-                                    const rungHeight = Math.floor((usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks);
-                                    const bottomPx = RUNG_TOP_BOTTOM_MARGIN + Math.floor(r * (rungHeight + RUNG_GAP));
+                                    const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
+                                    const bottomPx = RUNG_TOP_BOTTOM_MARGIN + r * (rungHeight + RUNG_GAP);
                                     const style = { bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN } as React.CSSProperties;
                                     const isHovered = hoverId === id;
                                     return (
