@@ -586,7 +586,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                       const isNA = availableUnits === 0;
                       return (
                         <div key={`mid-hdr-${w}`} className="relative">
-                          <div className="bg-white rounded-lg p-2 text-center border border-slate-200 shadow-sm min-h-[48px] flex flex-col justify-center">
+                          <div className="bg-white rounded-lg p-2 text-center border border-slate-200 shadow-sm h-[48px] flex flex-col justify-center">
                             <div className={`text-[11px] font-medium mb-[2px] ${isNA ? 'text-red-700' : 'text-emerald-700'}`}>
                               {formatUnits(availableUnits)}
                             </div>
@@ -608,7 +608,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
                       {WEEKS_ALL.map((w) => {
                         const outsourcedBatches = scheduledBatches.filter((b) => b.method === 'outsourced' && Number(b.startWeek) === w);
                         const slotCount = Math.max(3, outsourcedBatches.length);
-                        const slotHeight = 24; // px per slot
+                        
+                        // Use same rung height calculation as In-House
+                        const usableHeight = BAR_HEIGHT - 2 * RUNG_TOP_BOTTOM_MARGIN;
+                        const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
+                        const slotHeight = rungHeight; // Match In-House rung height exactly
                         const slotGap = 5; // px between slots
                         const barPadding = 8; // px top/bottom
                         const totalHeight = barPadding * 2 + slotCount * slotHeight + (slotCount - 1) * slotGap;
@@ -635,8 +639,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   return (
                                     <div key={`slot-${index}`} className="absolute left-1 right-1 rounded-sm"
                                          style={{ bottom: bottomPx, height: slotHeight }}>
-                                      {/* Dashed outline */}
-                                      <div className="absolute inset-0 border-2 border-dashed border-slate-500 rounded-sm"></div>
+                                      {/* Dashed outline - less contrasty */}
+                                      <div className="absolute inset-0 border-2 border-dashed border-slate-300 rounded-sm"></div>
                                       
                                       {/* Batch content if exists */}
                                       {batch && (() => {
@@ -653,12 +657,17 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                         };
                                         const isHovered = hoverId === batch.id;
                                         
+                                        // Calculate sizing to match In-House rungs exactly
+                                        const normalStyle = { bottom: 3, height: slotHeight - 6, left: 3, right: 3 } as React.CSSProperties;
+                                        const hoverStyle = { bottom: 1, height: slotHeight - 2, left: 1, right: 1 } as React.CSSProperties;
+                                        
                                         return (
-                                          <div className={`absolute inset-[3px] rounded-sm flex items-center justify-center transition-all duration-300 ${
+                                          <div className={`absolute rounded-sm flex items-center justify-center transition-all duration-300 ${
                                               isHovered 
-                                                ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] scale-105 z-10' 
+                                                ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] z-10' 
                                                 : productColors[product] + ' shadow-lg'
                                             }`}
+                                            style={isHovered ? hoverStyle : normalStyle}
                                             onMouseEnter={() => setHoverId(batch.id)}
                                             onMouseLeave={() => setHoverId(null)}>
                                             <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
@@ -749,8 +758,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 ))}
               </div>
             )}
-            </div>
-          </Card>
+          </div>
+      </Card>
         </div>
           </div>
     </div>
