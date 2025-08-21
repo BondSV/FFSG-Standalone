@@ -228,8 +228,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
   const formatUnits = (units: number) => {
     const u = Math.max(0, Math.round(units));
     if (u === 0) return 'N/A';
-    if (u >= 1000) return `${Math.round(u / 1000)}k units`;
-    return `${u} units`;
+    if (u >= 1000) return `${Math.round(u / 1000)}k`;
+    return `${u}`;
   };
 
   // UI
