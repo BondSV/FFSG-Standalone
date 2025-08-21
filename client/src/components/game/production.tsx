@@ -73,6 +73,63 @@ export default function Production({ gameSession, currentState }: ProductionProp
     return Math.max(0, onHand + arriving - consumed);
   };
 
+  // Occupancy helpers for in-house rungs
+  const computeTakenExcluding = (excludeId?: string) => {
+    const takenLocal: Record<number, (string | null)[]> = {};
+    WEEKS_ALL.forEach((w) => {
+      const rungs = Math.max(0, Math.floor(((capacityByWeek[w]?.capacity || 0)) / STANDARD_BATCH_UNITS));
+      takenLocal[w] = Array.from({ length: rungs }, () => null);
+    });
+
+    const chains = scheduledBatches
+      .filter((b) => b.method === 'inhouse' && (!excludeId || b.id !== excludeId))
+      .map((b) => ({ id: b.id, product: b.product, start: Number(b.startWeek), span: getLead(b.product, 'inhouse'), rung: typeof b.rung === 'number' ? Number(b.rung) : null }));
+
+    // First, attempt to place each chain at its stored rung if valid across span
+    for (const ch of chains) {
+      const totalRungs = takenLocal[WEEKS_ALL[0]].length || 0;
+      let placed = false;
+      if (ch.rung !== null && ch.rung >= 0 && ch.rung < totalRungs) {
+        let ok = true;
+        for (let w = ch.start; w < ch.start + ch.span; w++) {
+          if (!takenLocal[w] || ch.rung >= takenLocal[w].length || takenLocal[w][ch.rung] !== null) { ok = false; break; }
+        }
+        if (ok) {
+          for (let w = ch.start; w < ch.start + ch.span; w++) takenLocal[w][ch.rung] = ch.id;
+          placed = true;
+        }
+      }
+      if (placed) continue;
+
+      // Fallback: first free rung across span
+      const maxR = takenLocal[WEEKS_ALL[0]].length || 0;
+      for (let r = 0; r < maxR; r++) {
+        let ok = true;
+        for (let w = ch.start; w < ch.start + ch.span; w++) {
+          if (!takenLocal[w] || r >= takenLocal[w].length || takenLocal[w][r] !== null) { ok = false; break; }
+        }
+        if (ok) {
+          for (let w = ch.start; w < ch.start + ch.span; w++) takenLocal[w][r] = ch.id;
+          break;
+        }
+      }
+    }
+    return takenLocal;
+  };
+
+  const findFirstFreeRung = (start: number, span: number, excludeId?: string): number | null => {
+    const takenLocal = computeTakenExcluding(excludeId);
+    const maxR = takenLocal[WEEKS_ALL[0]].length || 0;
+    for (let r = 0; r < maxR; r++) {
+      let ok = true;
+      for (let w = start; w < start + span; w++) {
+        if (!takenLocal[w] || r >= takenLocal[w].length || takenLocal[w][r] !== null) { ok = false; break; }
+      }
+      if (ok) return r;
+    }
+    return null;
+  };
+
   // Capacity usage for in-house lane (W3..W13)
   const capacityByWeek = useMemo(() => {
     const map: Record<number, { capacity: number; used: number }> = {};
@@ -205,53 +262,27 @@ export default function Production({ gameSession, currentState }: ProductionProp
       return false;
     }
 
-    // Build occupancy excluding the moving chain
-    const chains = scheduledBatches
-      .filter((b) => b.method === 'inhouse' && b.id !== moving.id)
-      .map((b) => ({ id: b.id, product: b.product, start: Number(b.startWeek), span: getLead(b.product, 'inhouse') }));
-    const takenLocal: Record<number, (string | null)[]> = {};
-    WEEKS_ALL.forEach((w) => { takenLocal[w] = Array.from({ length: Math.max(0, Math.floor((capacityByWeek[w]?.capacity || 0)/STANDARD_BATCH_UNITS)) }, () => null); });
-    for (const ch of chains) {
-      const maxR = takenLocal[WEEKS_ALL[0]].length || 0;
-      // place at first available rung
-      let assigned: number | null = null;
-      for (let r = 0; r < maxR; r++) {
-        let ok = true;
-        for (let w = ch.start; w < ch.start + ch.span; w++) {
-          if (!takenLocal[w] || r >= takenLocal[w].length || takenLocal[w][r] !== null) { ok = false; break; }
-        }
-        if (ok) { assigned = r; break; }
-      }
-      if (assigned !== null) {
-        for (let w = ch.start; w < ch.start + ch.span; w++) takenLocal[w][assigned] = ch.id;
-      }
-    }
-
-    // Try to place at target rung first (if provided)
-    const tryPlaceAtRung = (r: number): boolean => {
-      for (let w = newStart; w < newStart + lead; w++) {
-        if (!takenLocal[w] || r >= takenLocal[w].length || takenLocal[w][r] !== null) return false;
-      }
-      return true;
-    };
-
-    let assigned: number | null = null;
-    const maxR = Math.min(...WEEKS_ALL.map((w) => (takenLocal[w]?.length ?? 0)));
-    if (typeof targetRung === 'number' && targetRung >= 0) {
-      if (tryPlaceAtRung(targetRung)) assigned = targetRung;
-    }
-    // Fallback to first available rung
-    if (assigned === null) {
-      for (let r = 0; r < maxR; r++) {
-        if (tryPlaceAtRung(r)) { assigned = r; break; }
-      }
-    }
-    if (assigned === null) {
+    // Build occupancy excluding the moving chain and honor requested rung
+    const takenLocal = computeTakenExcluding(moving.id);
+    const totalRungs = takenLocal[WEEKS_ALL[0]].length || 0;
+    const desiredRung = typeof targetRung === 'number' ? Math.max(0, Math.min(totalRungs - 1, targetRung)) : findFirstFreeRung(newStart, lead, moving.id);
+    if (desiredRung === null || desiredRung === undefined) {
       toast({ title: 'Overbooked', description: 'No free 25k rung across the full span.', variant: 'destructive' });
       return false;
     }
+    for (let w = newStart; w < newStart + lead; w++) {
+      if (!takenLocal[w] || desiredRung >= takenLocal[w].length || takenLocal[w][desiredRung] !== null) {
+        toast({ title: 'Overbooked', description: 'Selected rung is not free across the full span.', variant: 'destructive' });
+        return false;
+      }
+    }
 
-    const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart, method: 'inhouse' } : b));
+    // Persist with explicit rung to prevent auto-reallocation
+    const next = scheduledBatches.map((b) => (
+      b.id === moving.id 
+        ? { ...b, startWeek: newStart, method: 'inhouse', rung: desiredRung }
+        : b
+    ));
     await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { productionSchedule: { batches: next } });
     queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
     return true;
@@ -287,7 +318,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
     const container = (event.currentTarget as HTMLElement).querySelector(containerSelector) as HTMLElement | null;
     if (container) {
       const rect = container.getBoundingClientRect();
-      const y = event.clientY - rect.top; // 0 .. height
+      // In our coordinate system rungs are bottom-aligned; reverse Y so moving mouse up increases rung index
+      const yFromBottom = rect.bottom - event.clientY; // 0 at bottom
+      const y = yFromBottom; // treat bottom as origin
       const BAR_HEIGHT = rect.height;
       // Use same rung layout as renderer
       const RUNG_GAP = 2;
@@ -514,7 +547,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
               // Greedy full-span rung assignment for in-house chains
               const ihChains = scheduledBatches
                 .filter((b) => b.method === 'inhouse')
-                .map((b) => ({ id: b.id, product: b.product, start: Number(b.startWeek), span: getLead(b.product, 'inhouse') }));
+                .map((b) => ({ id: b.id, product: b.product, start: Number(b.startWeek), span: getLead(b.product, 'inhouse'), rung: typeof b.rung === 'number' ? Number(b.rung) : null }));
               ihChains.sort((a, b) => a.start - b.start);
 
               const taken: Record<number, (string | null)[]> = {};
@@ -523,12 +556,23 @@ export default function Production({ gameSession, currentState }: ProductionProp
               for (const ch of ihChains) {
                 let assigned: number | null = null;
                 const possible = Math.max(...WEEKS_ALL.map((w) => rungPerWeek[w]));
-                for (let r = 0; r < possible; r++) {
+                // Try to use stored rung first
+                if (ch.rung !== null && ch.rung >= 0) {
                   let ok = true;
                   for (let w = ch.start; w < ch.start + ch.span; w++) {
-                    if (!taken[w] || r >= taken[w].length || taken[w][r] !== null) { ok = false; break; }
+                    if (!taken[w] || ch.rung >= taken[w].length || taken[w][ch.rung] !== null) { ok = false; break; }
                   }
-                  if (ok) { assigned = r; break; }
+                  if (ok) assigned = ch.rung;
+                }
+                // Fallback to first free rung
+                if (assigned === null) {
+                  for (let r = 0; r < possible; r++) {
+                    let ok = true;
+                    for (let w = ch.start; w < ch.start + ch.span; w++) {
+                      if (!taken[w] || r >= taken[w].length || taken[w][r] !== null) { ok = false; break; }
+                    }
+                    if (ok) { assigned = r; break; }
+                  }
                 }
                 rungOf[ch.id] = assigned;
                 if (assigned !== null) {
