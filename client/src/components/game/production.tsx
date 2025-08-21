@@ -283,7 +283,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
     event.preventDefault();
     // Compute hovered rung based on mouse position inside the bar
     let targetRung: number | undefined;
-    const container = (event.currentTarget as HTMLElement).querySelector('[data-capacity-bar]') as HTMLElement | null;
+    const containerSelector = method === 'inhouse' ? '[data-capacity-bar]' : '[data-outsourced-bar]';
+    const container = (event.currentTarget as HTMLElement).querySelector(containerSelector) as HTMLElement | null;
     if (container) {
       const rect = container.getBoundingClientRect();
       const y = event.clientY - rect.top; // 0 .. height
@@ -297,7 +298,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
       const clampedY = Math.max(RUNG_TOP_BOTTOM_MARGIN, Math.min(BAR_HEIGHT - RUNG_TOP_BOTTOM_MARGIN, y));
       const relativeY = clampedY - RUNG_TOP_BOTTOM_MARGIN;
       const idx = Math.floor(relativeY / (rungHeight + RUNG_GAP));
-      targetRung = Math.max(0, Math.min(maxRungsAllWeeks - 1, idx));
+      // Clamp to actual rung capacity for that week
+      const actualRungs = method === 'inhouse' 
+        ? Math.floor((capacityByWeek[week]?.capacity || 0) / STANDARD_BATCH_UNITS) 
+        : Math.max(3, idx + 1); // outsourced: at least 3 slots visually
+      targetRung = Math.max(0, Math.min(Math.max(0, actualRungs - 1), idx));
     }
     setDragPreview({ week, method, targetRung });
   };
@@ -306,7 +311,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
     event.preventDefault();
     if (!dragId || !draggedBatch) return;
     
-    // Use placement helper with validation
+    // Use placement helper with validation. When dragging from outsourced to in-house,
+    // switch method automatically; vice versa likewise.
     const success = await placeChain(dragId, week, method, dragPreview?.targetRung);
     if (!success) {
       // Revert in UI by clearing preview (batch snaps back visually already)
@@ -658,7 +664,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                 <div className="absolute inset-0 bg-emerald-400/10 border-2 border-dashed border-emerald-300/60 rounded-xl"></div>
                               )}
                               
-                              {/* Drag Preview - show where batch will be placed */}
+                              {/* Drag Preview - show where batch will be placed (in-house), aligned to hovered rung */}
                               {dragPreview && dragPreview.method === 'inhouse' && draggedBatch && (
                                 (() => {
                                   const product = draggedBatch.product;
@@ -680,10 +686,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     pants: 'CP'
                                   };
                                   
-                                  // Show preview at first available rung
+                                  // Align preview to hovered rung; fallback to first
                                   const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
                                   const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
-                                  const bottomPx = RUNG_TOP_BOTTOM_MARGIN; // First rung
+                                  const rIndex = Math.max(0, Math.min(maxRungsAllWeeks - 1, dragPreview?.targetRung ?? 0));
+                                  const bottomPx = RUNG_TOP_BOTTOM_MARGIN + rIndex * (rungHeight + RUNG_GAP);
                                   const style = { 
                                     bottom: bottomPx + 1, 
                                     height: rungHeight - 2, 
@@ -767,7 +774,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               {/* Background (same as in-house) */}
                               <div className="absolute inset-0 bg-gradient-to-t from-slate-200 via-slate-100 to-white"></div>
                               
-                              <div className="relative p-1" style={{ height: totalHeight }}>
+                              <div className="relative p-1" data-outsourced-bar style={{ height: totalHeight }}>
                                 {/* Dashed outline containers - fill from top down */}
                                 {[...Array(slotCount)].map((_, index) => {
                                   const reverseIndex = slotCount - 1 - index; // Fill from top
