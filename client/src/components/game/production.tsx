@@ -256,9 +256,15 @@ export default function Production({ gameSession, currentState }: ProductionProp
   };
 
   const handleDrop = async (week: number, method: 'inhouse' | 'outsourced') => {
-    if (!dragId || !draggedBatch) return;
+    if (!dragId || !draggedBatch || !dragPreview) return;
     
-    // Create updated batch with new method and start week
+    // For in-house, we need to use the existing placeChain logic to respect capacity constraints
+    if (method === 'inhouse') {
+      await placeChain(dragId, week);
+      return;
+    }
+    
+    // For outsourced, simple update
     const updatedBatch = {
       ...draggedBatch,
       startWeek: week,
@@ -272,7 +278,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
         productionSchedule: { batches: next } 
       });
       queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
-      toast({ title: 'Batch moved', description: `Moved to ${method === 'inhouse' ? 'In-House' : 'Outsourced'} manufacturing in W${week}` });
+      toast({ title: 'Batch moved', description: `Moved to Outsourced manufacturing in W${week}` });
     } catch (error) {
       toast({ title: 'Move failed', description: 'Could not move batch', variant: 'destructive' });
     }
@@ -561,7 +567,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                       const bottomPx = RUNG_TOP_BOTTOM_MARGIN + r * (rungHeight + RUNG_GAP);
                                       return (
                                         <div key={`bg-${r}`} 
-                                             className="absolute rounded-sm bg-emerald-200/35 z-10"
+                                             className="absolute rounded-sm bg-emerald-200/35"
                                              style={{ bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN }}
                                              onMouseOver={(e) => handleMouseOverRung(w, 'inhouse', r, e)}
                                         />
@@ -599,7 +605,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     return (
                                       <div
                                         key={`used-${r}`}
-                                        className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center ${
+                                        className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center cursor-grab active:cursor-grabbing ${
                                           isHovered 
                                             ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] z-10' 
                                             : productColors[product] + ' shadow-lg'
@@ -794,7 +800,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                         const hoverStyle = { bottom: 1, height: slotHeight - 2, left: 1, right: 1 } as React.CSSProperties;
                                         
                                         return (
-                                          <div className={`absolute rounded-sm flex items-center justify-center transition-all duration-300 ${
+                                          <div className={`absolute rounded-sm flex items-center justify-center transition-all duration-300 cursor-grab active:cursor-grabbing ${
                                               isHovered 
                                                 ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] z-10' 
                                                 : productColors[product] + ' shadow-lg'
