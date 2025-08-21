@@ -98,9 +98,10 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
     // First, attempt to place each chain at its stored rung if valid across span
     for (const ch of chains) {
-      const totalRungs = takenLocal[WEEKS_ALL[0]].length || 0;
+      // Minimum available rungs across the chain span
+      const spanMinRungs = minRungsAcrossSpan(ch.start, ch.span);
       let placed = false;
-      if (ch.rung !== null && ch.rung >= 0 && ch.rung < totalRungs) {
+      if (ch.rung !== null && ch.rung >= 0 && ch.rung < spanMinRungs) {
         let ok = true;
         for (let w = ch.start; w < ch.start + ch.span; w++) {
           if (!takenLocal[w] || ch.rung >= takenLocal[w].length || takenLocal[w][ch.rung] !== null) { ok = false; break; }
@@ -113,8 +114,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
       if (placed) continue;
 
       // Fallback: first free rung across span
-      const maxR = takenLocal[WEEKS_ALL[0]].length || 0;
-      for (let r = 0; r < maxR; r++) {
+      for (let r = 0; r < spanMinRungs; r++) {
         let ok = true;
         for (let w = ch.start; w < ch.start + ch.span; w++) {
           if (!takenLocal[w] || r >= takenLocal[w].length || takenLocal[w][r] !== null) { ok = false; break; }
@@ -130,8 +130,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
   const findFirstFreeRung = (start: number, span: number, excludeId?: string): number | null => {
     const takenLocal = computeTakenExcluding(excludeId);
-    const maxR = takenLocal[WEEKS_ALL[0]].length || 0;
-    for (let r = 0; r < maxR; r++) {
+    const spanMinRungs = minRungsAcrossSpan(start, span);
+    for (let r = 0; r < spanMinRungs; r++) {
       let ok = true;
       for (let w = start; w < start + span; w++) {
         if (!takenLocal[w] || r >= takenLocal[w].length || takenLocal[w][r] !== null) { ok = false; break; }
@@ -218,7 +218,17 @@ export default function Production({ gameSession, currentState }: ProductionProp
       quantity = avail; // partial batch
     }
 
-    const batch = {
+    // Determine initial rung: next free row across the span (not always row 1)
+    let initialRung: number | null = null;
+    if (method === 'inhouse') {
+      initialRung = findFirstFreeRung(startWeek, lead, undefined);
+      if (initialRung === null) {
+        toast({ title: "Overbooked", description: "No free 25k rung across the full span.", variant: "destructive" });
+        return;
+      }
+    }
+
+    const batch: any = {
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       product: sku,
       method,
@@ -226,6 +236,10 @@ export default function Production({ gameSession, currentState }: ProductionProp
       quantity,
       createdAt: new Date().toISOString(),
     };
+    if (method === 'inhouse' && initialRung !== null) {
+      batch.rung = initialRung;
+      setRungByBatchId((prev) => ({ ...prev, [batch.id]: initialRung! }));
+    }
     addBatch.mutate(batch);
   };
 
