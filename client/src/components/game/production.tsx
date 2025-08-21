@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Factory, Package, BarChart3, List } from "lucide-react";
 
 interface ProductionProps {
   gameSession: any;
@@ -294,9 +294,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
         {/* Left column: Planner + Info */}
         <div className="lg:col-span-5 space-y-6">
           <Card className="overflow-hidden bg-white border-slate-200 shadow-md">
-            <div className="bg-white border-b border-slate-200 p-3">
+            <div className="bg-gradient-to-r from-slate-100 to-slate-200 border-b border-slate-200 py-2.5 px-4">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                <Factory className="w-4 h-4 text-slate-600" />
                 <h3 className="font-bold text-slate-800 text-base">Batch Planner</h3>
               </div>
             </div>
@@ -362,9 +362,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
           {/* Info Panels */}
           <Card className="overflow-hidden bg-white border-slate-200 shadow-md">
-            <div className="bg-white border-b border-slate-200 p-3">
+            <div className="bg-gradient-to-r from-slate-100 to-slate-200 border-b border-slate-200 py-2.5 px-4">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-emerald-400 rounded-full"></div>
+                <Package className="w-4 h-4 text-slate-600" />
                 <h3 className="font-bold text-slate-800 text-base">Resources & Inventory</h3>
               </div>
             </div>
@@ -403,10 +403,10 @@ export default function Production({ gameSession, currentState }: ProductionProp
         {/* Right column: Schedule board */}
         <div className="lg:col-span-7 space-y-6">
           <Card className="overflow-hidden bg-white border-slate-200 shadow-xl">
-            <div className="bg-white border-b border-slate-200 p-3">
+            <div className="bg-gradient-to-r from-slate-100 to-slate-200 border-b border-slate-200 py-2.5 px-4">
               <div className="flex items-center gap-3">
-                <div className="w-2.5 h-2.5 bg-emerald-400 rounded-full"></div>
-                <h3 className="text-lg font-bold text-slate-800">Production Schedule</h3>
+                <BarChart3 className="w-4 h-4 text-slate-600" />
+                <h3 className="text-base font-bold text-slate-800">Production Schedule</h3>
                 <div className="text-slate-500 text-xs font-mono">W3–W13</div>
               </div>
             </div>
@@ -458,9 +458,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                   {/* In-house Capacity Lane */}
                   <div className="relative">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-2 h-2 bg-emerald-400 rounded-full animate-pulse shadow-lg shadow-emerald-400/50"></div>
-                      <h4 className="text-emerald-300 font-semibold text-lg">In-House Manufacturing</h4>
-                      <div className="text-slate-400 text-sm">Shared Capacity Allocation</div>
+                      <h4 className="text-emerald-700 font-semibold text-base">In-House Manufacturing Capacity Allocation</h4>
                     </div>
                     <div className="grid grid-cols-11 gap-[3px] items-end">
                       {WEEKS_ALL.map((w) => {
@@ -594,8 +592,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                   {/* Outsourced Manufacturing Lane */}
                   <div className="relative">
                     <div className="flex items-center gap-3 mb-4">
-                      <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse shadow-lg shadow-orange-400/50"></div>
-                      <h4 className="text-orange-700 font-semibold text-lg">Outsourced Manufacturing</h4>
+                      <h4 className="text-orange-700 font-semibold text-base">Outsourced Manufacturing</h4>
                       <div className="text-slate-500 text-sm">Unlimited Capacity</div>
                     </div>
                     <div className="grid grid-cols-11 gap-[3px]">
@@ -663,20 +660,20 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
           {/* Scheduled list (compact) */}
           <Card className="overflow-hidden bg-white border-slate-200 shadow-md">
-            <div className="bg-white border-b border-slate-200 p-3">
+            <div className="bg-gradient-to-r from-slate-100 to-slate-200 border-b border-slate-200 py-2.5 px-4">
               <div className="flex items-center gap-3">
-                <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+                <List className="w-4 h-4 text-slate-600" />
                 <h3 className="font-bold text-slate-800 text-base">Production Queue</h3>
               </div>
             </div>
             <div className="p-5">
             {scheduledBatches.length === 0 ? (
               <div className="text-center py-8">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-purple-100 to-purple-200 flex items-center justify-center">
-                  <div className="w-8 h-8 border-2 border-dashed border-purple-400 rounded-lg"></div>
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center">
+                  <div className="w-8 h-8 border-2 border-dashed border-slate-400 rounded-lg"></div>
                 </div>
-                <div className="text-gray-500 font-medium">No batches scheduled</div>
-                <div className="text-xs text-gray-400 mt-1">Use the planner above to schedule production</div>
+                <div className="text-slate-500 font-medium">No batches scheduled</div>
+                <div className="text-xs text-slate-400 mt-1">Use the planner above to schedule production</div>
               </div>
             ) : (
               <div className="space-y-3">
