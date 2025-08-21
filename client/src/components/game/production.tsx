@@ -511,7 +511,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
                                     const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
                                     const bottomPx = RUNG_TOP_BOTTOM_MARGIN + r * (rungHeight + RUNG_GAP);
-                                    const style = { bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN } as React.CSSProperties;
+                                    const style = { bottom: bottomPx + 1, height: rungHeight - 2, left: RUNG_SIDE_MARGIN + 1, right: RUNG_SIDE_MARGIN + 1 } as React.CSSProperties;
                                     const isHovered = hoverId === id;
                                     
                                     // Find the batch to get product type
@@ -537,10 +537,15 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                         key={`used-${r}`}
                                         className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center ${
                                           isHovered 
-                                            ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] scale-105 z-10' 
+                                            ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] z-10' 
                                             : productColors[product] + ' shadow-lg'
                                         }`}
-                                        style={style}
+                                        style={isHovered ? { 
+                                          bottom: bottomPx - 1, 
+                                          height: rungHeight + 2, 
+                                          left: RUNG_SIDE_MARGIN - 1, 
+                                          right: RUNG_SIDE_MARGIN - 1 
+                                        } : style}
                                         onMouseEnter={() => setHoverId(id)}
                                         onMouseLeave={() => setHoverId(null)}
                                       >
@@ -573,7 +578,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                       </div>
                       
                   {/* Week badges with available capacity moved between lanes */}
-                  <div className="grid grid-cols-11 gap-[3px] mt-2 mb-3">
+                  <div className="grid grid-cols-11 gap-[3px] mt-1 mb-1">
                     {WEEKS_ALL.map((w) => {
                       const cap = Number(capacityByWeek[w]?.capacity || 0);
                       const usedCount = (taken[w] || []).filter((x) => x !== null).length;
@@ -595,7 +600,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
                   {/* Outsourced Manufacturing Lane */}
                   <div className="relative">
-                    <div className="flex items-center gap-3 mb-2">
+                    <div className="flex items-center gap-3 mb-1">
                       <h4 className="text-orange-700 font-semibold text-base">Outsourced Manufacturing</h4>
                       <div className="text-slate-500 text-sm">(unlimited capacity)</div>
                     </div>
@@ -621,32 +626,51 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               <div className="absolute inset-0 bg-gradient-to-t from-slate-200 via-slate-100 to-white"></div>
                               
                               <div className="relative p-1" style={{ height: totalHeight }}>
-                                {/* Dashed outline containers */}
+                                {/* Dashed outline containers - fill from top down */}
                                 {[...Array(slotCount)].map((_, index) => {
-                                  const batch = outsourcedBatches[index];
+                                  const reverseIndex = slotCount - 1 - index; // Fill from top
+                                  const batch = outsourcedBatches[reverseIndex];
                                   const bottomPx = barPadding + index * (slotHeight + slotGap);
                                   
                                   return (
                                     <div key={`slot-${index}`} className="absolute left-1 right-1 rounded-sm"
                                          style={{ bottom: bottomPx, height: slotHeight }}>
                                       {/* Dashed outline */}
-                                      <div className="absolute inset-0 border-2 border-dashed border-orange-600 rounded-sm"></div>
+                                      <div className="absolute inset-0 border-2 border-dashed border-slate-500 rounded-sm"></div>
                                       
                                       {/* Batch content if exists */}
-                                      {batch && (
-                                        <div className="absolute inset-[2px] rounded-sm bg-gradient-to-r from-orange-500/80 to-orange-400/80 flex items-center justify-center text-white shadow-lg transition-all duration-300 hover:scale-95">
-                                          <div className="absolute inset-0 bg-gradient-to-r from-white/20 to-white/10 rounded-sm"></div>
-                                          <span className="relative text-black font-bold text-xs leading-none select-none">
-                                            {batch.product === 'jacket' ? 'VDJ' : batch.product === 'dress' ? 'FPD' : 'CP'}
-                                          </span>
-                                          <button 
-                                            className="absolute top-0 right-0 opacity-0 hover:opacity-100 text-white hover:text-red-200 transition-all duration-200 text-xs bg-red-500/50 hover:bg-red-500/80 rounded-bl px-1"
-                                            onClick={() => removeBatch.mutate(batch.id)}
-                                          >
-                                            ×
-                                          </button>
-                                        </div>
-                                      )}
+                                      {batch && (() => {
+                                        const product = batch.product;
+                                        const productColors = {
+                                          jacket: 'bg-gradient-to-t from-red-600 via-red-500 to-red-400',
+                                          dress: 'bg-gradient-to-t from-purple-600 via-purple-500 to-purple-400', 
+                                          pants: 'bg-gradient-to-t from-blue-800 via-blue-700 to-blue-600'
+                                        };
+                                        const productCodes = {
+                                          jacket: 'VDJ',
+                                          dress: 'FPD',
+                                          pants: 'CP'
+                                        };
+                                        const isHovered = hoverId === batch.id;
+                                        
+                                        return (
+                                          <div className={`absolute inset-[3px] rounded-sm flex items-center justify-center transition-all duration-300 ${
+                                              isHovered 
+                                                ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] scale-105 z-10' 
+                                                : productColors[product] + ' shadow-lg'
+                                            }`}
+                                            onMouseEnter={() => setHoverId(batch.id)}
+                                            onMouseLeave={() => setHoverId(null)}>
+                                            <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
+                                            {isHovered && (
+                                              <div className="absolute inset-0 bg-gradient-to-t from-amber-400/20 to-amber-300/10 animate-pulse rounded-sm"></div>
+                                            )}
+                                            <span className="relative text-black font-bold text-xs leading-none select-none">
+                                              {productCodes[product]}
+                                            </span>
+                                          </div>
+                                        );
+                                      })()}
                                     </div>
                                   );
                                 })}
