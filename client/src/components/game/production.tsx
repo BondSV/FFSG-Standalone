@@ -45,6 +45,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [draggedBatch, setDraggedBatch] = useState<any>(null);
   const [dragPreview, setDragPreview] = useState<{ week: number; method: 'inhouse' | 'outsourced'; targetRung?: number } | null>(null);
+  // Client-side persisted rung map to keep rows stable even if backend ignores `rung`
+  const [rungByBatchId, setRungByBatchId] = useState<Record<string, number>>({});
 
   // Helpers
   const getLead = (p: string, m: Method) => (m === "inhouse" ? Number(MFG[p]?.inHouseTime || 2) : Number(MFG[p]?.outsourceTime || 1));
@@ -65,7 +67,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
         return sum + units;
       }
       return sum;
-    }, 0);
+        }, 0);
     // Subtract fabric already consumed by scheduled batches starting on/before week
     const consumed = scheduledBatches
       .filter((b) => productData[b.product]?.fabric === fabricForSku && Number(b.startWeek) <= week)
@@ -285,6 +287,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
     ));
     await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { productionSchedule: { batches: next } });
     queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
+    setRungByBatchId((prev) => ({ ...prev, [moving.id]: desiredRung }));
     return true;
   };
 
@@ -351,6 +354,10 @@ export default function Production({ gameSession, currentState }: ProductionProp
       // Revert in UI by clearing preview (batch snaps back visually already)
       clearDrag();
       return;
+    }
+    // If successful, prime local cache so render uses the same rung immediately
+    if (method === 'inhouse' && typeof dragPreview?.targetRung === 'number') {
+      setRungByBatchId((prev) => ({ ...prev, [dragId]: Math.max(0, dragPreview!.targetRung!) }));
     }
     clearDrag();
   };
@@ -547,7 +554,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
               // Greedy full-span rung assignment for in-house chains
               const ihChains = scheduledBatches
                 .filter((b) => b.method === 'inhouse')
-                .map((b) => ({ id: b.id, product: b.product, start: Number(b.startWeek), span: getLead(b.product, 'inhouse'), rung: typeof b.rung === 'number' ? Number(b.rung) : null }));
+                .map((b) => ({ id: b.id, product: b.product, start: Number(b.startWeek), span: getLead(b.product, 'inhouse'), rung: (typeof b.rung === 'number' ? Number(b.rung) : (rungByBatchId[b.id] ?? null)) }));
               ihChains.sort((a, b) => a.start - b.start);
 
               const taken: Record<number, (string | null)[]> = {};
@@ -652,8 +659,10 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     
                                     // Find the batch to get product type
                                     const batch = scheduledBatches.find(b => b.id === id);
-                                    // Ensure we render at persisted rung if present
-                                    const persistedRung = typeof (batch as any)?.rung === 'number' ? Number((batch as any).rung) : null;
+                                    // Ensure we render at persisted rung if present (server or client cache)
+                                    const persistedRung = typeof (batch as any)?.rung === 'number' 
+                                      ? Number((batch as any).rung) 
+                                      : (rungByBatchId[id] ?? null);
                                     if (persistedRung !== null && persistedRung !== r) {
                                       // Skip drawing here; another rung will render it
                                       return null;
