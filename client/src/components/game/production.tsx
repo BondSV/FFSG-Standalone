@@ -587,11 +587,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
                       return (
                         <div key={`mid-hdr-${w}`} className="relative">
                           <div className="bg-white rounded-lg p-3 text-center border border-slate-200 shadow-sm h-[70px] flex flex-col justify-center">
-                            <div className={`text-[11px] font-medium mb-1 ${isNA ? 'text-red-700' : 'text-emerald-700'} leading-tight`}>
+                            <div className={`font-medium mb-1 leading-tight ${isNA ? 'text-[11px] text-red-700' : 'text-sm text-emerald-700'}`}>
                               {formatUnits(availableUnits)}
                             </div>
                             <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent mb-1"></div>
-                            <div className="text-slate-600 font-semibold text-xs">W{w}</div>
+                            <div className="text-slate-600 font-semibold text-base">W{w}</div>
                           </div>
                         </div>
                       );
