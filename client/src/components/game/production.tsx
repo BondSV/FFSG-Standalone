@@ -652,6 +652,12 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     
                                     // Find the batch to get product type
                                     const batch = scheduledBatches.find(b => b.id === id);
+                                    // Ensure we render at persisted rung if present
+                                    const persistedRung = typeof (batch as any)?.rung === 'number' ? Number((batch as any).rung) : null;
+                                    if (persistedRung !== null && persistedRung !== r) {
+                                      // Skip drawing here; another rung will render it
+                                      return null;
+                                    }
                                     const product = batch?.product || 'jacket';
                                     
                                     // Color gradients by product
