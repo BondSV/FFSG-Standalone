@@ -44,7 +44,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
   const [dragId, setDragId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [draggedBatch, setDraggedBatch] = useState<any>(null);
-  const [dragPreview, setDragPreview] = useState<{ week: number; method: 'inhouse' | 'outsourced'; rung?: number } | null>(null);
+  const [dragPreview, setDragPreview] = useState<{ week: number; method: 'inhouse' | 'outsourced'; targetRung?: number } | null>(null);
 
   // Helpers
   const getLead = (p: string, m: Method) => (m === "inhouse" ? Number(MFG[p]?.inHouseTime || 2) : Number(MFG[p]?.outsourceTime || 1));
@@ -184,7 +184,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
       const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart } : b));
       await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { productionSchedule: { batches: next } });
       queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
-      return;
+          return;
     }
     // In-house: validate rung availability across span (no reflow of other chains)
     // Rebuild taken map excluding the moving chain
@@ -234,7 +234,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
     return `${u}`;
   };
 
-  // Enhanced drag functions
+  // Simplified drag functions
   const startDrag = (batchId: string) => {
     const batch = scheduledBatches.find((b) => String(b.id) === String(batchId));
     if (!batch) return;
@@ -242,51 +242,45 @@ export default function Production({ gameSession, currentState }: ProductionProp
     setDraggedBatch(batch);
   };
 
-  const handleDragOver = (week: number, method: 'inhouse' | 'outsourced', rung?: number) => {
-    if (dragId) {
-      setDragPreview({ week, method, rung });
-    }
+  const clearDrag = () => {
+    setDragId(null);
+    setDraggedBatch(null);
+    setDragPreview(null);
   };
 
-  const handleMouseOverRung = (week: number, method: 'inhouse' | 'outsourced', rung: number, event: React.MouseEvent) => {
-    if (dragId) {
-      event.stopPropagation();
-      setDragPreview({ week, method, rung });
-    }
+  const handleDragOver = (event: React.DragEvent, week: number, method: 'inhouse' | 'outsourced') => {
+    if (!dragId) return;
+    event.preventDefault();
+    setDragPreview({ week, method });
   };
 
-  const handleDrop = async (week: number, method: 'inhouse' | 'outsourced') => {
-    if (!dragId || !draggedBatch || !dragPreview) return;
-    
-    // For in-house, we need to use the existing placeChain logic to respect capacity constraints
-    if (method === 'inhouse') {
-      await placeChain(dragId, week);
-      return;
-    }
-    
-    // For outsourced, simple update
-    const updatedBatch = {
-      ...draggedBatch,
-      startWeek: week,
-      method: method
-    };
-    
-    const next = scheduledBatches.map((b) => (b.id === draggedBatch.id ? updatedBatch : b));
+  const handleDrop = async (event: React.DragEvent, week: number, method: 'inhouse' | 'outsourced') => {
+    event.preventDefault();
+    if (!dragId || !draggedBatch) return;
     
     try {
+      // Create updated batch with new method and start week
+      const updatedBatch = {
+        ...draggedBatch,
+        startWeek: week,
+        method: method
+      };
+      
+      const next = scheduledBatches.map((b) => (b.id === draggedBatch.id ? updatedBatch : b));
+      
       await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { 
         productionSchedule: { batches: next } 
       });
       queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
-      toast({ title: 'Batch moved', description: `Moved to Outsourced manufacturing in W${week}` });
+      toast({ 
+        title: 'Batch moved', 
+        description: `Moved to ${method === 'inhouse' ? 'In-House' : 'Outsourced'} manufacturing in W${week}` 
+      });
     } catch (error) {
       toast({ title: 'Move failed', description: 'Could not move batch', variant: 'destructive' });
     }
     
-    // Clear drag state
-    setDragId(null);
-    setDraggedBatch(null);
-    setDragPreview(null);
+    clearDrag();
   };
 
   // UI
@@ -529,18 +523,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                           <div
                             key={`ih-col-${w}`}
                             className="relative group"
-                            onDragOver={(e) => { 
-                              if (dragId) {
-                                e.preventDefault();
-                                handleDragOver(w, 'inhouse');
-                              }
-                            }}
-                            onDrop={(e) => { 
-                              if (dragId) {
-                                e.preventDefault();
-                                handleDrop(w, 'inhouse');
-                              }
-                            }}
+                            onDragOver={(e) => handleDragOver(e, w, 'inhouse')}
+                            onDrop={(e) => handleDrop(e, w, 'inhouse')}
                           >
                             {/* Capacity Container with Futuristic Design */}
                             <div className="relative bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-emerald-300/60">
@@ -569,7 +553,6 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                         <div key={`bg-${r}`} 
                                              className="absolute rounded-sm bg-emerald-200/35"
                                              style={{ bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN }}
-                                             onMouseOver={(e) => handleMouseOverRung(w, 'inhouse', r, e)}
                                         />
                                       );
                                     });
@@ -620,11 +603,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                         onMouseLeave={() => setHoverId(null)}
                                         draggable
                                         onDragStart={() => startDrag(id)}
-                                        onDragEnd={() => {
-                                          setDragId(null);
-                                          setDraggedBatch(null);
-                                          setDragPreview(null);
-                                        }}
+                                        onDragEnd={clearDrag}
                                       >
                                         <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
                                         {isHovered && (
@@ -646,8 +625,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                 <div className="absolute inset-0 bg-emerald-400/10 border-2 border-dashed border-emerald-300/60 rounded-xl"></div>
                               )}
                               
-                              {/* Drag Preview Chain - show batch placement across multiple weeks for In-House */}
-                              {dragPreview && dragPreview.method === 'inhouse' && draggedBatch && dragPreview.rung !== undefined && (
+                              {/* Drag Preview - show where batch will be placed */}
+                              {dragPreview && dragPreview.method === 'inhouse' && draggedBatch && (
                                 (() => {
                                   const product = draggedBatch.product;
                                   const inHouseLead = getLead(product, 'inhouse');
@@ -667,12 +646,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     dress: 'FPD', 
                                     pants: 'CP'
                                   };
-                                  const targetRung = dragPreview.rung;
                                   
-                                  // Show preview for this week as part of the chain
+                                  // Show preview at first available rung
                                   const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
                                   const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
-                                  const bottomPx = RUNG_TOP_BOTTOM_MARGIN + targetRung * (rungHeight + RUNG_GAP);
+                                  const bottomPx = RUNG_TOP_BOTTOM_MARGIN; // First rung
                                   const style = { 
                                     bottom: bottomPx + 1, 
                                     height: rungHeight - 2, 
@@ -682,7 +660,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   
                                   return (
                                     <div
-                                      className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center opacity-60 ${productColors[product]} shadow-lg border-2 border-dashed border-white`}
+                                      className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center opacity-60 ${productColors[product]} shadow-lg border-2 border-dashed border-white z-50`}
                                       style={style}
                                     >
                                       <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-white/10 rounded-sm"></div>
@@ -747,18 +725,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                         return (
                           <div key={`os-col-${w}`} 
                                className="relative group"
-                               onDragOver={(e) => { 
-                                 if (dragId) {
-                                   e.preventDefault();
-                                   handleDragOver(w, 'outsourced');
-                                 }
-                               }}
-                               onDrop={(e) => { 
-                                 if (dragId) {
-                                   e.preventDefault();
-                                   handleDrop(w, 'outsourced');
-                                 }
-                               }}
+                               onDragOver={(e) => handleDragOver(e, w, 'outsourced')}
+                               onDrop={(e) => handleDrop(e, w, 'outsourced')}
                           >
                             {/* Outsourced Container */}
                             <div className="relative bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-orange-300/60"
@@ -775,8 +743,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   
                                   return (
                                     <div key={`slot-${index}`} className="absolute left-1 right-1 rounded-sm"
-                                         style={{ bottom: bottomPx, height: slotHeight }}
-                                         onMouseOver={(e) => handleMouseOverRung(w, 'outsourced', index, e)}>
+                                         style={{ bottom: bottomPx, height: slotHeight }}>
                                       {/* Dashed outline - less contrasty */}
                                       <div className="absolute inset-0 border-2 border-dashed border-slate-300 rounded-sm"></div>
                                       
@@ -810,11 +777,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                             onMouseLeave={() => setHoverId(null)}
                                             draggable
                                             onDragStart={() => startDrag(batch.id)}
-                                            onDragEnd={() => {
-                                              setDragId(null);
-                                              setDraggedBatch(null);
-                                              setDragPreview(null);
-                                            }}>
+                                            onDragEnd={clearDrag}>
                                             <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
                                             {isHovered && (
                                               <div className="absolute inset-0 bg-gradient-to-t from-amber-400/20 to-amber-300/10 animate-pulse rounded-sm"></div>
@@ -836,7 +799,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               )}
                               
                               {/* Drag Preview - show potential batch placement */}
-                              {dragPreview && dragPreview.week === w && dragPreview.method === 'outsourced' && draggedBatch && dragPreview.rung !== undefined && (
+                              {dragPreview && dragPreview.week === w && dragPreview.method === 'outsourced' && draggedBatch && (
                                 (() => {
                                   const product = draggedBatch.product;
                                   const productColors = {
@@ -850,17 +813,16 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     pants: 'CP'
                                   };
                                   
-                                  // Outsourced preview at specific slot
-                                  const targetSlot = dragPreview.rung;
+                                  // Show in first available slot (top)
                                   const previewStyle = { 
-                                    bottom: barPadding + targetSlot * (slotHeight + slotGap) + 3, 
+                                    bottom: barPadding + (slotCount - 1) * (slotHeight + slotGap) + 3, 
                                     height: slotHeight - 6, 
                                     left: 3, 
                                     right: 3 
                                   } as React.CSSProperties;
                                   
                                   return (
-                                    <div className={`absolute rounded-sm flex items-center justify-center opacity-60 transition-all duration-300 ${productColors[product]} shadow-lg border-2 border-dashed border-white`}
+                                    <div className={`absolute rounded-sm flex items-center justify-center opacity-60 transition-all duration-300 ${productColors[product]} shadow-lg border-2 border-dashed border-white z-50`}
                                          style={previewStyle}>
                                       <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-white/10 rounded-sm"></div>
                                       <span className="relative text-black font-bold text-xs leading-none select-none">
