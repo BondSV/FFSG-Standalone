@@ -44,7 +44,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
   const [dragId, setDragId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [draggedBatch, setDraggedBatch] = useState<any>(null);
-  const [dragPreview, setDragPreview] = useState<{ week: number; method: 'inhouse' | 'outsourced' } | null>(null);
+  const [dragPreview, setDragPreview] = useState<{ week: number; method: 'inhouse' | 'outsourced'; rung?: number } | null>(null);
 
   // Helpers
   const getLead = (p: string, m: Method) => (m === "inhouse" ? Number(MFG[p]?.inHouseTime || 2) : Number(MFG[p]?.outsourceTime || 1));
@@ -242,9 +242,16 @@ export default function Production({ gameSession, currentState }: ProductionProp
     setDraggedBatch(batch);
   };
 
-  const handleDragOver = (week: number, method: 'inhouse' | 'outsourced') => {
+  const handleDragOver = (week: number, method: 'inhouse' | 'outsourced', rung?: number) => {
     if (dragId) {
-      setDragPreview({ week, method });
+      setDragPreview({ week, method, rung });
+    }
+  };
+
+  const handleMouseOverRung = (week: number, method: 'inhouse' | 'outsourced', rung: number, event: React.MouseEvent) => {
+    if (dragId) {
+      event.stopPropagation();
+      setDragPreview({ week, method, rung });
     }
   };
 
@@ -553,8 +560,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     return [...Array(rungCount)].map((_, r) => {
                                       const bottomPx = RUNG_TOP_BOTTOM_MARGIN + r * (rungHeight + RUNG_GAP);
                                       return (
-                                        <div key={`bg-${r}`} className="absolute rounded-sm bg-emerald-200/35"
-                                             style={{ bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN }} />
+                                        <div key={`bg-${r}`} 
+                                             className="absolute rounded-sm bg-emerald-200/35 z-10"
+                                             style={{ bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN }}
+                                             onMouseOver={(e) => handleMouseOverRung(w, 'inhouse', r, e)}
+                                        />
                                       );
                                     });
                                   })()}
@@ -630,10 +640,17 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                 <div className="absolute inset-0 bg-emerald-400/10 border-2 border-dashed border-emerald-300/60 rounded-xl"></div>
                               )}
                               
-                              {/* Drag Preview - show potential batch placement */}
-                              {dragPreview && dragPreview.week === w && dragPreview.method === 'inhouse' && draggedBatch && (
+                              {/* Drag Preview Chain - show batch placement across multiple weeks for In-House */}
+                              {dragPreview && dragPreview.method === 'inhouse' && draggedBatch && dragPreview.rung !== undefined && (
                                 (() => {
                                   const product = draggedBatch.product;
+                                  const inHouseLead = getLead(product, 'inhouse');
+                                  const startWeek = dragPreview.week;
+                                  
+                                  // Check if this week is part of the chain
+                                  const isInChain = w >= startWeek && w < startWeek + inHouseLead;
+                                  if (!isInChain) return null;
+                                  
                                   const productColors = {
                                     jacket: 'bg-gradient-to-t from-red-600 via-red-500 to-red-400',
                                     dress: 'bg-gradient-to-t from-purple-600 via-purple-500 to-purple-400',
@@ -644,32 +661,34 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     dress: 'FPD', 
                                     pants: 'CP'
                                   };
-                                  const inHouseLead = getLead(product, 'inhouse');
+                                  const targetRung = dragPreview.rung;
                                   
-                                  return [...Array(inHouseLead)].map((_, leadIndex) => {
-                                    const previewWeek = w + leadIndex;
-                                    if (previewWeek > 13) return null;
-                                    
-                                    const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
-                                    const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
-                                    const bottomPx = RUNG_TOP_BOTTOM_MARGIN;
-                                    const style = { bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN } as React.CSSProperties;
-                                    
-                                    return (
-                                      <div
-                                        key={`preview-${leadIndex}`}
-                                        className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center opacity-50 ${productColors[product]} shadow-lg`}
-                                        style={style}
-                                      >
-                                        <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
-                                        <span className="relative text-black font-bold text-xs leading-none select-none">
-                                          {productCodes[product]}
-                                        </span>
-                                      </div>
-                                    );
-                                  });
+                                  // Show preview for this week as part of the chain
+                                  const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
+                                  const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
+                                  const bottomPx = RUNG_TOP_BOTTOM_MARGIN + targetRung * (rungHeight + RUNG_GAP);
+                                  const style = { 
+                                    bottom: bottomPx + 1, 
+                                    height: rungHeight - 2, 
+                                    left: RUNG_SIDE_MARGIN + 1, 
+                                    right: RUNG_SIDE_MARGIN + 1 
+                                  } as React.CSSProperties;
+                                  
+                                  return (
+                                    <div
+                                      className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center opacity-60 ${productColors[product]} shadow-lg border-2 border-dashed border-white`}
+                                      style={style}
+                                    >
+                                      <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-white/10 rounded-sm"></div>
+                                      <span className="relative text-black font-bold text-xs leading-none select-none">
+                                        {productCodes[product]}
+                                      </span>
+                                    </div>
+                                  );
                                 })()
                               )}
+                              
+
                             </div>
                             
 
@@ -750,7 +769,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                   
                                   return (
                                     <div key={`slot-${index}`} className="absolute left-1 right-1 rounded-sm"
-                                         style={{ bottom: bottomPx, height: slotHeight }}>
+                                         style={{ bottom: bottomPx, height: slotHeight }}
+                                         onMouseOver={(e) => handleMouseOverRung(w, 'outsourced', index, e)}>
                                       {/* Dashed outline - less contrasty */}
                                       <div className="absolute inset-0 border-2 border-dashed border-slate-300 rounded-sm"></div>
                                       
@@ -810,7 +830,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               )}
                               
                               {/* Drag Preview - show potential batch placement */}
-                              {dragPreview && dragPreview.week === w && dragPreview.method === 'outsourced' && draggedBatch && (
+                              {dragPreview && dragPreview.week === w && dragPreview.method === 'outsourced' && draggedBatch && dragPreview.rung !== undefined && (
                                 (() => {
                                   const product = draggedBatch.product;
                                   const productColors = {
@@ -824,13 +844,19 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                     pants: 'CP'
                                   };
                                   
-                                  // Outsourced is always 1 week, show in first available slot
-                                  const normalStyle = { bottom: barPadding + (slotCount - 1) * (slotHeight + slotGap), height: slotHeight - 6, left: 3, right: 3 } as React.CSSProperties;
+                                  // Outsourced preview at specific slot
+                                  const targetSlot = dragPreview.rung;
+                                  const previewStyle = { 
+                                    bottom: barPadding + targetSlot * (slotHeight + slotGap) + 3, 
+                                    height: slotHeight - 6, 
+                                    left: 3, 
+                                    right: 3 
+                                  } as React.CSSProperties;
                                   
                                   return (
-                                    <div className={`absolute rounded-sm flex items-center justify-center opacity-50 transition-all duration-300 ${productColors[product]} shadow-lg`}
-                                         style={normalStyle}>
-                                      <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
+                                    <div className={`absolute rounded-sm flex items-center justify-center opacity-60 transition-all duration-300 ${productColors[product]} shadow-lg border-2 border-dashed border-white`}
+                                         style={previewStyle}>
+                                      <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-white/10 rounded-sm"></div>
                                       <span className="relative text-black font-bold text-xs leading-none select-none">
                                         {productCodes[product]}
                                       </span>
