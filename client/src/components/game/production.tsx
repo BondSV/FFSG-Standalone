@@ -586,8 +586,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                       const isNA = availableUnits === 0;
                       return (
                         <div key={`mid-hdr-${w}`} className="relative">
-                          <div className="bg-white rounded-lg p-3 text-center border border-slate-200 shadow-sm h-[70px] flex flex-col justify-center">
-                            <div className={`font-medium mb-1 leading-tight ${isNA ? 'text-[11px] text-red-700' : 'text-sm text-emerald-700'}`}>
+                          <div className="bg-white rounded-lg p-3 text-center border border-slate-200 shadow-sm h-[75px] flex flex-col justify-center">
+                            <div className={`font-medium mb-1 leading-tight ${isNA ? 'text-[11px] text-red-700' : 'text-[12px] text-emerald-700'}`}>
                               {formatUnits(availableUnits)}
                             </div>
                             <div className="w-full h-0.5 bg-gradient-to-r from-transparent via-emerald-400 to-transparent mb-1"></div>
