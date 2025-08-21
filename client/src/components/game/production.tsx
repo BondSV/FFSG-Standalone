@@ -43,6 +43,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
   const [confirmPartial, setConfirmPartial] = useState(false);
   const [dragId, setDragId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
+  const [draggedBatch, setDraggedBatch] = useState<any>(null);
+  const [dragPreview, setDragPreview] = useState<{ week: number; method: 'inhouse' | 'outsourced' } | null>(null);
 
   // Helpers
   const getLead = (p: string, m: Method) => (m === "inhouse" ? Number(MFG[p]?.inHouseTime || 2) : Number(MFG[p]?.outsourceTime || 1));
@@ -230,6 +232,48 @@ export default function Production({ gameSession, currentState }: ProductionProp
     if (u === 0) return 'N/A';
     if (u >= 1000) return `${Math.round(u / 1000)}k`;
     return `${u}`;
+  };
+
+  // Enhanced drag functions
+  const startDrag = (batchId: string) => {
+    const batch = scheduledBatches.find((b) => String(b.id) === String(batchId));
+    if (!batch) return;
+    setDragId(batchId);
+    setDraggedBatch(batch);
+  };
+
+  const handleDragOver = (week: number, method: 'inhouse' | 'outsourced') => {
+    if (dragId) {
+      setDragPreview({ week, method });
+    }
+  };
+
+  const handleDrop = async (week: number, method: 'inhouse' | 'outsourced') => {
+    if (!dragId || !draggedBatch) return;
+    
+    // Create updated batch with new method and start week
+    const updatedBatch = {
+      ...draggedBatch,
+      startWeek: week,
+      method: method
+    };
+    
+    const next = scheduledBatches.map((b) => (b.id === draggedBatch.id ? updatedBatch : b));
+    
+    try {
+      await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { 
+        productionSchedule: { batches: next } 
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
+      toast({ title: 'Batch moved', description: `Moved to ${method === 'inhouse' ? 'In-House' : 'Outsourced'} manufacturing in W${week}` });
+    } catch (error) {
+      toast({ title: 'Move failed', description: 'Could not move batch', variant: 'destructive' });
+    }
+    
+    // Clear drag state
+    setDragId(null);
+    setDraggedBatch(null);
+    setDragPreview(null);
   };
 
   // UI
@@ -472,8 +516,18 @@ export default function Production({ gameSession, currentState }: ProductionProp
                           <div
                             key={`ih-col-${w}`}
                             className="relative group"
-                            onDragOver={(e) => { if (dragId) e.preventDefault(); }}
-                            onDrop={(e) => { if (dragId) { placeChain(dragId, w); setDragId(null); } }}
+                            onDragOver={(e) => { 
+                              if (dragId) {
+                                e.preventDefault();
+                                handleDragOver(w, 'inhouse');
+                              }
+                            }}
+                            onDrop={(e) => { 
+                              if (dragId) {
+                                e.preventDefault();
+                                handleDrop(w, 'inhouse');
+                              }
+                            }}
                           >
                             {/* Capacity Container with Futuristic Design */}
                             <div className="relative bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-emerald-300/60">
@@ -548,6 +602,13 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                         } : style}
                                         onMouseEnter={() => setHoverId(id)}
                                         onMouseLeave={() => setHoverId(null)}
+                                        draggable
+                                        onDragStart={() => startDrag(id)}
+                                        onDragEnd={() => {
+                                          setDragId(null);
+                                          setDraggedBatch(null);
+                                          setDragPreview(null);
+                                        }}
                                       >
                                         <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
                                         {isHovered && (
@@ -567,6 +628,47 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               {/* Drag Target Indicator */}
                               {dragId && (
                                 <div className="absolute inset-0 bg-emerald-400/10 border-2 border-dashed border-emerald-300/60 rounded-xl"></div>
+                              )}
+                              
+                              {/* Drag Preview - show potential batch placement */}
+                              {dragPreview && dragPreview.week === w && dragPreview.method === 'inhouse' && draggedBatch && (
+                                (() => {
+                                  const product = draggedBatch.product;
+                                  const productColors = {
+                                    jacket: 'bg-gradient-to-t from-red-600 via-red-500 to-red-400',
+                                    dress: 'bg-gradient-to-t from-purple-600 via-purple-500 to-purple-400',
+                                    pants: 'bg-gradient-to-t from-blue-800 via-blue-700 to-blue-600'
+                                  };
+                                  const productCodes = {
+                                    jacket: 'VDJ',
+                                    dress: 'FPD', 
+                                    pants: 'CP'
+                                  };
+                                  const inHouseLead = getLead(product, 'inhouse');
+                                  
+                                  return [...Array(inHouseLead)].map((_, leadIndex) => {
+                                    const previewWeek = w + leadIndex;
+                                    if (previewWeek > 13) return null;
+                                    
+                                    const usableHeight = h - 2 * RUNG_TOP_BOTTOM_MARGIN;
+                                    const rungHeight = (usableHeight - (maxRungsAllWeeks - 1) * RUNG_GAP) / maxRungsAllWeeks;
+                                    const bottomPx = RUNG_TOP_BOTTOM_MARGIN;
+                                    const style = { bottom: bottomPx, height: rungHeight, left: RUNG_SIDE_MARGIN, right: RUNG_SIDE_MARGIN } as React.CSSProperties;
+                                    
+                                    return (
+                                      <div
+                                        key={`preview-${leadIndex}`}
+                                        className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center opacity-50 ${productColors[product]} shadow-lg`}
+                                        style={style}
+                                      >
+                                        <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
+                                        <span className="relative text-black font-bold text-xs leading-none select-none">
+                                          {productCodes[product]}
+                                        </span>
+                                      </div>
+                                    );
+                                  });
+                                })()
                               )}
                             </div>
                             
@@ -620,8 +722,18 @@ export default function Production({ gameSession, currentState }: ProductionProp
                         return (
                           <div key={`os-col-${w}`} 
                                className="relative group"
-                               onDragOver={(e) => { if (dragId) e.preventDefault(); }}
-                               onDrop={(e) => { if (dragId) { placeChain(dragId, w); setDragId(null); } }}
+                               onDragOver={(e) => { 
+                                 if (dragId) {
+                                   e.preventDefault();
+                                   handleDragOver(w, 'outsourced');
+                                 }
+                               }}
+                               onDrop={(e) => { 
+                                 if (dragId) {
+                                   e.preventDefault();
+                                   handleDrop(w, 'outsourced');
+                                 }
+                               }}
                           >
                             {/* Outsourced Container */}
                             <div className="relative bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-orange-300/60"
@@ -669,7 +781,14 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                             }`}
                                             style={isHovered ? hoverStyle : normalStyle}
                                             onMouseEnter={() => setHoverId(batch.id)}
-                                            onMouseLeave={() => setHoverId(null)}>
+                                            onMouseLeave={() => setHoverId(null)}
+                                            draggable
+                                            onDragStart={() => startDrag(batch.id)}
+                                            onDragEnd={() => {
+                                              setDragId(null);
+                                              setDraggedBatch(null);
+                                              setDragPreview(null);
+                                            }}>
                                             <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
                                             {isHovered && (
                                               <div className="absolute inset-0 bg-gradient-to-t from-amber-400/20 to-amber-300/10 animate-pulse rounded-sm"></div>
@@ -688,6 +807,36 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               {/* Drag Target Indicator */}
                               {dragId && (
                                 <div className="absolute inset-0 bg-orange-400/10 border-2 border-dashed border-orange-300/60 rounded-xl"></div>
+                              )}
+                              
+                              {/* Drag Preview - show potential batch placement */}
+                              {dragPreview && dragPreview.week === w && dragPreview.method === 'outsourced' && draggedBatch && (
+                                (() => {
+                                  const product = draggedBatch.product;
+                                  const productColors = {
+                                    jacket: 'bg-gradient-to-t from-red-600 via-red-500 to-red-400',
+                                    dress: 'bg-gradient-to-t from-purple-600 via-purple-500 to-purple-400',
+                                    pants: 'bg-gradient-to-t from-blue-800 via-blue-700 to-blue-600'
+                                  };
+                                  const productCodes = {
+                                    jacket: 'VDJ',
+                                    dress: 'FPD',
+                                    pants: 'CP'
+                                  };
+                                  
+                                  // Outsourced is always 1 week, show in first available slot
+                                  const normalStyle = { bottom: barPadding + (slotCount - 1) * (slotHeight + slotGap), height: slotHeight - 6, left: 3, right: 3 } as React.CSSProperties;
+                                  
+                                  return (
+                                    <div className={`absolute rounded-sm flex items-center justify-center opacity-50 transition-all duration-300 ${productColors[product]} shadow-lg`}
+                                         style={normalStyle}>
+                                      <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
+                                      <span className="relative text-black font-bold text-xs leading-none select-none">
+                                        {productCodes[product]}
+                                      </span>
+                                    </div>
+                                  );
+                                })()
                               )}
                             </div>
                           </div>
