@@ -437,9 +437,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
               // Normalization targets
               const maxRungsAllWeeks = Math.max(...WEEKS_ALL.map((w) => rungPerWeek[w] || 0), 1);
               const BAR_HEIGHT = 220; // px: unified bar height for all weeks
-              const RUNG_GAP = 3; // px vertical space between rungs
-              const RUNG_SIDE_MARGIN = 2; // px left/right inside the bar
-              const RUNG_TOP_BOTTOM_MARGIN = 3; // px from top and bottom of bar
+              const RUNG_GAP = 2; // px vertical space between rungs
+              const RUNG_SIDE_MARGIN = 1; // px left/right inside the bar
+              const RUNG_TOP_BOTTOM_MARGIN = 1; // px from top and bottom of bar
 
               // In-house lane rendering
                   return (
@@ -468,7 +468,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                             {/* Capacity Container with Futuristic Design */}
                             <div className="relative bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-emerald-300/60">
                               {/* Capacity Visualization */}
-                              <div className="relative p-4 flex flex-col justify-end items-center" style={{ minHeight: h + 40 }}>
+                              <div className="relative p-1 flex flex-col justify-end items-center" style={{ minHeight: h + 10 }}>
                                 {/* Background Grid Effect */}
                                 <div className="absolute inset-0 opacity-10">
                                   <div className="w-full h-full bg-gradient-to-t from-cyan-500/20 via-transparent to-transparent"></div>
