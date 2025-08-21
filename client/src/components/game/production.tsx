@@ -75,6 +75,15 @@ export default function Production({ gameSession, currentState }: ProductionProp
     return Math.max(0, onHand + arriving - consumed);
   };
 
+  const rungsForWeek = (w: number) => Math.max(0, Math.floor(((capacityByWeek[w]?.capacity || 0)) / STANDARD_BATCH_UNITS));
+  const minRungsAcrossSpan = (start: number, span: number) => {
+    let minR = Infinity;
+    for (let w = start; w < start + span; w++) {
+      minR = Math.min(minR, rungsForWeek(w));
+    }
+    return (minR === Infinity ? 0 : minR);
+  };
+
   // Occupancy helpers for in-house rungs
   const computeTakenExcluding = (excludeId?: string) => {
     const takenLocal: Record<number, (string | null)[]> = {};
@@ -266,14 +275,21 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
     // Build occupancy excluding the moving chain and honor requested rung
     const takenLocal = computeTakenExcluding(moving.id);
-    const totalRungs = takenLocal[WEEKS_ALL[0]].length || 0;
-    const desiredRung = typeof targetRung === 'number' ? Math.max(0, Math.min(totalRungs - 1, targetRung)) : findFirstFreeRung(newStart, lead, moving.id);
+    const totalRungsSpan = minRungsAcrossSpan(newStart, lead);
+    const desiredRung = typeof targetRung === 'number' 
+      ? Math.max(0, Math.min(totalRungsSpan - 1, targetRung))
+      : findFirstFreeRung(newStart, lead, moving.id);
     if (desiredRung === null || desiredRung === undefined) {
       toast({ title: 'Overbooked', description: 'No free 25k rung across the full span.', variant: 'destructive' });
       return false;
     }
     for (let w = newStart; w < newStart + lead; w++) {
-      if (!takenLocal[w] || desiredRung >= takenLocal[w].length || takenLocal[w][desiredRung] !== null) {
+      // Ensure takenLocal[w] has at least totalRungsSpan entries
+      if (!takenLocal[w] || desiredRung >= (takenLocal[w].length)) {
+        toast({ title: 'Overbooked', description: 'Selected rung is not free across the full span.', variant: 'destructive' });
+        return false;
+      }
+      if (takenLocal[w][desiredRung] !== null) {
         toast({ title: 'Overbooked', description: 'Selected rung is not free across the full span.', variant: 'destructive' });
         return false;
       }
@@ -562,7 +578,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
               const rungOf: Record<string, number | null> = {};
               for (const ch of ihChains) {
                 let assigned: number | null = null;
-                const possible = Math.max(...WEEKS_ALL.map((w) => rungPerWeek[w]));
+                const possible = Math.min(...WEEKS_ALL.map((w) => rungPerWeek[w] || 0).filter((v) => v > 0)) || 0;
                 // Try to use stored rung first
                 if (ch.rung !== null && ch.rung >= 0) {
                   let ok = true;
@@ -573,7 +589,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 }
                 // Fallback to first free rung
                 if (assigned === null) {
-                  for (let r = 0; r < possible; r++) {
+                  for (let r = 0; r < (rungPerWeek[WEEKS_ALL[0]] || 0); r++) {
                     let ok = true;
                     for (let w = ch.start; w < ch.start + ch.span; w++) {
                       if (!taken[w] || r >= taken[w].length || taken[w][r] !== null) { ok = false; break; }
