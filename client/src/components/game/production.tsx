@@ -67,16 +67,12 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
   const availableFabricOn = (week: number): number => {
     if (!fabricForSku) return 0;
-    const onHand = Number(rawMaterials?.[fabricForSku]?.onHand || 0);
-    const arriving = materialPurchases.reduce((sum: number, p: any) => {
-      if (Number(p.shipmentWeek) <= week) {
-        const units = (p.orders || [])
-          .filter((o: any) => o.material === fabricForSku)
-          .reduce((s: number, o: any) => s + Number(o.quantity || 0), 0);
-        return sum + units;
-      }
-      return sum;
-        }, 0);
+    // DB-first availability: read from inventory overview (on-hand + arrivals by week)
+    const mat = fabricForSku as any;
+    const rmEntry = (inventory?.rawMaterials || []).find((r: any) => r.material === mat);
+    const onHand = Number(rmEntry?.onHand || 0);
+    const arrivals = (rmEntry?.inTransitByWeek || []) as Array<{ week: number; quantity: number }>;
+    const arriving = arrivals.filter((it: any) => Number(it.week) <= week).reduce((s: number, it: any) => s + Number(it.quantity || 0), 0);
     // Subtract fabric already consumed by scheduled batches starting on/before week
     const consumed = scheduledBatches
       .filter((b) => productData[b.product]?.fabric === fabricForSku && Number(b.startWeek) <= week)
