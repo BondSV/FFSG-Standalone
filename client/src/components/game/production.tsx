@@ -32,9 +32,18 @@ export default function Production({ gameSession, currentState }: ProductionProp
   // Derived state
   const productData = currentState?.productData || {};
   const scheduledBatches: any[] = currentState?.productionSchedule?.batches || [];
-  const materialPurchases: any[] = currentState?.materialPurchases || [];
-  const rawMaterials: Record<string, any> = currentState?.rawMaterials || {};
   const currentWeek = Number(currentState?.weekNumber || 1);
+
+  // Inventory overview (DB-first, same as Inventory & Logistics)
+  const { data: inventory } = useQuery({
+    queryKey: ['/api/game', gameSession?.id, 'inventory-overview'],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/game/${gameSession.id}/inventory/overview`);
+      return res.json();
+    },
+    enabled: Boolean(gameSession?.id),
+    staleTime: 30000,
+  });
 
   // UI state
   const [sku, setSku] = useState<string>(Object.keys(productData)[0] || "");
@@ -538,11 +547,18 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 <div className="text-sm grid grid-cols-2 gap-3">
                   <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
                     <div className="text-emerald-600 font-medium mb-1">On‑hand ({fabricForSku || "—"})</div>
-                    <div className="text-emerald-800 font-bold font-mono">{Number(rawMaterials?.[fabricForSku || ""]?.onHand || 0).toLocaleString()} u</div>
+                    <div className="text-emerald-800 font-bold font-mono">{(inventory?.summary?.rawMaterialsOnHand || 0).toLocaleString()} u</div>
                   </div>
                   <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
                     <div className="text-blue-600 font-medium mb-1">Arrivals ≤ W{startWeek}</div>
-                    <div className="text-blue-800 font-bold font-mono">{materialPurchases.reduce((s, p) => s + ((p.shipmentWeek <= startWeek) ? (p.orders || []).filter((o: any) => o.material === fabricForSku).reduce((ss: number, o: any) => ss + Number(o.quantity || 0), 0) : 0), 0).toLocaleString()} u</div>
+                    <div className="text-blue-800 font-bold font-mono">{
+                      (() => {
+                        const mat = fabricForSku as any;
+                        const list = (inventory?.rawMaterials || []).find((r: any) => r.material === mat)?.inTransitByWeek || [];
+                        const total = list.filter((it: any) => Number(it.week) <= startWeek).reduce((s: number, it: any) => s + Number(it.quantity || 0), 0);
+                        return total.toLocaleString();
+                      })()
+                    } u</div>
                   </div>
                 </div>
               </div>
@@ -552,7 +568,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 <div className="text-sm grid grid-cols-2 gap-3">
                   <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
                     <div className="text-emerald-600 font-medium mb-1">Total WIP (started)</div>
-                    <div className="text-emerald-800 font-bold font-mono">{scheduledBatches.filter((b) => Number(b.startWeek) <= currentWeek).reduce((s, b) => s + Number(b.quantity || 0), 0).toLocaleString()} u</div>
+                    <div className="text-emerald-800 font-bold font-mono">{Number(inventory?.summary?.wipUnits || 0).toLocaleString()} u</div>
                   </div>
                   <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
                     <div className="text-blue-600 font-medium mb-1">Scheduled (future)</div>
