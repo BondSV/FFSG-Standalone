@@ -543,7 +543,14 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 <div className="text-sm grid grid-cols-2 gap-3">
                   <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
                     <div className="text-emerald-600 font-medium mb-1">On‑hand ({fabricForSku || "—"})</div>
-                    <div className="text-emerald-800 font-bold font-mono">{(inventory?.summary?.rawMaterialsOnHand || 0).toLocaleString()} u</div>
+                    <div className="text-emerald-800 font-bold font-mono">{
+                      (() => {
+                        const mat = fabricForSku as any;
+                        const rm = (inventory?.rawMaterials || []).find((r: any) => r.material === mat);
+                        const on = Number(rm?.onHand || 0);
+                        return on.toLocaleString();
+                      })()
+                    } u</div>
                   </div>
                   <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
                     <div className="text-blue-600 font-medium mb-1">Arrivals ≤ W{startWeek}</div>
