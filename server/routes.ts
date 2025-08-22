@@ -642,6 +642,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         };
         // New week starts with empty UI Orders Log; historical Orders Log remains on committed weeks
         nextWeekState.materialPurchases = [];
+        // Carry forward canonical procurement contracts (so arrivals timeline persists)
+        nextWeekState.procurementContracts = (computed as any).procurementContracts ?? (weeklyState as any).procurementContracts ?? { contracts: [], gmcCommitments: {}, singleSupplierDeal: (weeklyState as any)?.procurementContracts?.singleSupplierDeal };
         // Apply planned marketing and discounts into next week's live plan
         if ((computed as any).plannedMarketingPlan) {
           nextWeekState.marketingPlan = (computed as any).plannedMarketingPlan;
