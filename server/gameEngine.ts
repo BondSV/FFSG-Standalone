@@ -489,6 +489,11 @@ export class GameEngine {
     }
     (state.workInProcess as any).batches = remainingWip;
 
+    // 4b) Update WIP tracking and FG projections for the new system
+    const { wipByWeek, fgProjections } = this.computeWipAndFgProjections(state.productionSchedule, week);
+    (state as any).wipByWeek = wipByWeek;
+    (state as any).fgProjections = fgProjections;
+
     // 5) At the start of this week, move shipments whose availability week equals current week into finished goods
     const remainingShipments: any[] = [];
     for (const sh of state.shipmentsInTransit || []) {
@@ -528,12 +533,12 @@ export class GameEngine {
     } else if (avgDiscount < (state as any).lastDiscountAvg - 0.005) {
       // dropping discounts after deep sales causes immediate intent drop
       if ((state as any).lastDiscountAvg >= 0.30) {
-        dI -= 8;
+        intent -= 8;
       }
       (state as any).discountDeepenStreak = 0;
     }
     if ((state as any).discountDeepenStreak >= 3) {
-      dI -= 5; // waiting for better deals effect
+      intent -= 5; // waiting for better deals effect
     }
     (state as any).lastDiscountAvg = avgDiscount;
 
@@ -1441,5 +1446,63 @@ export class GameEngine {
   ): number {
     const capitalCharge = averageCapitalEmployed * 0.10; // 10% annual charge
     return totalRevenue - totalCosts - capitalCharge;
+  }
+
+  // --------------------
+  // WIP and FG tracking helpers
+  // --------------------
+  
+  /**
+   * Compute WIP by week and FG projections based on production schedule and lead times
+   * @param productionSchedule Current production schedule
+   * @param currentWeek Current week number
+   * @returns Object with WIP by week and FG projections
+   */
+  private static computeWipAndFgProjections(productionSchedule: any, currentWeek: number) {
+    const batches = productionSchedule?.batches || [];
+    const wipByWeek: Record<number, Array<{ product: string; quantity: number; method: string; startWeek: number }>> = {};
+    const fgProjections: Record<number, Array<{ product: string; quantity: number; method: string; startWeek: number }>> = {};
+    
+    // Initialize weeks 1-15
+    for (let w = 1; w <= 15; w++) {
+      wipByWeek[w] = [];
+      fgProjections[w] = [];
+    }
+    
+    for (const batch of batches) {
+      const product = batch.product;
+      const method = batch.method;
+      const quantity = Number(batch.quantity || 0);
+      const startWeek = Number(batch.startWeek || 0);
+      
+      if (startWeek <= 0 || quantity <= 0) continue;
+      
+      const leadTime = this.getProductionLead(product, method);
+      
+      // WIP tracking: batch is WIP from startWeek to startWeek + leadTime - 1
+      for (let w = startWeek; w < startWeek + leadTime; w++) {
+        if (w <= 15) {
+          wipByWeek[w].push({
+            product,
+            quantity,
+            method,
+            startWeek
+          });
+        }
+      }
+      
+      // FG projection: batch becomes FG when week startWeek + leadTime commits
+      const fgWeek = startWeek + leadTime;
+      if (fgWeek <= 15) {
+        fgProjections[fgWeek].push({
+          product,
+          quantity,
+          method,
+          startWeek
+        });
+      }
+    }
+    
+    return { wipByWeek, fgProjections };
   }
 }

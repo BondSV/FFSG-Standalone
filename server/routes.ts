@@ -91,8 +91,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const shipmentsInTransit = (weeklyState as any).shipmentsInTransit || [];
       const finishedGoods = ((weeklyState as any).finishedGoods || {}).lots || [];
       const materialPurchases = (weeklyState as any).materialPurchases || [];
-      const procurementContracts = ((weeklyState as any).procurementContracts || {}).contracts || [];
+      const procurementContracts = (weeklyState as any).procurementContracts || {};
       const productData = (weeklyState as any).productData || {};
+      
+      // New WIP tracking system
+      const wipByWeek = (weeklyState as any).wipByWeek || {};
+      const fgProjections = (weeklyState as any).fgProjections || {};
+      
+      // Get contracts array
+      const contracts = procurementContracts.contracts || [];
 
       // RM arrivals timeline from purchases
       const inTransitByWeek: Record<string, Record<number, number>> = {};
@@ -102,7 +109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         inTransitByWeek[material][arrivalWeek] = (inTransitByWeek[material][arrivalWeek] || 0) + qty;
       };
       // From procurement contracts (planned arrivals, canonical)
-      for (const c of procurementContracts) {
+      for (const c of contracts) {
         const supplier = String(c.supplier || '');
         const lead = Number((GAME_CONSTANTS.SUPPLIERS as any)?.[supplier]?.leadTime || 0);
         const material = String(c.material || 'unknown');
@@ -151,7 +158,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const summary = {
         rawMaterialsOnHand: Object.values(rawMaterials).reduce((s: number, v: any) => s + Number(v.onHand || 0), 0),
-        wipUnits: (workInProcess as any[]).reduce((s, b: any) => s + Number(b.quantity || 0), 0),
+        wipUnits: (wipByWeek[currentWeek] || []).reduce((s: number, b: any) => s + Number(b.quantity || 0), 0),
         finishedGoodsAvailableThisWeek: fgThisWeek,
         finishedGoodsAvailableNextWeek: nextWeekEntry.products || {},
         totalFinishedGoodsAvailableThisWeek: Object.values(fgThisWeek).reduce((s: number, v: any) => s + Number(v || 0), 0),
@@ -198,7 +205,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         arrivalWeek: Number(s.arrivalWeek || 0),
       }));
 
-      res.json({ summary, rawMaterials: rmList, wip: wipList, shipmentsInTransit: shipments, finishedGoodsLots: fgLots, availableForSaleByWeek });
+      res.json({ 
+        summary, 
+        rawMaterials: rmList, 
+        wip: wipList, 
+        wipByWeek, 
+        fgProjections,
+        shipmentsInTransit: shipments, 
+        finishedGoodsLots: fgLots, 
+        availableForSaleByWeek 
+      });
     } catch (e) {
       console.error('inventory overview error', e);
       res.status(500).json({ message: 'Failed to build inventory overview' });

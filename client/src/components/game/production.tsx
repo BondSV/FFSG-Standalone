@@ -73,11 +73,18 @@ export default function Production({ gameSession, currentState }: ProductionProp
     const onHand = Number(rmEntry?.onHand || 0);
     const arrivals = (rmEntry?.inTransitByWeek || []) as Array<{ week: number; quantity: number }>;
     const arriving = arrivals.filter((it: any) => Number(it.week) <= week).reduce((s: number, it: any) => s + Number(it.quantity || 0), 0);
-    // Subtract fabric already consumed by scheduled batches starting on/before week
-    const consumed = scheduledBatches
-      .filter((b) => productData[b.product]?.fabric === fabricForSku && Number(b.startWeek) <= week)
+    
+    // Only subtract future allocations (batches starting in currentWeek+1 to targetWeek)
+    // Past consumption is already reflected in on-hand
+    const futureAllocations = scheduledBatches
+      .filter((b) => 
+        productData[b.product]?.fabric === fabricForSku && 
+        Number(b.startWeek) > currentWeek && 
+        Number(b.startWeek) <= week
+      )
       .reduce((s, b) => s + Number(b.quantity || 0), 0);
-    return Math.max(0, onHand + arriving - consumed);
+    
+    return Math.max(0, onHand + arriving - futureAllocations);
   };
 
   const rungsForWeek = (w: number) => Math.max(0, Math.floor(((capacityByWeek[w]?.capacity || 0)) / STANDARD_BATCH_UNITS));
@@ -571,12 +578,18 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 <div className="text-sm grid grid-cols-2 gap-3">
                   <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-100">
                     <div className="text-emerald-600 font-medium mb-1">Total WIP (started)</div>
-                    <div className="text-emerald-800 font-bold font-mono">{Number(inventory?.summary?.wipUnits || 0).toLocaleString()} u</div>
+                    <div className="text-emerald-800 font-bold font-mono">{
+                      (() => {
+                        // Use new WIP tracking system: WIP for current week
+                        const currentWeekWip = (inventory?.wipByWeek || {})[currentWeek] || [];
+                        return currentWeekWip.reduce((s: number, b: any) => s + Number(b.quantity || 0), 0).toLocaleString();
+                      })()
+                    } u</div>
                   </div>
                   <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
                     <div className="text-blue-600 font-medium mb-1">Scheduled (future)</div>
                     <div className="text-blue-800 font-bold font-mono">{scheduledBatches.filter((b) => Number(b.startWeek) > currentWeek).reduce((s, b) => s + Number(b.quantity || 0), 0).toLocaleString()} u</div>
-                      </div>
+                  </div>
                 </div>
               </div>
             </div>

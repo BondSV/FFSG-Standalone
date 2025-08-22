@@ -96,6 +96,23 @@ export function computeWeekSummary(params: {
     id: String(b.id), product: b.product, method: b.method, quantity: Number(b.quantity || 0), startWeek: Number(b.startWeek), endWeek: Number(b.endWeek), unitProductionCost: Number(b.productionUnitCost || 0)
   }));
 
+  // Alternative: use new WIP tracking system if available
+  const startedFromWipTracking = (nextState.wipByWeek?.[w] || []).map((b: any) => ({
+    id: String(b.id || 'batch'), 
+    product: b.product, 
+    method: b.method, 
+    quantity: Number(b.quantity || 0), 
+    startWeek: Number(b.startWeek), 
+    endWeek: Number(b.startWeek) + (b.method === 'inhouse' ? 
+      (b.product === 'jacket' ? 3 : 2) : 1), 
+    unitProductionCost: b.method === 'inhouse' ? 
+      (b.product === 'jacket' ? 15 : b.product === 'dress' ? 8 : 12) : 
+      (b.product === 'jacket' ? 25 : b.product === 'dress' ? 14 : 18)
+  }));
+
+  // Use new WIP tracking if available, fallback to old system
+  const batchesStarted = startedFromWipTracking.length > 0 ? startedFromWipTracking : started;
+
   const completed = ((prevState.workInProcess?.batches || []) as any[]).filter(
     b => Number(b.endWeek) === w
   ).map(b => ({ id: String(b.id), product: b.product, quantity: Number(b.quantity || 0), endWeek: Number(b.endWeek), shipments: [] }));
@@ -142,7 +159,7 @@ export function computeWeekSummary(params: {
     cash,
     procurement: { arrivals, settlements },
     inventory: { rawMaterials: rmDeltas, finishedGoodsAdded },
-    production: { started, completed },
+    production: { started: batchesStarted, completed },
     marketing: { charged: chargedMarketing, aiDelta, planApplied: nextState.marketingPlan?.channels || [] },
     ledgerRows: ledgerRowsN1,
     demandSeries,
