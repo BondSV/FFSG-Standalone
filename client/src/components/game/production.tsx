@@ -128,6 +128,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
     return takenLocal;
   };
 
+  // Locking: batches with startWeek <= currentWeek are locked
+  const isBatchLocked = (b: any) => Number(b.startWeek) <= currentWeek;
+
   const findFirstFreeRung = (start: number, span: number, excludeId?: string): number | null => {
     const takenLocal = computeTakenExcluding(excludeId);
     const spanMinRungs = minRungsAcrossSpan(start, span);
@@ -713,10 +716,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                       pants: 'CP'
                                     };
                                     
+                                    const locked = batch && isBatchLocked(batch);
                                     return (
                                       <div
                                         key={`used-${r}`}
-                                        className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center cursor-grab active:cursor-grabbing ${
+                                        className={`absolute transition-all duration-300 rounded-sm flex items-center justify-center ${locked ? 'cursor-not-allowed opacity-70' : 'cursor-grab active:cursor-grabbing'} ${
                                           isHovered 
                                             ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] z-10' 
                                             : productColors[product] + ' shadow-lg'
@@ -729,8 +733,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                         } : style}
                                         onMouseEnter={() => setHoverId(id)}
                                         onMouseLeave={() => setHoverId(null)}
-                                        draggable
-                                        onDragStart={() => startDrag(id)}
+                                        draggable={!locked}
+                                        onDragStart={() => { if (!locked) startDrag(id); }}
                                         onDragEnd={clearDrag}
                                       >
                                         <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
@@ -993,7 +997,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
             ) : (
               <div className="space-y-3">
                 {scheduledBatches.map((b) => (
-                  <div key={b.id} className="bg-white rounded-lg border border-slate-200 shadow-sm hover:shadow-md transition-all duration-300 overflow-hidden">
+                  <div key={b.id} className={`bg-white rounded-lg border border-slate-200 shadow-sm ${isBatchLocked(b) ? 'opacity-80' : 'hover:shadow-md'} transition-all duration-300 overflow-hidden`}>
                     <div className="p-4">
                       <div className="grid grid-cols-6 gap-4 items-center">
                         <div>
@@ -1018,8 +1022,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
                           <Button 
                             variant="outline" 
                             size="sm" 
-                            onClick={() => removeBatch.mutate(b.id)}
-                            className="hover:bg-red-50 hover:border-red-300 hover:text-red-700 transition-colors"
+                            onClick={() => { if (!isBatchLocked(b)) removeBatch.mutate(b.id); }}
+                            disabled={isBatchLocked(b)}
+                            className={`transition-colors ${isBatchLocked(b) ? 'opacity-60 cursor-not-allowed' : 'hover:bg-red-50 hover:border-red-300 hover:text-red-700'}`}
                           >
                             Remove
                           </Button>
