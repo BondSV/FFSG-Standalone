@@ -1229,16 +1229,40 @@ export class GameEngine {
           errors.push(`Batch ${b.id} for ${b.product} arrives after launch deadline`);
         }
 
-        // Materials check: Net available
-        const fabric = productData?.[b.product]?.fabric;
-        if (fabric) {
+        // Materials check (DB-first logic): onHand + canonical arrivals by start - prior allocations
+        const fabric = productData?.[b.product]?.fabric as MaterialKey;
+        if (!fabric) {
+          errors.push(`No fabric selected for ${b.product}`);
+        } else {
           const entry = rawMaterials?.[fabric] || { onHand: 0, allocated: 0 };
-          const netAvailable = Number(entry.onHand || 0) - Number(entry.allocated || 0);
-          if (netAvailable < Number(b.quantity || 0)) {
+          const onHandNow = Number(entry.onHand || 0);
+          // Sum arrivals from procurementContracts deliveries with arrivalWeek <= startWeek
+          const contracts: any[] = (currentState.procurementContracts as any)?.contracts || [];
+          const leadBySupplier = (sup: SupplierKey) => Number((GAME_CONSTANTS.SUPPLIERS as any)[sup]?.leadTime || 0);
+          const unitPriceOf = (c: any) => this.computeContractUnitPrice(c);
+          const defectOf = (sup: SupplierKey) => this.getSupplierDefectRate(sup);
+          const arrivals = contracts.flatMap((c: any) => {
+            if (c.material !== fabric) return [] as any[];
+            const uLocked = unitPriceOf(c);
+            const defect = defectOf(c.supplier as SupplierKey);
+            if (c.type === 'SPT') {
+              const arrW = Number(c.weekSigned || 0) + leadBySupplier(c.supplier as SupplierKey);
+              return [{ week: arrW, goodUnits: Math.round(this.toNumber(c.units) * (1 - defect)), unitPrice: uLocked }];
+            }
+            if (c.type === 'GMC') {
+              const orders = (c.gmcOrders || []) as any[];
+              return orders.map((o: any) => ({ week: Number(o.week || 0) + leadBySupplier(c.supplier as SupplierKey), goodUnits: Math.round(this.toNumber(o.units) * (1 - defect)), unitPrice: this.toNumber(o.unitPrice ?? uLocked) }));
+            }
+            return [] as any[];
+          });
+          const inboundByStart = arrivals.filter((d: any) => d.week <= Number(b.startWeek)).reduce((s: number, d: any) => s + this.toNumber(d.goodUnits), 0);
+          const allocatedBefore = (productionSchedule?.batches || [])
+            .filter((bb: any) => bb !== b && productData[bb.product]?.fabric === fabric && Number(bb.startWeek) < Number(b.startWeek))
+            .reduce((s: number, bb: any) => s + Number(bb.quantity || 0), 0);
+          const projected = onHandNow + inboundByStart - allocatedBefore;
+          if (projected < Number(b.quantity || 0)) {
             errors.push(`Insufficient materials for batch ${b.id} (${b.product})`);
           }
-        } else {
-          errors.push(`No fabric selected for ${b.product}`);
         }
       }
     }

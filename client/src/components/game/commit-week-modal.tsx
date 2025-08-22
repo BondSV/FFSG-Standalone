@@ -77,6 +77,7 @@ export default function CommitWeekModal({
         await Promise.all([
           queryClient.invalidateQueries({ queryKey: ['/api/game/current'] }),
           queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession.id, 'weeks'] }),
+          queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession.id, 'inventory-overview'] }),
         ]);
         // Build Weekly Summary for Week N+1
         const prevWeek = Number(currentState.weekNumber);
