@@ -1221,13 +1221,7 @@ export class GameEngine {
             }
           }
         }
-        // Launch deadline: need arrival by end of week 6 for launch at week 7
-        const shipWeeks = this.getShippingWeeks(b.shipping || 'standard');
-        const completionWeek = b.startWeek + lead;
-        const arrivalBy = completionWeek + shipWeeks; // arrives end-of-week
-        if (arrivalBy > 6) {
-          errors.push(`Batch ${b.id} for ${b.product} arrives after launch deadline`);
-        }
+        // No launch timing validation per spec; late arrivals are allowed and will be reflected as lost sales.
 
         // Materials check (DB-first logic): onHand + canonical arrivals by start - prior allocations
         const fabric = productData?.[b.product]?.fabric as MaterialKey;
