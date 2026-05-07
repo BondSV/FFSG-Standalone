@@ -578,8 +578,23 @@ export class GameEngine {
     let cogsProductionSold = 0;
     let cogsLogisticsSold = 0;
 
-    // Current week's marketing: do NOT charge here. Marketing is planned for next week and charged at commit of current week
+    // Current week's marketing was paid at the START of week N (staged by N-1's
+    // commit and applied when N was created in routes.ts). We do NOT subtract
+    // cash here, but we DO record it in P&L (costMarketing) so it shows up in
+    // costBreakdown and totals.cogsMarketingToDate for COGS / ROAS analytics.
     const marketingSpend = this.toNumber(state.marketingPlan?.totalSpend ?? state.marketingSpend);
+    costMarketing = marketingSpend;
+
+    // Track underfunded-marketing streaks for the next-week preview decay model.
+    // Reset on adequate spend (>= half baseline), increment otherwise.
+    {
+      const baselineSpend = GAME_CONSTANTS.BASELINE_MARKETING_SPEND;
+      const isUnderfunded = marketingSpend < 0.5 * baselineSpend;
+      const prevStreakA = this.toNumber((state as any).underfundedStreakA, 0);
+      const prevStreakI = this.toNumber((state as any).underfundedStreakI, 0);
+      (state as any).underfundedStreakA = isUnderfunded ? prevStreakA + 1 : 0;
+      (state as any).underfundedStreakI = isUnderfunded ? prevStreakI + 1 : 0;
+    }
 
     // Next week's planned marketing: DO NOT deduct in Week N. Stage for Week N+1.
     const nextWeekMarketingSpend = this.toNumber((state as any).plannedMarketingPlan?.totalSpend ?? 0);
@@ -600,26 +615,36 @@ export class GameEngine {
     for (const c of contracts) {
       const unitPriceC = this.computeContractUnitPrice(c);
       for (const d of (c.deliveries || [])) {
-        if (this.toNumber(d.week) === dueWeekNext) {
+        // Both SPT and GMC: physical arrival lands at d.week.
+        if (this.toNumber(d.week) === dueWeekNext && !(d as any).__arrived) {
           const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
           const units = this.toNumber(d.units);
-          const goodUnits = Number.isFinite((d as any).goodUnits) ? this.toNumber((d as any).goodUnits) : Math.round(units * (1 - defectRate));
+          const goodUnits = Number.isFinite((d as any).goodUnits)
+            ? this.toNumber((d as any).goodUnits)
+            : Math.round(units * (1 - defectRate));
           const u = this.toNumber(d.unitPrice ?? unitPriceC);
           nextWeekArrivals.push({ material: c.material as MaterialKey, goodUnits, unitPrice: u });
-          if (c.type === 'SPT') {
-            const due = goodUnits * u;
+          c.deliveredUnits = this.toNumber(c.deliveredUnits) + goodUnits;
+          (d as any).__arrived = true;
+
+          // SPT pays on delivery. Per spec 2.7 we charge for all ORDERED units
+          // (defective units are expensed in the arrival week); inventory is
+          // increased by goodUnits only (applied in routes when N+1 is created).
+          if (c.type === 'SPT' && !(d as any).__paid) {
+            const due = units * u;
             nextWeekOutflowsSPT += due;
             nextWeekLedger.push({ type: 'materials_spt', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
+            (d as any).__paid = true;
           }
         }
-        if (c.type === 'GMC' && this.toNumber(d.week) + 2 === dueWeekNext) {
-          const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
+        // GMC: payment is due delivery + 2 weeks (arrival already booked above).
+        if (c.type === 'GMC' && this.toNumber(d.week) + 2 === dueWeekNext && !(d as any).__paid) {
           const units = this.toNumber(d.units);
-          const goodUnits = Number.isFinite((d as any).goodUnits) ? this.toNumber((d as any).goodUnits) : Math.round(units * (1 - defectRate));
           const u = this.toNumber(d.unitPrice ?? unitPriceC);
-          const due = goodUnits * u;
+          const due = units * u;
           nextWeekOutflowsGMC += due;
           nextWeekLedger.push({ type: 'materials_gmc', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: dueWeekNext });
+          (d as any).__paid = true;
         }
       }
     }
@@ -796,9 +821,10 @@ export class GameEngine {
         for (const d of (c.deliveries || [])) {
           if (c.type === 'SPT') {
             if (this.toNumber(d.week) > 15 && !(d as any).__endPrepaid) {
-              const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
+              const units = this.toNumber(d.units);
               const u = this.toNumber(d.unitPrice ?? unitPriceForced);
-              const due = goodUnits * u;
+              // Charge full ordered units; defective units are expensed.
+              const due = units * u;
               if (cashOnHand >= due) {
                 cashOnHand -= due;
               } else {
@@ -808,13 +834,22 @@ export class GameEngine {
               }
               costMaterials += due;
               ledger.push({ type: 'materials_spt', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: 15 });
+              // Credit goodUnits as delivered for reporting accuracy
+              if (!(d as any).__arrived) {
+                const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
+                const goodUnits = Number.isFinite((d as any).goodUnits)
+                  ? this.toNumber((d as any).goodUnits)
+                  : Math.round(units * (1 - defectRate));
+                c.deliveredUnits = this.toNumber(c.deliveredUnits) + goodUnits;
+                (d as any).__arrived = true;
+              }
               (d as any).__endPrepaid = true;
             }
           } else if (c.type === 'GMC') {
             if (this.toNumber(d.week) + 2 > 15 && !(d as any).__endSettlementPrepaid) {
-              const goodUnits = this.toNumber((d as any).goodUnits ?? d.units);
+              const units = this.toNumber(d.units);
               const u = this.toNumber(d.unitPrice ?? unitPriceForced);
-              const due = goodUnits * u;
+              const due = units * u;
               if (cashOnHand >= due) {
                 cashOnHand -= due;
               } else {
@@ -824,6 +859,14 @@ export class GameEngine {
               }
               costMaterials += due;
               ledger.push({ type: 'materials_gmc', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: 15 });
+              if (!(d as any).__arrived) {
+                const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
+                const goodUnits = Number.isFinite((d as any).goodUnits)
+                  ? this.toNumber((d as any).goodUnits)
+                  : Math.round(units * (1 - defectRate));
+                c.deliveredUnits = this.toNumber(c.deliveredUnits) + goodUnits;
+                (d as any).__arrived = true;
+              }
               (d as any).__endSettlementPrepaid = true;
             }
           }
@@ -893,10 +936,21 @@ export class GameEngine {
     state.holdingCosts = `${(this.toNumber(state.holdingCosts) + costHolding).toFixed(2)}`;
     state.interestAccrued = `${(this.toNumber(state.interestAccrued) + costInterest).toFixed(2)}`;
 
-    // Update totals for actual unit cost tracking (approximate allocation: allocate full marketing to COGS of sold units proportionally)
+    // Persist this week's cost breakdown for Analytics
+    (state as any).costBreakdown = {
+      materials: Number(costMaterials.toFixed(2)),
+      production: Number(costProduction.toFixed(2)),
+      logistics: Number(costLogistics.toFixed(2)),
+      marketing: Number(costMarketing.toFixed(2)),
+      holding: Number(costHolding.toFixed(2)),
+      interest: Number(costInterest.toFixed(2)),
+    };
+
+    // Update totals (cumulative season-to-date) for actual unit cost tracking
+    // and ROAS / COGS analytics. Allocate marketing per unit sold.
     const prevTotals = (state.totals as any) || {};
     const unitsSoldThisWeek = productKeys.reduce((s, p) => s + this.toNumber(salesByProduct[p]), 0);
-    const marketingAllocated = unitsSoldThisWeek > 0 ? costMarketing : 0; // allocate all to weeks with sales
+    const marketingAllocated = unitsSoldThisWeek > 0 ? costMarketing : 0;
     state.totals = {
       revenueToDate: this.toNumber(prevTotals.revenueToDate) + weeklyRevenue,
       unitsSoldToDate: this.toNumber(prevTotals.unitsSoldToDate) + unitsSoldThisWeek,
@@ -906,26 +960,16 @@ export class GameEngine {
       cogsMarketingToDate: this.toNumber(prevTotals.cogsMarketingToDate) + marketingAllocated,
     } as any;
 
-    // Write cash ledger entries directly to database
-    try {
-      if (ledger.length > 0) {
-        const gameSessionId = (state as any).gameSessionId || currentState.gameSessionId;
-        const rows = ledger.map((e) => ({
-          id: `${gameSessionId}-${(e.weekNumber ?? week)}-${e.type}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          gameSessionId,
-          weekNumber: (e.weekNumber ?? week),
-          entryType: e.type,
-          refId: e.refId || null,
-          amount: Number(e.amount || 0) as any,
-        }));
-        await db.insert(cashLedger).values(rows as any);
-      }
-    } catch (error) {
-      console.error('Failed to write cash ledger entries:', error);
-    }
+    // Three-tier cost tracking: actualUnitCost = total COGS / total units sold to date
+    const t = state.totals as any;
+    const totalCogs = this.toNumber(t.cogsMaterialsToDate) + this.toNumber(t.cogsProductionToDate)
+      + this.toNumber(t.cogsLogisticsToDate) + this.toNumber(t.cogsMarketingToDate);
+    const unitsSoldToDate = this.toNumber(t.unitsSoldToDate);
+    (state as any).actualUnitCost = unitsSoldToDate > 0
+      ? Number((totalCogs / unitsSoldToDate).toFixed(4))
+      : 0;
 
-    // Mark committed
-    // Expose staged N+1 effects for routes.ts to apply when creating Week N+1 state
+    // Stage N+1 effects for routes.ts to apply when creating Week N+1 state
     const nextWeekInterest = this.calculateInterest(creditUsed);
     (state as any).nextWeekArrivals = nextWeekArrivals;
     (state as any).nextWeekOutflows = {
@@ -935,41 +979,32 @@ export class GameEngine {
       interest: nextWeekInterest,
       holding: costHolding,
     };
-    // Ensure interest appears in the ledger for Week N+1
+
+    // Append N+1 interest and holding to the ledger so it is a single
+    // consolidated batch insert (failure surfaces atomically).
     if (nextWeekInterest > 0) {
-      const wk = week + 1;
-      const interestEntry = { type: 'interest', amount: nextWeekInterest, weekNumber: wk } as any;
-      try {
-        const gameSessionId = (state as any).gameSessionId || currentState.gameSessionId;
-        await db.insert(cashLedger).values([{
-          id: `${gameSessionId}-${wk}-interest-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-          gameSessionId,
-          weekNumber: wk,
-          entryType: 'interest',
-          refId: null,
-          amount: Number(nextWeekInterest) as any,
-        }] as any);
-      } catch (e) {
-        // Non-fatal; ledger push failure shouldn't break commit
-        console.error('Failed to write next-week interest to ledger', e);
-      }
+      ledger.push({ type: 'interest', amount: nextWeekInterest, weekNumber: week + 1 });
     }
-    // Ensure holding appears in the ledger for Week N+1
     if (costHolding > 0) {
-      const wk = week + 1;
-      try {
+      ledger.push({ type: 'holding', amount: costHolding, weekNumber: week + 1 });
+    }
+
+    // Single batch insert for the full week's ledger
+    try {
+      if (ledger.length > 0) {
         const gameSessionId = (state as any).gameSessionId || currentState.gameSessionId;
-        await db.insert(cashLedger).values([{
-          id: `${gameSessionId}-${wk}-holding-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        const rows = ledger.map((e, i) => ({
+          id: `${gameSessionId}-${(e.weekNumber ?? week)}-${e.type}-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 8)}`,
           gameSessionId,
-          weekNumber: wk,
-          entryType: 'holding',
-          refId: null,
-          amount: Number(costHolding) as any,
-        }] as any);
-      } catch (e) {
-        console.error('Failed to write next-week holding to ledger', e);
+          weekNumber: (e.weekNumber ?? week),
+          entryType: e.type,
+          refId: e.refId || null,
+          amount: Number(e.amount || 0) as any,
+        }));
+        await db.insert(cashLedger).values(rows as any);
       }
+    } catch (error) {
+      console.error('Failed to write cash ledger entries', { week, gameSessionId: (state as any).gameSessionId, count: ledger.length, error });
     }
     (state as any).isCommitted = true;
     (state as any).ledgerEntries = ledger; // Keep for backwards compatibility
@@ -1047,48 +1082,14 @@ export class GameEngine {
     };
   }
 
-  static processProductionSchedule(currentState: any, updates: any): any {
-    const newProductionSchedule = updates.productionSchedule;
-    if (!newProductionSchedule) return updates;
-
-    const existingBatches = currentState.productionSchedule?.batches || [];
-    const newBatches = newProductionSchedule.batches || [];
-    
-    // Calculate cost of new batches
-    let totalProductionCost = 0;
-    const addedBatches = newBatches.filter((newBatch: any) => {
-      return !existingBatches.some((existing: any) => existing.id === newBatch.id);
-    });
-
-    addedBatches.forEach((batch: any) => {
-      totalProductionCost += batch.totalCost || 0;
-    });
-
-    if (totalProductionCost === 0) return updates;
-
-    // Update financial data
-    const currentCash = parseFloat(currentState.cashOnHand || GAME_CONSTANTS.STARTING_CAPITAL);
-    const currentCreditUsed = parseFloat(currentState.creditUsed || 0);
-    
-    let updatedCashOnHand = currentCash;
-    let updatedCreditUsed = currentCreditUsed;
-    
-    if (totalProductionCost <= currentCash) {
-      // Pay with cash
-      updatedCashOnHand = currentCash - totalProductionCost;
-    } else {
-      // Use cash + credit
-      const remainingCost = totalProductionCost - currentCash;
-      updatedCashOnHand = 0;
-      updatedCreditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, currentCreditUsed + remainingCost);
-    }
-
-    return {
-      ...updates,
-      cashOnHand: updatedCashOnHand.toString(),
-      creditUsed: updatedCreditUsed.toString(),
-      productionCosts: (parseFloat(currentState.productionCosts || '0') + totalProductionCost).toString(),
-    };
+  // Planning-only: persist the production schedule without affecting cash or
+  // cumulative cost decimals. The single source of cash truth is `commitWeek`,
+  // which charges production + shipping at batch start. Saving / editing a
+  // schedule must not move money. (Previously this function would double-charge
+  // when `batch.totalCost` was set; UI batches omit it today, but this kept the
+  // hazard live in the routes dispatch.)
+  static processProductionSchedule(_currentState: any, updates: any): any {
+    return updates;
   }
   
   static calculateDemand(
@@ -1300,51 +1301,75 @@ export class GameEngine {
       }
     }
     
-    // Cash flow validation: estimate this week's due payments (procurement instalments + production starts + shipping + marketing + holding)
+    // Cash flow validation: mirror the engine's actual commit cash flow.
+    // Engine `commitWeek` charges only operational outflows in week N (production
+    // + shipping for batches starting in N). Procurement deliveries, next-week
+    // marketing, holding, and interest are STAGED for N+1 by N's commit; they
+    // are applied when N+1 is created. We treat both as "what this commit
+    // locks in" so the player gets a true liquidity check.
     const cashOnHand = Number(currentState.cashOnHand || 0);
     const creditUsed = Number(currentState.creditUsed || 0);
     const availableFunds = cashOnHand + (GAME_CONSTANTS.CREDIT_LIMIT - creditUsed);
-    let immediatePayments = 0;
+
+    // Operational outflows this week (production starts)
+    let operationalOutflows = 0;
+    const prod = currentState.productionSchedule as any;
+    for (const b of prod?.batches || []) {
+      if (b.startWeek === weekNumber) {
+        const qty = Number(b.quantity || 0);
+        operationalOutflows += qty * this.getProductionUnitCost(b.product, b.method);
+        const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
+        operationalOutflows += qty * this.getShippingUnitCost(b.product, shipMethod);
+      }
+    }
+
+    // Staged-for-N+1 outflows (will be charged at start of N+1)
+    let stagedNextOutflows = 0;
+    const dueWeekNext = weekNumber + 1;
     const procurementContracts = currentState.procurementContracts as any;
     if (procurementContracts) {
       for (const c of procurementContracts.contracts || []) {
         const unitBase = (GAME_CONSTANTS.SUPPLIERS as any)[c.supplier]?.materials?.[c.material]?.price || 0;
         const surcharge = (GAME_CONSTANTS.SUPPLIERS as any)[c.supplier]?.materials?.[c.material]?.printSurcharge || 0;
         const locked = this.toNumber((c as any).lockedUnitPrice);
-        const unitPrice = locked > 0 ? locked : (unitBase + surcharge);
-        if (c.type === 'GMC') {
-          const orders = (c as any).gmcOrders || [];
-          for (const o of orders) {
-            if (this.toNumber(o.week) + 2 === weekNumber) {
-              const ou = this.toNumber(o.units);
-              const op = this.toNumber(o.unitPrice ?? unitPrice);
-              immediatePayments += ou * op;
-            }
-          }
-        } else if (c.type === 'SPT') {
+        const unitPriceC = locked > 0 ? locked : (unitBase + surcharge);
+        if (c.type === 'SPT') {
           const lead = this.getSupplierLeadTime(c.supplier);
-          if (c.weekSigned + lead === weekNumber) {
-            const defectRate = this.getSupplierDefectRate(c.supplier);
-            const goodUnits = Number(c.units || 0) * (1 - defectRate);
-            immediatePayments += goodUnits * unitPrice;
+          // SPT pays on delivery; charged for full ordered units (defects expensed)
+          if (Number(c.weekSigned) + lead === dueWeekNext) {
+            const units = Number(c.units || 0);
+            stagedNextOutflows += units * unitPriceC;
+          }
+        } else if (c.type === 'GMC') {
+          const orders = (c as any).gmcOrders || [];
+          const lead = this.getSupplierLeadTime(c.supplier);
+          for (const o of orders) {
+            // GMC pays delivery_week + 2; delivery_week = order_week + lead
+            if (this.toNumber(o.week) + lead + 2 === dueWeekNext) {
+              const units = this.toNumber(o.units);
+              const price = this.toNumber(o.unitPrice ?? unitPriceC);
+              stagedNextOutflows += units * price;
+            }
           }
         }
       }
     }
-    // Production starts this week
-    const prod = currentState.productionSchedule as any;
-    for (const b of prod?.batches || []) {
-      if (b.startWeek === weekNumber) {
-        const qty = Number(b.quantity || 0);
-        immediatePayments += qty * this.getProductionUnitCost(b.product, b.method);
-        // Shipping is paid immediately on batch schedule
-        const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
-        immediatePayments += qty * this.getShippingUnitCost(b.product, shipMethod);
-      }
+    // Next-week planned marketing
+    stagedNextOutflows += Number((currentState as any).plannedMarketingPlan?.totalSpend ?? 0);
+    // Holding cost staged for N+1 (approximate via current inventory value × rate)
+    {
+      const rmValue = Object.values((currentState as any).rawMaterials || {})
+        .reduce((s: number, v: any) => s + Number(v?.onHandValue || 0), 0);
+      const wipValue = ((currentState as any).workInProcess?.batches || [])
+        .reduce((s: number, b: any) => s + Number(b.quantity || 0) * (Number(b.materialUnitCost || 0) + Number(b.productionUnitCost || 0)), 0);
+      const fgValue = ((currentState as any).finishedGoods?.lots || [])
+        .reduce((s: number, l: any) => s + Number(l.quantity || 0) * Number(l.unitCostBasis || 0), 0);
+      stagedNextOutflows += (rmValue + wipValue + fgValue) * GAME_CONSTANTS.HOLDING_COST_RATE;
     }
-    // Marketing spend
-    immediatePayments += Number((currentState as any).marketingPlan?.totalSpend ?? currentState.marketingSpend ?? 0);
+    // Interest staged for N+1 on outstanding credit
+    stagedNextOutflows += creditUsed * GAME_CONSTANTS.WEEKLY_INTEREST_RATE;
 
+    const immediatePayments = operationalOutflows + stagedNextOutflows;
     if (immediatePayments > availableFunds) {
       errors.push("Inadequate cash for this week's plan");
     }
@@ -1403,6 +1428,8 @@ export class GameEngine {
       intent: 0,
       lastDiscountAvg: 0,
       discountDeepenStreak: 0,
+      underfundedStreakA: 0,
+      underfundedStreakI: 0,
       weeklyDiscounts: { jacket: 0, dress: 0, pants: 0 },
       weeklyRevenue: '0',
       weeklyDemand: { jacket: 0, dress: 0, pants: 0 },

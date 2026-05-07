@@ -73,6 +73,7 @@ export const weeklyStates = pgTable("weekly_states", {
   rawMaterials: jsonb("raw_materials").notNull(),
   workInProcess: jsonb("work_in_process").notNull(),
   finishedGoods: jsonb("finished_goods").notNull(),
+  shipmentsInTransit: jsonb("shipments_in_transit").default('[]'),
   
   // Production and procurement
   productionSchedule: jsonb("production_schedule").notNull(),
@@ -90,11 +91,26 @@ export const weeklyStates = pgTable("weekly_states", {
   weeklySales: jsonb("weekly_sales").notNull(),
   lostSales: jsonb("lost_sales").notNull(),
   
-  // Costs
+  // Costs (cumulative season-to-date)
   materialCosts: decimal("material_costs", { precision: 15, scale: 2 }).default('0'),
   productionCosts: decimal("production_costs", { precision: 15, scale: 2 }).default('0'),
   logisticsCosts: decimal("logistics_costs", { precision: 15, scale: 2 }).default('0'),
   holdingCosts: decimal("holding_costs", { precision: 15, scale: 2 }).default('0'),
+  
+  // Per-week cost breakdown for Analytics (materials/production/logistics/marketing/holding/interest)
+  costBreakdown: jsonb("cost_breakdown").default('{}'),
+  
+  // Cumulative running totals snapshot (revenueToDate, unitsSoldToDate, cogs*ToDate)
+  totals: jsonb("totals").default('{}'),
+  
+  // Three-tier cost tracking: actual unit cost (COGS / units sold) — exposed from Week 7
+  actualUnitCost: decimal("actual_unit_cost", { precision: 10, scale: 4 }).default('0'),
+  
+  // Marketing intent tracking (carries across weeks)
+  lastDiscountAvg: decimal("last_discount_avg", { precision: 6, scale: 4 }).default('0'),
+  discountDeepenStreak: integer("discount_deepen_streak").default(0),
+  underfundedStreakA: integer("underfunded_streak_a").default(0),
+  underfundedStreakI: integer("underfunded_streak_i").default(0),
   
   // Validation and errors
   validationErrors: jsonb("validation_errors").notNull(),

@@ -395,7 +395,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   .update(ordersLogTable)
                   .set({ removedAt: new Date() } as any)
                   .where(and(eq(ordersLogTable.gameSessionId, (weeklyState as any).gameSessionId), inArray(ordersLogTable.orderTimestamp, removedTimestamps)));
-              } catch {}
+              } catch (err) {
+                console.error('Failed to soft-delete orders log rows', { gameSessionId: (weeklyState as any).gameSessionId, removedTimestamps, err });
+              }
             }
           }
 
@@ -491,7 +493,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 existingOrderIds.add(orderId);
               }
 
-              // Insert immutable Orders Log row in DB
+              // Insert immutable Orders Log row in DB. Duplicate id on retry is
+              // harmless (same order resubmit); log other failures so they are
+              // visible in production logs rather than silently swallowed.
               try {
                 await db.insert(ordersLogTable).values({
                   id: orderId,
@@ -505,7 +509,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   effectiveUnitPrice: Number(order.effectiveUnitPrice || 0) as any,
                   effectiveLineTotal: Number(order.effectiveLineTotal || 0) as any,
                 } as any);
-              } catch {}
+              } catch (err: any) {
+                const isDup = String(err?.code || '') === '23505';
+                if (!isDup) {
+                  console.error('Failed to insert orders_log row', { orderId, err });
+                }
+              }
             }
           }
           if (updates.gmcCommitments && typeof updates.gmcCommitments === 'object') {
@@ -621,14 +630,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const allStates = await storage.getAllWeeklyStates(gameId);
         const serviceLevel = GameEngine.calculateServiceLevel(allStates);
 
-        const totalRevenue = allStates.reduce((sum, state) => sum + Number(state.weeklyRevenue), 0);
-        const totalOperationalCosts = allStates.reduce((sum, state) => 
-          sum + Number(state.materialCosts) + Number(state.productionCosts) + 
-          Number(state.logisticsCosts) + Number(state.holdingCosts), 0);
-        const totalInterest = allStates.reduce((sum, state) => sum + Number(state.interestAccrued || 0), 0);
-        const totalMarketing = allStates.reduce((sum, state) => sum + Number((state as any).marketingPlan?.totalSpend ?? state.marketingSpend ?? 0), 0);
+        // Cumulative columns (materialCosts, productionCosts, etc.) are
+        // season-to-date by week-15 already; use the last (sorted) row to
+        // avoid double-counting via summation across all weeks.
+        const sortedStates = [...allStates].sort((a, b) => Number(a.weekNumber) - Number(b.weekNumber));
+        const finalStateRow = sortedStates[sortedStates.length - 1] as any;
+        const totalRevenue = sortedStates.reduce((sum, state) => sum + Number(state.weeklyRevenue || 0), 0);
+        const totalOperationalCosts =
+          Number(finalStateRow?.materialCosts || 0) +
+          Number(finalStateRow?.productionCosts || 0) +
+          Number(finalStateRow?.logisticsCosts || 0) +
+          Number(finalStateRow?.holdingCosts || 0);
+        const totalInterest = Number(finalStateRow?.interestAccrued || 0);
+        const totalMarketing = sortedStates.reduce(
+          (sum, state) => sum + Number((state as any).marketingPlan?.totalSpend ?? state.marketingSpend ?? 0),
+          0
+        );
         const totalCosts = totalOperationalCosts + totalMarketing + totalInterest;
-        const economicProfit = GameEngine.calculateEconomicProfit(totalRevenue, totalCosts, GAME_CONSTANTS.STARTING_CAPITAL);
+
+        // Average capital employed across the season:
+        // capitalEmployed_w = cashOnHand_w + creditUsed_w + inventoryValue_w
+        const capitalByWeek = sortedStates.map((s: any) => {
+          const cash = Number(s.cashOnHand || 0);
+          const credit = Number(s.creditUsed || 0);
+          const rmValue = Object.values(s.rawMaterials || {}).reduce(
+            (acc: number, v: any) => acc + Number(v?.onHandValue || 0),
+            0
+          );
+          const wipValue = ((s.workInProcess?.batches) || []).reduce(
+            (acc: number, b: any) => acc + Number(b.quantity || 0) * (Number(b.materialUnitCost || 0) + Number(b.productionUnitCost || 0)),
+            0
+          );
+          const fgValue = ((s.finishedGoods?.lots) || []).reduce(
+            (acc: number, l: any) => acc + Number(l.quantity || 0) * Number(l.unitCostBasis || 0),
+            0
+          );
+          return cash + credit + rmValue + wipValue + fgValue;
+        });
+        const averageCapital = capitalByWeek.length > 0
+          ? capitalByWeek.reduce((s, v) => s + v, 0) / capitalByWeek.length
+          : GAME_CONSTANTS.STARTING_CAPITAL;
+        const economicProfit = GameEngine.calculateEconomicProfit(totalRevenue, totalCosts, averageCapital);
 
         // Dead stock penalty: value of remaining finished goods at unit cost basis
         const finalState = committedState as any;
@@ -655,6 +697,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           isCommitted: false,
           validationErrors: [],
           validationWarnings: [],
+          // Reset per-week breakdown; cumulative `totals` and `actualUnitCost`
+          // carry forward from the spread above.
+          costBreakdown: {},
         };
         // New week starts with empty UI Orders Log; historical Orders Log remains on committed weeks
         nextWeekState.materialPurchases = [];
