@@ -163,7 +163,11 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
 
   const updateStateMutation = useMutation({
     mutationFn: async (updates: any) => { await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/update`, updates); },
-    onSuccess: () => { queryClient.invalidateQueries({ queryKey: ['/api/game/current'] }); queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession?.id, 'weeks'] }); },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession?.id, 'weeks'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession?.id, 'inventory-overview'] });
+    },
     onError: (error) => { if (isUnauthorizedError(error)) { toast({ title: "Unauthorized", description: "You are logged out. Logging in again...", variant: "destructive" }); setTimeout(() => { window.location.href = "/api/login"; }, 500); return; } toast({ title: "Error", description: "Failed to update procurement data.", variant: "destructive" }); },
   });
 
@@ -216,6 +220,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       // Refresh both current state and the weeks history used by Orders Log
       queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
       if (gameSession?.id) queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession.id, 'weeks'] });
+      if (gameSession?.id) queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession.id, 'inventory-overview'] });
       toast({ title: 'Removed', description: 'Order removed from this week.' });
     }
     catch (e) { if (isUnauthorizedError(e)) { toast({ title: 'Unauthorized', description: 'You are logged out. Logging in again...', variant: 'destructive' }); setTimeout(() => { window.location.href = '/api/login'; }, 500); return; } toast({ title: 'Error', description: 'Failed to remove order. Try again.', variant: 'destructive' }); }
@@ -264,6 +269,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     try {
       await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/update`, { procurementContracts: { singleSupplierDeal: supplier } });
       queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession?.id, 'inventory-overview'] });
       toast({ title: 'Single Supplier Deal Signed', description: `All future orders from ${supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} will receive an additional +2% discount.` });
     } catch (e) {
       if (isUnauthorizedError(e)) {
@@ -283,6 +289,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
       const updates: any = { gmcCommitments: { ...(currentState?.procurementContracts?.gmcCommitments || {}), [supplier]: gmcCommitments[supplier] || 0 } };
       await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/update`, updates);
       queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/game', gameSession?.id, 'inventory-overview'] });
       toast({ title: 'GMC Signed', description: `${supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} commitment signed at ${Number(gmcCommitments[supplier] || 0).toLocaleString()} units.` });
     } catch (e) {
       if (isUnauthorizedError(e)) {

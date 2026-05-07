@@ -182,6 +182,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/game", gameSession?.id, "inventory-overview"] });
       toast({ title: "Batch added", description: "Production batch scheduled." });
       setConfirmPartial(false);
     },
@@ -267,6 +268,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/game", gameSession?.id, "inventory-overview"] });
     },
   });
 
@@ -292,6 +294,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
       const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart, method: 'outsourced' } : b));
       await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { productionSchedule: { batches: next } });
       queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/game", gameSession?.id, "inventory-overview"] });
       return true;
     }
 
@@ -332,6 +335,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
     ));
     await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { productionSchedule: { batches: next } });
     queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
+    queryClient.invalidateQueries({ queryKey: ["/api/game", gameSession?.id, "inventory-overview"] });
     setRungByBatchId((prev) => ({ ...prev, [moving.id]: desiredRung }));
     return true;
   };

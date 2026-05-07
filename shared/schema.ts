@@ -361,10 +361,15 @@ export interface ExtendedWeeklyState {
   // Discount trend tracking (for intent penalties)
   lastDiscountAvg?: number; // last week's average discount 0..1
   discountDeepenStreak?: number; // consecutive weeks of deeper discounts
+  // Marketing under-funding streaks (for progressive A/I decay in preview)
+  underfundedStreakA?: number;
+  underfundedStreakI?: number;
   weeklyDiscounts: WeeklyDiscountsByProduct;
   weeklyDemand: WeeklyDemandByProduct;
   weeklySales: WeeklySalesByProduct;
   lostSales: WeeklySalesByProduct;
   costBreakdown?: CostBreakdown;
   totals?: RunningTotals;
+  // Three-tier cost tracking: cumulative actual unit cost (COGS / units sold)
+  actualUnitCost?: number;
 }
