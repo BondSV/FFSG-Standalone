@@ -78,56 +78,102 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Inventory overview (read-only aggregate)
+  // Inventory overview (read-only aggregate). Single endpoint that powers
+  // both the Inventory and Logistics sub-tabs. Returns current-week stocks,
+  // detailed in-transit per supplier/arrival-week, WIP with %-complete,
+  // shipments-in-transit with full cost basis, FG lots with full cost basis,
+  // historical holding-cost / lost-sales / service-level series, and per
+  // production batch the projected on-shelf week (for the shipping editor).
   app.get('/api/game/:gameId/inventory/overview', isAuthenticated, async (req: any, res) => {
     try {
       const { gameId } = req.params;
-      const weeklyState = await storage.getLatestWeeklyState(gameId);
-      if (!weeklyState) return res.status(404).json({ message: 'No state' });
+      const allStates = await storage.getAllWeeklyStates(gameId);
+      if (allStates.length === 0) return res.status(404).json({ message: 'No state' });
+      const sortedStates = [...allStates].sort((a, b) => Number(a.weekNumber) - Number(b.weekNumber));
+      const weeklyState = sortedStates[sortedStates.length - 1] as any;
 
-      const currentWeek = Number((weeklyState as any).weekNumber || 1);
-      const rawMaterials = (weeklyState as any).rawMaterials || {};
-      const workInProcess = ((weeklyState as any).workInProcess || {}).batches || [];
-      const shipmentsInTransit = (weeklyState as any).shipmentsInTransit || [];
-      const finishedGoods = ((weeklyState as any).finishedGoods || {}).lots || [];
-      const materialPurchases = (weeklyState as any).materialPurchases || [];
-      const procurementContracts = (weeklyState as any).procurementContracts || {};
-      const productData = (weeklyState as any).productData || {};
-      
-      // New WIP tracking system
-      const wipByWeek = (weeklyState as any).wipByWeek || {};
-      const fgProjections = (weeklyState as any).fgProjections || {};
-      
-      // Get contracts array
+      const currentWeek = Number(weeklyState.weekNumber || 1);
+      const rawMaterials = weeklyState.rawMaterials || {};
+      const workInProcess = (weeklyState.workInProcess || {}).batches || [];
+      const shipmentsInTransitRaw = weeklyState.shipmentsInTransit || [];
+      const finishedGoods = (weeklyState.finishedGoods || {}).lots || [];
+      const procurementContracts = weeklyState.procurementContracts || {};
+      const productData = weeklyState.productData || {};
+      const productionSchedule = weeklyState.productionSchedule || { batches: [] };
+
+      const wipByWeek = weeklyState.wipByWeek || {};
+      const fgProjections = weeklyState.fgProjections || {};
       const contracts = procurementContracts.contracts || [];
 
-      // RM arrivals timeline from purchases
-      const inTransitByWeek: Record<string, Record<number, number>> = {};
-      const addArrival = (material: string, arrivalWeek: number, qty: number) => {
-        if (!material || !Number.isFinite(arrivalWeek) || !Number.isFinite(qty)) return;
-        inTransitByWeek[material] = inTransitByWeek[material] || {};
-        inTransitByWeek[material][arrivalWeek] = (inTransitByWeek[material][arrivalWeek] || 0) + qty;
-      };
-      // From procurement contracts (planned arrivals, canonical)
+      // ------------------------------------------------------------------
+      // Detailed RM in-transit array (per material/supplier/arrival week)
+      // Used to power the "expand row" drill-down on the Raw Materials table.
+      // ------------------------------------------------------------------
+      const detailedInTransit: Record<string, Array<{
+        supplier: string;
+        arrivalWeek: number;
+        units: number;
+        unitCost: number;
+        contractType: 'SPT' | 'GMC';
+        contractId: string;
+      }>> = {};
       for (const c of contracts) {
         const supplier = String(c.supplier || '');
         const lead = Number((GAME_CONSTANTS.SUPPLIERS as any)?.[supplier]?.leadTime || 0);
         const material = String(c.material || 'unknown');
+        const computeUnitPrice = (cc: any): number => {
+          if (cc.lockedUnitPrice != null) return Number(cc.lockedUnitPrice);
+          const base = Number(cc.unitBasePrice || 0);
+          const sur = Number(cc.printSurcharge || 0);
+          const disc = Number(cc.discountPercentApplied || 0);
+          return (base + sur) * (1 - disc);
+        };
         if (c.type === 'SPT') {
-          const week = Number(c.weekSigned || 0) + lead;
-          const qty = Number(c.units || 0);
-          if (week > currentWeek) addArrival(material, week, qty);
+          const arrivalWeek = Number(c.weekSigned || 0) + lead;
+          const units = Number(c.units || 0);
+          if (arrivalWeek > currentWeek && units > 0) {
+            detailedInTransit[material] = detailedInTransit[material] || [];
+            detailedInTransit[material].push({
+              supplier,
+              arrivalWeek,
+              units,
+              unitCost: computeUnitPrice(c),
+              contractType: 'SPT',
+              contractId: String(c.id || ''),
+            });
+          }
         } else if (c.type === 'GMC') {
           const orders = (c as any).gmcOrders || [];
           for (const o of orders) {
-            const week = Number(o.week || 0) + lead;
-            const qty = Number(o.units || 0);
-            if (week > currentWeek) addArrival(material, week, qty);
+            const arrivalWeek = Number(o.week || 0) + lead;
+            const units = Number(o.units || 0);
+            if (arrivalWeek > currentWeek && units > 0) {
+              detailedInTransit[material] = detailedInTransit[material] || [];
+              detailedInTransit[material].push({
+                supplier,
+                arrivalWeek,
+                units,
+                unitCost: Number(o.unitPrice ?? computeUnitPrice(c)),
+                contractType: 'GMC',
+                contractId: String(c.id || o.orderId || ''),
+              });
+            }
           }
         }
       }
 
-      // FG available timeline: current lots + shipments arrival weeks
+      // Aggregated in-transit-by-week (used by simpler chart consumers)
+      const inTransitByWeek: Record<string, Record<number, number>> = {};
+      for (const [material, entries] of Object.entries(detailedInTransit)) {
+        for (const e of entries) {
+          inTransitByWeek[material] = inTransitByWeek[material] || {};
+          inTransitByWeek[material][e.arrivalWeek] = (inTransitByWeek[material][e.arrivalWeek] || 0) + e.units;
+        }
+      }
+
+      // ------------------------------------------------------------------
+      // FG available-for-sale timeline (current lots + arriving shipments)
+      // ------------------------------------------------------------------
       const availableForSaleByWeek: Array<{ week: number; products: Record<string, number>; total: number }> = [];
       for (let w = currentWeek; w <= 15; w++) {
         const products: Record<string, number> = {};
@@ -139,7 +185,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             total += qty;
           }
         }
-        for (const sh of shipmentsInTransit) {
+        for (const sh of shipmentsInTransitRaw) {
           if (Number(sh.arrivalWeek) === w) {
             const qty = Number(sh.quantity || 0);
             products[sh.product] = (products[sh.product] || 0) + qty;
@@ -156,64 +202,244 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       const nextWeekEntry = availableForSaleByWeek.find(e => e.week === currentWeek + 1) || { products: {} } as any;
 
+      const totalRmOnHand = Object.values(rawMaterials).reduce((s: number, v: any) => s + Number(v.onHand || 0), 0);
+      const totalRmValue = Object.values(rawMaterials).reduce((s: number, v: any) => s + Number(v.onHandValue || 0), 0);
+      const totalWipUnits = (workInProcess as any[]).reduce((s: number, b: any) => s + Number(b.quantity || 0), 0);
+      const totalWipValue = (workInProcess as any[]).reduce(
+        (s: number, b: any) => s + Number(b.quantity || 0) * (Number(b.unitMaterialCost || b.materialUnitCost || 0) + Number(b.unitProductionCost || b.productionUnitCost || 0)),
+        0
+      );
+      const totalFgUnits = Object.values(fgThisWeek).reduce((s: number, v: any) => s + Number(v || 0), 0);
+      const totalFgValue = (finishedGoods as any[]).reduce((s: number, l: any) => s + Number(l.quantity || 0) * Number(l.unitCostBasis || 0), 0);
+      const totalInTransitUnits = (shipmentsInTransitRaw as any[]).reduce((s: number, sh: any) => s + Number(sh.quantity || 0), 0);
+      const totalInTransitValue = (shipmentsInTransitRaw as any[]).reduce(
+        (s: number, sh: any) => s + Number(sh.quantity || 0) * (Number(sh.unitMaterialCost || 0) + Number(sh.unitProductionCost || 0) + Number(sh.unitShippingCost || 0)),
+        0
+      );
+      const totalInventoryValue = totalRmValue + totalWipValue + totalFgValue + totalInTransitValue;
+      const holdingCostThisWeek = totalInventoryValue * GAME_CONSTANTS.HOLDING_COST_RATE;
+
       const summary = {
-        rawMaterialsOnHand: Object.values(rawMaterials).reduce((s: number, v: any) => s + Number(v.onHand || 0), 0),
-        wipUnits: (wipByWeek[currentWeek] || []).reduce((s: number, b: any) => s + Number(b.quantity || 0), 0),
+        currentWeek,
+        rawMaterialsOnHand: totalRmOnHand,
+        rawMaterialsValue: totalRmValue,
+        wipUnits: totalWipUnits,
+        wipValue: totalWipValue,
+        finishedGoodsUnits: totalFgUnits,
+        finishedGoodsValue: totalFgValue,
+        inTransitUnits: totalInTransitUnits,
+        inTransitValue: totalInTransitValue,
+        totalInventoryValue,
+        holdingCostThisWeek,
         finishedGoodsAvailableThisWeek: fgThisWeek,
         finishedGoodsAvailableNextWeek: nextWeekEntry.products || {},
-        totalFinishedGoodsAvailableThisWeek: Object.values(fgThisWeek).reduce((s: number, v: any) => s + Number(v || 0), 0),
+        totalFinishedGoodsAvailableThisWeek: totalFgUnits,
         totalFinishedGoodsAvailableNextWeek: Object.values(nextWeekEntry.products || {}).reduce((s: number, v: any) => s + Number(v || 0), 0),
+        cashOnHand: Number(weeklyState.cashOnHand || 0),
+        creditUsed: Number(weeklyState.creditUsed || 0),
+        creditAvailable: GAME_CONSTANTS.CREDIT_LIMIT - Number(weeklyState.creditUsed || 0),
       };
 
-      const materialKeys = new Set<string>([...Object.keys(rawMaterials), ...Object.keys(inTransitByWeek)]);
+      // ------------------------------------------------------------------
+      // Raw Materials list (with detailed in-transit)
+      // ------------------------------------------------------------------
+      const materialKeys = new Set<string>([...Object.keys(rawMaterials), ...Object.keys(detailedInTransit)]);
       const rmList = Array.from(materialKeys).map((material: string) => {
         const v: any = (rawMaterials as any)[material] || {};
+        const inTransit = detailedInTransit[material] || [];
+        const totalInTransitUnits = inTransit.reduce((s, e) => s + Number(e.units || 0), 0);
+        const totalInTransitValue = inTransit.reduce((s, e) => s + Number(e.units || 0) * Number(e.unitCost || 0), 0);
         return {
           material,
           onHand: Number(v.onHand || 0),
           allocated: Number(v.allocated || 0),
+          free: Math.max(0, Number(v.onHand || 0) - Number(v.allocated || 0)),
           onHandValue: Number(v.onHandValue || 0),
           avgUnitCost: Number(v.onHand || 0) > 0 ? Number(v.onHandValue || 0) / Number(v.onHand || 1) : undefined,
+          inTransitUnits: totalInTransitUnits,
+          inTransitValue: totalInTransitValue,
+          inTransit,
           inTransitByWeek: Object.entries(inTransitByWeek[material] || {}).map(([week, quantity]) => ({ week: Number(week), quantity: Number(quantity) })),
         };
       });
 
-      const wipList = (workInProcess as any[]).map((b: any) => ({
-        id: String(b.id || ''),
-        product: String(b.product || ''),
-        startWeek: Number(b.startWeek || 0),
-        endWeek: Number(b.endWeek || 0),
-        quantity: Number(b.quantity || 0),
-        unitMaterialCost: Number(b.unitMaterialCost || 0),
-        unitProductionCost: Number(b.unitProductionCost || 0),
-        unitShippingCost: Number(b.unitShippingCost || 0),
-        unitCostBasis: Number(b.unitMaterialCost || 0) + Number(b.unitProductionCost || 0) + Number(b.unitShippingCost || 0),
-      }));
+      // ------------------------------------------------------------------
+      // WIP list (with %-complete based on currentWeek vs lead time)
+      // ------------------------------------------------------------------
+      const wipList = (workInProcess as any[]).map((b: any) => {
+        const startWeek = Number(b.startWeek || 0);
+        const endWeek = Number(b.endWeek || 0);
+        const totalDur = Math.max(1, endWeek - startWeek);
+        const elapsed = Math.max(0, currentWeek - startWeek);
+        const pctComplete = Math.min(100, Math.round((elapsed / totalDur) * 100));
+        return {
+          id: String(b.id || ''),
+          product: String(b.product || ''),
+          method: String(b.method || 'inhouse'),
+          startWeek,
+          endWeek,
+          quantity: Number(b.quantity || 0),
+          unitMaterialCost: Number(b.unitMaterialCost || b.materialUnitCost || 0),
+          unitProductionCost: Number(b.unitProductionCost || b.productionUnitCost || 0),
+          unitShippingCost: Number(b.unitShippingCost || 0),
+          unitCostBasis: Number(b.unitMaterialCost || b.materialUnitCost || 0) + Number(b.unitProductionCost || b.productionUnitCost || 0),
+          pctComplete,
+        };
+      });
 
+      // ------------------------------------------------------------------
+      // FG lots (full cost basis split)
+      // ------------------------------------------------------------------
       const fgLots = (finishedGoods as any[]).map((l: any) => ({
         id: String(l.id || ''),
         product: String(l.product || ''),
         quantity: Number(l.quantity || 0),
-        availableWeek: currentWeek, // existing lots are available now
+        availableWeek: currentWeek,
+        unitMaterialCost: Number(l.unitMaterialCost || 0),
+        unitProductionCost: Number(l.unitProductionCost || 0),
+        unitShippingCost: Number(l.unitShippingCost || 0),
         unitCostBasis: Number(l.unitCostBasis || (Number(l.unitMaterialCost || 0) + Number(l.unitProductionCost || 0) + Number(l.unitShippingCost || 0))),
+        totalValue: Number(l.quantity || 0) * Number(l.unitCostBasis || (Number(l.unitMaterialCost || 0) + Number(l.unitProductionCost || 0) + Number(l.unitShippingCost || 0))),
       }));
 
-      const shipments = (shipmentsInTransit as any[]).map((s: any) => ({
-        id: String(s.id || ''),
-        product: String(s.product || ''),
-        quantity: Number(s.quantity || 0),
-        arrivalWeek: Number(s.arrivalWeek || 0),
-      }));
+      // ------------------------------------------------------------------
+      // Shipments-in-transit (with full cost split + transit progress)
+      // ------------------------------------------------------------------
+      const shipments = (shipmentsInTransitRaw as any[]).map((s: any) => {
+        const arrivalWeek = Number(s.arrivalWeek || 0);
+        // arrivalWeek is the AVAILABLE-FOR-SALE week (= dispatchWeek + transitWeeks + 1)
+        // We don't store dispatchWeek; reconstruct from per-batch data if needed in UI.
+        const weeksRemaining = Math.max(0, arrivalWeek - currentWeek);
+        const unitMat = Number(s.unitMaterialCost || 0);
+        const unitProd = Number(s.unitProductionCost || 0);
+        const unitShip = Number(s.unitShippingCost || 0);
+        const qty = Number(s.quantity || 0);
+        return {
+          id: String(s.id || ''),
+          product: String(s.product || ''),
+          quantity: qty,
+          arrivalWeek,
+          weeksRemaining,
+          unitMaterialCost: unitMat,
+          unitProductionCost: unitProd,
+          unitShippingCost: unitShip,
+          unitCostBasis: unitMat + unitProd + unitShip,
+          totalShippingCost: qty * unitShip,
+          totalValue: qty * (unitMat + unitProd + unitShip),
+        };
+      });
 
-      res.json({ 
-        summary, 
-        rawMaterials: rmList, 
-        wip: wipList, 
-        wipByWeek, 
+      // ------------------------------------------------------------------
+      // Production-batch shipping plan (for the Logistics shipping editor)
+      // For each batch return projected on-shelf week and lock-state.
+      // ------------------------------------------------------------------
+      const SHIPPING_WEEKS = { standard: 2, expedited: 1 } as const;
+      const shippingPlan = ((productionSchedule.batches || []) as any[]).map((b: any) => {
+        const product = String(b.product || '');
+        const method = String(b.method || 'inhouse') as 'inhouse' | 'outsource';
+        const mfg = (GAME_CONSTANTS.MANUFACTURING as any)[product] || {};
+        const lead = method === 'inhouse' ? Number(mfg.inHouseTime || 0) : Number(mfg.outsourceTime || 0);
+        const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
+        const shipWeeks = SHIPPING_WEEKS[shipMethod];
+        const startWeek = Number(b.startWeek || 0);
+        const endWeek = startWeek + lead;
+        const onShelfWeek = endWeek + shipWeeks + 1;
+        const qty = Number(b.quantity || 0);
+
+        // Status: notYetShipped (endWeek > currentWeek), inTransit (endWeek <= currentWeek but onShelfWeek > currentWeek), delivered (onShelfWeek <= currentWeek)
+        let status: 'planned' | 'inProduction' | 'inTransit' | 'delivered';
+        if (currentWeek < startWeek) status = 'planned';
+        else if (currentWeek < endWeek) status = 'inProduction';
+        else if (currentWeek < onShelfWeek) status = 'inTransit';
+        else status = 'delivered';
+
+        const unitShipStandard = Number((GAME_CONSTANTS.SHIPPING as any)[product]?.standard || 0);
+        const unitShipExpedited = Number((GAME_CONSTANTS.SHIPPING as any)[product]?.expedited || 0);
+        const onShelfWeekStandard = endWeek + SHIPPING_WEEKS.standard + 1;
+        const onShelfWeekExpedited = endWeek + SHIPPING_WEEKS.expedited + 1;
+        const cashDeltaToExpedite = qty * (unitShipExpedited - unitShipStandard);
+
+        return {
+          id: String(b.id || ''),
+          product,
+          method,
+          quantity: qty,
+          startWeek,
+          endWeek,
+          shipping: shipMethod,
+          shippingLocked: status !== 'planned' && status !== 'inProduction',
+          onShelfWeek,
+          status,
+          comparison: {
+            standard: { unitCost: unitShipStandard, totalCost: qty * unitShipStandard, onShelfWeek: onShelfWeekStandard },
+            expedited: { unitCost: unitShipExpedited, totalCost: qty * unitShipExpedited, onShelfWeek: onShelfWeekExpedited },
+            cashDeltaToExpedite,
+          },
+        };
+      });
+
+      // ------------------------------------------------------------------
+      // Historical series across all committed weeks
+      // ------------------------------------------------------------------
+      const holdingCostByWeek: Array<{ week: number; weekly: number; cumulative: number }> = [];
+      const lostSalesByWeek: Array<{ week: number; jacket: number; dress: number; pants: number; total: number }> = [];
+      const inventoryByStageByWeek: Array<{ week: number; rm: number; wip: number; inTransit: number; fg: number }> = [];
+      const serviceLevelByWeek: Array<{ week: number; level: number }> = [];
+
+      let cumHolding = 0;
+      let cumDemand = 0;
+      let cumServed = 0;
+      for (const s of sortedStates) {
+        const wk = Number(s.weekNumber || 0);
+        const cb: any = (s as any).costBreakdown || {};
+        const weeklyHolding = Number(cb.holding ?? (s as any).holdingCosts ?? 0);
+        // Note: state.holdingCosts is cumulative, costBreakdown.holding is per-week.
+        // Fall back to diffing only if needed.
+        cumHolding += weeklyHolding;
+        holdingCostByWeek.push({ week: wk, weekly: weeklyHolding, cumulative: cumHolding });
+
+        const ls: any = (s as any).lostSales || {};
+        const lJ = Number(ls.jacket || 0);
+        const lD = Number(ls.dress || 0);
+        const lP = Number(ls.pants || 0);
+        lostSalesByWeek.push({ week: wk, jacket: lJ, dress: lD, pants: lP, total: lJ + lD + lP });
+
+        const dem: any = (s as any).weeklyDemand || {};
+        const sal: any = (s as any).weeklySales || {};
+        const wDem = Number(dem.jacket || 0) + Number(dem.dress || 0) + Number(dem.pants || 0);
+        const wSal = Number(sal.jacket || 0) + Number(sal.dress || 0) + Number(sal.pants || 0);
+        if (wk >= 7 && wk <= 12) {
+          cumDemand += wDem;
+          cumServed += wSal;
+        }
+        const weekLevel = wDem > 0 ? Math.round((wSal / wDem) * 1000) / 10 : 100;
+        serviceLevelByWeek.push({ week: wk, level: weekLevel });
+
+        // Inventory by stage at end of this week
+        const rm = Object.values((s as any).rawMaterials || {}).reduce((acc: number, v: any) => acc + Number(v?.onHand || 0), 0);
+        const wip = ((s as any).workInProcess?.batches || []).reduce((acc: number, b: any) => acc + Number(b.quantity || 0), 0);
+        const inTransit = ((s as any).shipmentsInTransit || []).reduce((acc: number, sh: any) => acc + Number(sh.quantity || 0), 0);
+        const fg = ((s as any).finishedGoods?.lots || []).reduce((acc: number, l: any) => acc + Number(l.quantity || 0), 0);
+        inventoryByStageByWeek.push({ week: wk, rm, wip, inTransit, fg });
+      }
+
+      const rollingServiceLevel = cumDemand > 0 ? Math.round((cumServed / cumDemand) * 1000) / 10 : 0;
+
+      res.json({
+        summary,
+        rawMaterials: rmList,
+        wip: wipList,
+        wipByWeek,
         fgProjections,
-        shipmentsInTransit: shipments, 
-        finishedGoodsLots: fgLots, 
-        availableForSaleByWeek 
+        shipmentsInTransit: shipments,
+        finishedGoodsLots: fgLots,
+        availableForSaleByWeek,
+        shippingPlan,
+        holdingCostByWeek,
+        lostSalesByWeek,
+        serviceLevelByWeek,
+        rollingServiceLevel,
+        inventoryByStageByWeek,
       });
     } catch (e) {
       console.error('inventory overview error', e);
