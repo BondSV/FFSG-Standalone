@@ -361,6 +361,8 @@ export class GameEngine {
     state.weeklySales = state.weeklySales || { jacket: 0, dress: 0, pants: 0 };
     state.lostSales = state.lostSales || { jacket: 0, dress: 0, pants: 0 };
 
+    this.clampPlannedMarketingToLiquidity(state);
+
     let openingCash = this.toNumber(state.cashOnHand, GAME_CONSTANTS.STARTING_CAPITAL);
     let cashOnHand = openingCash;
     let creditUsed = this.toNumber(state.creditUsed, 0);
@@ -1189,6 +1191,95 @@ export class GameEngine {
   static calculateInterest(creditBalance: number): number {
     return creditBalance * GAME_CONSTANTS.WEEKLY_INTEREST_RATE;
   }
+
+  /** Production + shipping (batches starting this week) — same as validate/commit liquidity. */
+  private static computeOperationalOutflowsForWeekCommit(weekNumber: number, currentState: Partial<WeeklyState>): number {
+    let operationalOutflows = 0;
+    const prod = currentState.productionSchedule as any;
+    for (const b of prod?.batches || []) {
+      if (b.startWeek === weekNumber) {
+        const qty = Number(b.quantity || 0);
+        operationalOutflows += qty * this.getProductionUnitCost(b.product, b.method);
+        const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
+        operationalOutflows += qty * this.getShippingUnitCost(b.product, shipMethod);
+      }
+    }
+    return operationalOutflows;
+  }
+
+  /** Staged for week N+1 excluding next-week marketing (procurement due, holding, interest). */
+  private static computeStagedNonMarketingNextWeek(weekNumber: number, currentState: Partial<WeeklyState>): number {
+    let staged = 0;
+    const dueWeekNext = weekNumber + 1;
+    const creditUsed = Number((currentState as any).creditUsed || 0);
+    const procurementContracts = currentState.procurementContracts as any;
+    if (procurementContracts) {
+      for (const c of procurementContracts.contracts || []) {
+        const unitBase = (GAME_CONSTANTS.SUPPLIERS as any)[c.supplier]?.materials?.[c.material]?.price || 0;
+        const surcharge = (GAME_CONSTANTS.SUPPLIERS as any)[c.supplier]?.materials?.[c.material]?.printSurcharge || 0;
+        const locked = this.toNumber((c as any).lockedUnitPrice);
+        const unitPriceC = locked > 0 ? locked : (unitBase + surcharge);
+        if (c.type === 'SPT') {
+          const lead = this.getSupplierLeadTime(c.supplier);
+          if (Number(c.weekSigned) + lead === dueWeekNext) {
+            const units = Number(c.units || 0);
+            staged += units * unitPriceC;
+          }
+        } else if (c.type === 'GMC') {
+          const orders = (c as any).gmcOrders || [];
+          const lead = this.getSupplierLeadTime(c.supplier);
+          for (const o of orders) {
+            if (this.toNumber(o.week) + lead + 2 === dueWeekNext) {
+              const units = this.toNumber(o.units);
+              const price = this.toNumber(o.unitPrice ?? unitPriceC);
+              staged += units * price;
+            }
+          }
+        }
+      }
+    }
+    {
+      const rmValue = Object.values((currentState as any).rawMaterials || {})
+        .reduce((s: number, v: any) => s + Number(v?.onHandValue || 0), 0);
+      const wipValue = ((currentState as any).workInProcess?.batches || [])
+        .reduce((s: number, b: any) => s + Number(b.quantity || 0) * (Number(b.materialUnitCost || 0) + Number(b.productionUnitCost || 0)), 0);
+      const fgValue = ((currentState as any).finishedGoods?.lots || [])
+        .reduce((s: number, l: any) => s + Number(l.quantity || 0) * Number(l.unitCostBasis || 0), 0);
+      staged += (rmValue + wipValue + fgValue) * GAME_CONSTANTS.HOLDING_COST_RATE;
+    }
+    staged += creditUsed * GAME_CONSTANTS.WEEKLY_INTEREST_RATE;
+    return staged;
+  }
+
+  /**
+   * Max `plannedMarketingPlan.totalSpend` that keeps operational + staged N+1 costs within cash + unused credit.
+   */
+  static getMaxAffordablePlannedMarketingSpend(weekNumber: number, currentState: Partial<WeeklyState>): number {
+    const cashOnHand = Number((currentState as any).cashOnHand || 0);
+    const creditUsed = Number((currentState as any).creditUsed || 0);
+    const availableFunds = cashOnHand + (GAME_CONSTANTS.CREDIT_LIMIT - creditUsed);
+    const operational = this.computeOperationalOutflowsForWeekCommit(weekNumber, currentState);
+    const stagedNonMarketing = this.computeStagedNonMarketingNextWeek(weekNumber, currentState);
+    return Math.max(0, availableFunds - operational - stagedNonMarketing);
+  }
+
+  /** If planned marketing exceeds liquidity, scale spend down proportionally (commit recovery path). */
+  static clampPlannedMarketingToLiquidity(state: any): void {
+    const week = Number(state.weekNumber);
+    const maxSpend = this.getMaxAffordablePlannedMarketingSpend(week, state);
+    const plan = state.plannedMarketingPlan;
+    if (!plan) return;
+    const total = this.toNumber(plan.totalSpend);
+    if (total <= maxSpend || total <= 0) return;
+    const scale = maxSpend / total;
+    plan.totalSpend = maxSpend;
+    const channels = plan.channels;
+    if (Array.isArray(channels)) {
+      for (const ch of channels) {
+        ch.spend = this.toNumber(ch.spend) * scale;
+      }
+    }
+  }
   
   static getPhaseForWeek(week: number): string {
     if (week <= 2) return 'strategy';
@@ -1348,67 +1439,11 @@ export class GameEngine {
     const cashOnHand = Number(currentState.cashOnHand || 0);
     const creditUsed = Number(currentState.creditUsed || 0);
     const availableFunds = cashOnHand + (GAME_CONSTANTS.CREDIT_LIMIT - creditUsed);
-
-    // Operational outflows this week (production starts)
-    let operationalOutflows = 0;
-    const prod = currentState.productionSchedule as any;
-    for (const b of prod?.batches || []) {
-      if (b.startWeek === weekNumber) {
-        const qty = Number(b.quantity || 0);
-        operationalOutflows += qty * this.getProductionUnitCost(b.product, b.method);
-        const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
-        operationalOutflows += qty * this.getShippingUnitCost(b.product, shipMethod);
-      }
-    }
-
-    // Staged-for-N+1 outflows (will be charged at start of N+1)
-    let stagedNextOutflows = 0;
-    const dueWeekNext = weekNumber + 1;
-    const procurementContracts = currentState.procurementContracts as any;
-    if (procurementContracts) {
-      for (const c of procurementContracts.contracts || []) {
-        const unitBase = (GAME_CONSTANTS.SUPPLIERS as any)[c.supplier]?.materials?.[c.material]?.price || 0;
-        const surcharge = (GAME_CONSTANTS.SUPPLIERS as any)[c.supplier]?.materials?.[c.material]?.printSurcharge || 0;
-        const locked = this.toNumber((c as any).lockedUnitPrice);
-        const unitPriceC = locked > 0 ? locked : (unitBase + surcharge);
-        if (c.type === 'SPT') {
-          const lead = this.getSupplierLeadTime(c.supplier);
-          // SPT pays on delivery; charged for full ordered units (defects expensed)
-          if (Number(c.weekSigned) + lead === dueWeekNext) {
-            const units = Number(c.units || 0);
-            stagedNextOutflows += units * unitPriceC;
-          }
-        } else if (c.type === 'GMC') {
-          const orders = (c as any).gmcOrders || [];
-          const lead = this.getSupplierLeadTime(c.supplier);
-          for (const o of orders) {
-            // GMC pays delivery_week + 2; delivery_week = order_week + lead
-            if (this.toNumber(o.week) + lead + 2 === dueWeekNext) {
-              const units = this.toNumber(o.units);
-              const price = this.toNumber(o.unitPrice ?? unitPriceC);
-              stagedNextOutflows += units * price;
-            }
-          }
-        }
-      }
-    }
-    // Next-week planned marketing
-    stagedNextOutflows += Number((currentState as any).plannedMarketingPlan?.totalSpend ?? 0);
-    // Holding cost staged for N+1 (approximate via current inventory value × rate)
-    {
-      const rmValue = Object.values((currentState as any).rawMaterials || {})
-        .reduce((s: number, v: any) => s + Number(v?.onHandValue || 0), 0);
-      const wipValue = ((currentState as any).workInProcess?.batches || [])
-        .reduce((s: number, b: any) => s + Number(b.quantity || 0) * (Number(b.materialUnitCost || 0) + Number(b.productionUnitCost || 0)), 0);
-      const fgValue = ((currentState as any).finishedGoods?.lots || [])
-        .reduce((s: number, l: any) => s + Number(l.quantity || 0) * Number(l.unitCostBasis || 0), 0);
-      stagedNextOutflows += (rmValue + wipValue + fgValue) * GAME_CONSTANTS.HOLDING_COST_RATE;
-    }
-    // Interest staged for N+1 on outstanding credit
-    stagedNextOutflows += creditUsed * GAME_CONSTANTS.WEEKLY_INTEREST_RATE;
-
-    const immediatePayments = operationalOutflows + stagedNextOutflows;
-    if (immediatePayments > availableFunds) {
+    const operationalOutflows = this.computeOperationalOutflowsForWeekCommit(weekNumber, currentState);
+    const stagedNonMarketing = this.computeStagedNonMarketingNextWeek(weekNumber, currentState);
+    const plannedMarketing = Number((currentState as any).plannedMarketingPlan?.totalSpend ?? 0);
+    const immediatePayments = operationalOutflows + stagedNonMarketing + plannedMarketing;
+    if (immediatePayments > availableFunds + 1e-6) {
       errors.push("Inadequate cash for this week's plan");
     }
 

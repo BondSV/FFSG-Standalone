@@ -111,11 +111,27 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   const isLocked = Boolean((currentState as any)?.plannedLocked);
   const [confirmOpen, setConfirmOpen] = useState(false);
 
-  // Affordability
-  const cash = Number(currentState?.cashOnHand || 0);
-  const creditLimit = Number(gameConstants?.CREDIT_LIMIT || 0);
-  const creditUsed = Number(currentState?.creditUsed || 0);
-  const headroom = cash + Math.max(0, creditLimit - creditUsed);
+  const { data: capData } = useQuery({
+    queryKey: [
+      '/api/game',
+      gameSession?.id,
+      'week',
+      currentWeek,
+      'planned-marketing-cap',
+      Number(currentState?.cashOnHand ?? 0),
+      Number((currentState as any)?.creditUsed ?? 0),
+    ],
+    queryFn: async () => {
+      const res = await apiRequest('GET', `/api/game/${gameSession.id}/week/${currentWeek}/planned-marketing-cap`);
+      return res.json() as Promise<{ maxPlannedMarketingSpend: number }>;
+    },
+    enabled: Boolean(gameSession?.id) && !isFinalWeek,
+    staleTime: 15_000,
+  });
+  const maxAffordableNextWeek = Number(capData?.maxPlannedMarketingSpend ?? 10_000_000);
+  const budgetSliderMax = Math.min(1_000_000, Math.max(0, maxAffordableNextWeek));
+  const maxSpendSnapped = Math.floor(maxAffordableNextWeek / 5000) * 5000;
+  const formatCurrency = (value: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
 
   // Mutations
   const updateStateMutation = useMutation({
@@ -124,6 +140,9 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      queryClient.invalidateQueries({
+        queryKey: ['/api/game', gameSession.id, 'week', currentWeek, 'planned-marketing-cap'],
+      });
       toast({ title: 'Planned', description: 'Marketing plan applied to next week.' });
     },
     onError: (error: any) => {
@@ -132,7 +151,16 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         setTimeout(() => { window.location.href = '/api/login'; }, 500);
         return;
       }
-      toast({ title: 'Error', description: 'Failed to apply plan. Please try again.', variant: 'destructive' });
+      let desc = 'Failed to apply plan. Please try again.';
+      const raw = String(error?.message || '');
+      const idx = raw.indexOf('{');
+      if (idx >= 0) {
+        try {
+          const j = JSON.parse(raw.slice(idx));
+          if (typeof j?.message === 'string') desc = j.message;
+        } catch { /* ignore */ }
+      }
+      toast({ title: 'Cannot lock plan', description: desc, variant: 'destructive' });
     },
   });
 
@@ -244,10 +272,26 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       toast({ title: 'Allocation must be 100%', description: 'Adjust channel percentages to total 100%.', variant: 'destructive' });
       return;
     }
+    if (!isFinalWeek && capData && marketingSpend > maxAffordableNextWeek + 0.01) {
+      toast({
+        title: 'Budget exceeds available funds',
+        description: `Lower next week’s budget to at most ${formatCurrency(maxAffordableNextWeek)} after your other cash commitments.`,
+        variant: 'destructive',
+      });
+      return;
+    }
     setConfirmOpen(true);
   };
 
-  const formatCurrency = (value: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value);
+  useEffect(() => {
+    if (isFinalWeek || isLocked || !capData) return;
+    const cap = Number((capData as any).maxPlannedMarketingSpend);
+    if (!Number.isFinite(cap)) return;
+    setMarketingSpend((prev) => {
+      const snapped = Math.floor(Math.min(prev, cap) / 5000) * 5000;
+      return Math.max(0, snapped);
+    });
+  }, [maxAffordableNextWeek, isFinalWeek, isLocked, capData]);
 
   // Debounced preview of next week's A/I and demand to drive forecast donuts
   const [preview, setPreview] = useState<{ nextAwareness: number; nextIntent: number; forecastDemandTotal: number } | null>(null);
@@ -441,10 +485,14 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   style={{ left: '20%', width: '40%' }}
                 />
                 <Slider
-                  value={[Math.min(1000000, Math.max(0, marketingSpend))]}
-                  onValueChange={([v])=> setMarketingSpend(Math.round(v/5000)*5000)}
+                  value={[Math.min(budgetSliderMax, Math.max(0, marketingSpend))]}
+                  onValueChange={([v]) => {
+                    const rounded = Math.round(v / 5000) * 5000;
+                    const cap = maxSpendSnapped;
+                    setMarketingSpend(Math.min(rounded, cap));
+                  }}
                   min={0}
-                  max={1000000}
+                  max={Math.max(5000, budgetSliderMax)}
                   step={5000}
                   trackClassName="bg-gray-200"
                   rangeClassName="bg-gradient-to-r from-amber-300 via-amber-400 to-amber-500"
@@ -456,8 +504,13 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               <div className="flex items-center justify-between text-xs text-gray-600">
                 <span>£0</span>
                 <span>{formatCurrency(marketingSpend)}</span>
-                <span>£1,000,000</span>
+                <span>{formatCurrency(Math.max(5000, budgetSliderMax))}</span>
               </div>
+              {!isFinalWeek && capData && (
+                <div className="text-xs text-gray-600 text-center">
+                  Max affordable next week (after other commitments): {formatCurrency(maxAffordableNextWeek)}
+                </div>
+              )}
               <div className="text-xs text-gray-500 text-center">Efficient zone highlighted</div>
             </div>
             <div className="space-y-2">
@@ -574,7 +627,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       {/* Actions footer (normal pane at bottom) */}
       <div className="mt-8 bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between">
         <Button variant="outline" onClick={()=> { setManual(false); setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>Reset to Preset</Button>
-        <Button onClick={handleApplyNextWeek} disabled={isLocked || updateStateMutation.isPending || (marketingSpend>0 && Math.round(totalAllocation)!==100)}>
+        <Button onClick={handleApplyNextWeek} disabled={isLocked || updateStateMutation.isPending || (marketingSpend>0 && Math.round(totalAllocation)!==100) || (!isFinalWeek && !!capData && marketingSpend > maxAffordableNextWeek + 0.01)}>
           {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
           </Button>
       </div>

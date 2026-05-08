@@ -560,6 +560,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/game/:gameId/week/:weekNumber/planned-marketing-cap', isAuthenticated, async (req: any, res) => {
+    try {
+      const { gameId, weekNumber } = req.params;
+      const week = parseInt(weekNumber, 10);
+      const weeklyState = await storage.getWeeklyState(gameId, week);
+      if (!weeklyState) {
+        return res.status(404).json({ message: "Weekly state not found" });
+      }
+      const maxPlannedMarketingSpend = GameEngine.getMaxAffordablePlannedMarketingSpend(week, weeklyState);
+      res.json({ maxPlannedMarketingSpend });
+    } catch (error) {
+      console.error("Error computing planned marketing cap:", error);
+      res.status(500).json({ message: "Failed to compute marketing budget cap" });
+    }
+  });
+
   app.post('/api/game/:gameId/week/:weekNumber/update', isAuthenticated, async (req: any, res) => {
     try {
       const { gameId, weekNumber } = req.params;
@@ -770,6 +786,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           weeklyState = await storage.updateWeeklyState(weeklyState.id, processedUpdates);
         } 
         else if (updates.plannedMarketingPlan || updates.plannedWeeklyDiscounts || typeof updates.plannedLocked !== 'undefined') {
+          if (updates.plannedLocked === true) {
+            const planToLock = updates.plannedMarketingPlan ?? (weeklyState as any).plannedMarketingPlan;
+            const spend = Number(planToLock?.totalSpend ?? 0);
+            const maxSpend = GameEngine.getMaxAffordablePlannedMarketingSpend(week, weeklyState);
+            if (spend > maxSpend + 0.01) {
+              return res.status(400).json({
+                message: `Next week marketing cannot exceed £${Math.round(maxSpend).toLocaleString('en-GB')} after your other cash commitments (production, materials due, holding, interest).`,
+                maxPlannedMarketingSpend: maxSpend,
+              });
+            }
+          }
           // Update planning-only fields without touching purchases
           weeklyState = await storage.updateWeeklyState(weeklyState.id, {
             plannedMarketingPlan: updates.plannedMarketingPlan ?? (weeklyState as any).plannedMarketingPlan,
