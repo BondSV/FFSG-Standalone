@@ -570,6 +570,30 @@ export class GameEngine {
     if (week === 14) { discounts.jacket = 0.35; discounts.dress = 0.35; discounts.pants = 0.35; }
     if (week === 15) { discounts.jacket = 0.50; discounts.dress = 0.50; discounts.pants = 0.50; }
 
+    // No-loss-sale floor (run-out only): never let the auto-markdown push the
+    // price below the average fully-loaded unit cost of available FG for that
+    // product. This honours the spec rule that clearance markdowns may not be
+    // used as a tool to sell below cost. Player-chosen W7-12 discounts are
+    // gated by validateWeeklyDecisions and not capped here.
+    if (week >= 13) {
+      const fgLots = ((state.finishedGoods as any).lots || []) as Array<{ product: string; quantity: number; unitMaterialCost: number; unitProductionCost: number; unitShippingCost: number }>;
+      for (const p of ['jacket', 'dress', 'pants'] as const) {
+        const rrp = this.toNumber((state.productData as any)?.[p]?.rrp);
+        if (!rrp) continue;
+        const lotsForP = fgLots.filter((l: any) => l.product === p);
+        const totalUnits = lotsForP.reduce((s: number, l: any) => s + this.toNumber(l.quantity), 0);
+        if (totalUnits === 0) continue;
+        const totalCost = lotsForP.reduce((s: number, l: any) => s + this.toNumber(l.quantity) * (this.toNumber(l.unitMaterialCost) + this.toNumber(l.unitProductionCost) + this.toNumber(l.unitShippingCost)), 0);
+        const avgUnitCost = totalCost / totalUnits;
+        const requested = (discounts as any)[p];
+        const requestedPrice = rrp * (1 - requested);
+        if (requestedPrice < avgUnitCost) {
+          const cappedDiscount = Math.max(0, 1 - avgUnitCost / rrp);
+          (discounts as any)[p] = cappedDiscount;
+        }
+      }
+    }
+
     const productKeys: ProductKey[] = ['jacket', 'dress', 'pants'];
     const demandByProduct: Record<string, number> = {};
     const salesByProduct: Record<string, number> = {};
@@ -1267,12 +1291,9 @@ export class GameEngine {
       }
     }
 
-    // Procurement validations
-    const procurement = currentState.procurementContracts as any;
-    if (procurement) {
-      const contracts = procurement.contracts || [];
-      // FVC removed; no minimum GMC commitment guardrail.
-    }
+    // Procurement validations: GMC has no minimum commitment guardrail; the
+    // over-commitment warning lives in the UI (see procurement.tsx) since it
+    // only matters when the user is sizing a new GMC.
     
     // Sales phase validations (Week 7-12) 
     if (phase === 'sales') {
@@ -1291,12 +1312,19 @@ export class GameEngine {
         if (positioningEffect < 0.85) {
           warnings.push(`Aggressive pricing for ${product} may hurt demand`);
         }
-        // Price floor with discount
+        // Price floor with discount: use the larger of (a) planning cost
+        // (confirmed material + in-house production) or (b) the running
+        // actualUnitCost once available post-launch. Both with a 5% buffer
+        // so the player keeps a thin margin per unit.
         const discount = Number((currentState as any).weeklyDiscounts?.[product as keyof any] ?? 0);
         const prodCost = GAME_CONSTANTS.MANUFACTURING[product as keyof typeof GAME_CONSTANTS.MANUFACTURING]?.inHouseCost || 0;
         const confirmed = Number((data as any).confirmedMaterialCost || 0);
-        if (rrp && rrp * (1 - discount) < 1.05 * (confirmed + prodCost)) {
-          errors.push(`Discounted price below cost floor for ${product}`);
+        const actualUC = Number((currentState as any).actualUnitCost || 0);
+        const planningFloor = 1.05 * (confirmed + prodCost);
+        const actualFloor = actualUC > 0 ? 1.05 * actualUC : 0;
+        const floor = Math.max(planningFloor, actualFloor);
+        if (rrp && rrp * (1 - discount) < floor) {
+          errors.push(`Discounted price below cost floor for ${product} (need ≥ ${floor.toFixed(2)})`);
         }
       }
     }
