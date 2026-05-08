@@ -684,9 +684,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
               } else if (p.type === 'gmc') {
                 const committed = Number((updates.gmcCommitments && updates.gmcCommitments[p.supplier]) ?? gmcCommitments[p.supplier] ?? 0);
                 tierDisc = getTierDiscount(p.supplier, committed);
-              } else if (p.type === 'fvc') {
-                const committed = Number(gmcCommitments[p.supplier] || 0);
-                tierDisc = getTierDiscount(p.supplier, committed);
               }
               const effDiscount = tierDisc + extraSSD;
               const effectiveUnitPrice = baseUnit * (1 - effDiscount);
@@ -1025,11 +1022,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const disc = Number(c.discountPercentApplied || 0);
           return (base + surcharge) * (1 - disc);
         })();
-        if (c.type === 'FVC') {
-          const contractValue = unitPrice * Number(c.units || 0);
-          if (week === Number(c.weekSigned)) result.push({ type: 'materials_fvc_deposit', amount: contractValue * 0.30, refId: `${c.supplier}:${c.material}` });
-          if (week === Number(c.weekSigned) + 8) result.push({ type: 'materials_fvc_balance', amount: contractValue * 0.70, refId: `${c.supplier}:${c.material}` });
-        } else if (c.type === 'SPT') {
+        if (c.type === 'SPT') {
           for (const d of (c.deliveries || [])) {
             if (Number(d.week) === week) {
               const goodUnits = Number((d as any).goodUnits ?? d.units);

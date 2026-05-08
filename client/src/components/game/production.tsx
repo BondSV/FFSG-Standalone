@@ -15,7 +15,7 @@ interface ProductionProps {
   currentState: any;
 }
 
-type Method = "inhouse" | "outsourced";
+type Method = "inhouse" | "outsource";
 
 const WEEKS_ALL = Array.from({ length: 11 }, (_, i) => i + 3); // 3..13
 const STANDARD_BATCH_UNITS = 25000;
@@ -31,7 +31,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
 
   // Derived state
   const productData = currentState?.productData || {};
-  const scheduledBatches: any[] = currentState?.productionSchedule?.batches || [];
+  // Normalize legacy method strings: existing batches may persist 'outsourced'
+  // (older client write); engine/schema canonical value is 'outsource'.
+  const scheduledBatches: any[] = ((currentState?.productionSchedule?.batches || []) as any[]).map((b: any) => (
+    b?.method === 'outsourced' ? { ...b, method: 'outsource' } : b
+  ));
   const currentWeek = Number(currentState?.weekNumber || 1);
 
   // Inventory overview (DB-first, same as Inventory & Logistics)
@@ -53,7 +57,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
   const [dragId, setDragId] = useState<string | null>(null);
   const [hoverId, setHoverId] = useState<string | null>(null);
   const [draggedBatch, setDraggedBatch] = useState<any>(null);
-  const [dragPreview, setDragPreview] = useState<{ week: number; method: 'inhouse' | 'outsourced'; targetRung?: number } | null>(null);
+  const [dragPreview, setDragPreview] = useState<{ week: number; method: 'inhouse' | 'outsource'; targetRung?: number } | null>(null);
   // Client-side persisted rung map to keep rows stable even if backend ignores `rung`
   const [rungByBatchId, setRungByBatchId] = useState<Record<string, number>>({});
 
@@ -290,8 +294,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
     }
 
     // Outsourced: capacity is uncapped, single week
-    if (finalMethod === 'outsourced') {
-      const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart, method: 'outsourced' } : b));
+    if (finalMethod === 'outsource') {
+      const next = scheduledBatches.map((b) => (b.id === moving.id ? { ...b, startWeek: newStart, method: 'outsource' } : b));
       await apiRequest("POST", `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, { productionSchedule: { batches: next } });
       queryClient.invalidateQueries({ queryKey: ["/api/game/current"] });
       queryClient.invalidateQueries({ queryKey: ["/api/game", gameSession?.id, "inventory-overview"] });
@@ -361,7 +365,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
     setDragPreview(null);
   };
 
-  const handleDragOver = (event: React.DragEvent, week: number, method: 'inhouse' | 'outsourced') => {
+  const handleDragOver = (event: React.DragEvent, week: number, method: 'inhouse' | 'outsource') => {
     if (!dragId) return;
     event.preventDefault();
     // Compute hovered rung based on mouse position inside the bar
@@ -392,7 +396,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
     setDragPreview({ week, method, targetRung });
   };
 
-  const handleDrop = async (event: React.DragEvent, week: number, method: 'inhouse' | 'outsourced') => {
+  const handleDrop = async (event: React.DragEvent, week: number, method: 'inhouse' | 'outsource') => {
     event.preventDefault();
     if (!dragId || !draggedBatch) return;
     
@@ -499,7 +503,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                   <SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="inhouse">In‑house</SelectItem>
-                    <SelectItem value="outsourced">Outsourced</SelectItem>
+                    <SelectItem value="outsource">Outsourced</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -880,7 +884,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                     </div>
                                         <div className="grid grid-cols-11 gap-[3px]">
                       {WEEKS_ALL.map((w) => {
-                        const outsourcedBatches = scheduledBatches.filter((b) => b.method === 'outsourced' && Number(b.startWeek) === w);
+                        const outsourcedBatches = scheduledBatches.filter((b) => b.method === 'outsource' && Number(b.startWeek) === w);
                         const slotCount = Math.max(3, outsourcedBatches.length);
                         
                         // Use same rung height calculation as In-House
@@ -894,8 +898,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                         return (
                           <div key={`os-col-${w}`} 
                                className="relative group"
-                               onDragOver={(e) => handleDragOver(e, w, 'outsourced')}
-                               onDrop={(e) => handleDrop(e, w, 'outsourced')}
+                               onDragOver={(e) => handleDragOver(e, w, 'outsource')}
+                               onDrop={(e) => handleDrop(e, w, 'outsource')}
                           >
                             {/* Outsourced Container */}
                             <div className="relative bg-white rounded-xl border border-slate-200 shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg hover:border-orange-300/60"
@@ -935,8 +939,9 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                         const normalStyle = { bottom: 3, height: slotHeight - 6, left: 3, right: 3 } as React.CSSProperties;
                                         const hoverStyle = { bottom: 1, height: slotHeight - 2, left: 1, right: 1 } as React.CSSProperties;
                                         
+                                        const locked = isBatchLocked(batch);
                                         return (
-                                          <div className={`absolute rounded-sm flex items-center justify-center transition-all duration-300 cursor-grab active:cursor-grabbing ${
+                                          <div className={`absolute rounded-sm flex items-center justify-center transition-all duration-300 ${locked ? 'cursor-not-allowed opacity-70' : 'cursor-grab active:cursor-grabbing'} ${
                                               isHovered 
                                                 ? 'bg-gradient-to-t from-amber-500 via-amber-400 to-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.8)] z-10' 
                                                 : productColors[product] + ' shadow-lg'
@@ -944,8 +949,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                                             style={isHovered ? hoverStyle : normalStyle}
                                             onMouseEnter={() => setHoverId(batch.id)}
                                             onMouseLeave={() => setHoverId(null)}
-                                            draggable
-                                            onDragStart={() => startDrag(batch.id)}
+                                            draggable={!locked}
+                                            onDragStart={() => { if (!locked) startDrag(batch.id); }}
                                             onDragEnd={clearDrag}>
                                             <div className="absolute inset-0 bg-gradient-to-t from-white/10 to-white/5 rounded-sm"></div>
                                             {isHovered && (
@@ -968,7 +973,7 @@ export default function Production({ gameSession, currentState }: ProductionProp
                               )}
                               
                               {/* Drag Preview - show potential batch placement */}
-                              {dragPreview && dragPreview.week === w && dragPreview.method === 'outsourced' && draggedBatch && (
+                              {dragPreview && dragPreview.week === w && dragPreview.method === 'outsource' && draggedBatch && (
                                 (() => {
                                   const product = draggedBatch.product;
                                   const productColors = {

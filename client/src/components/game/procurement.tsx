@@ -5,7 +5,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
@@ -78,6 +77,15 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     });
     return map;
   }, [productData]);
+  // Set of fabrics where Design has forced print = ON. Used to prevent the user
+  // from un-checking print at procurement time when design has committed to it.
+  const printForcedMaterials = useMemo(() => {
+    const set = new Set<string>();
+    Object.entries(designPrintLocks).forEach(([mat, hasPrint]) => {
+      if (hasPrint) set.add(mat);
+    });
+    return set;
+  }, [designPrintLocks]);
 
   // Sync print options with design locks on load/change (lock both true and false per Design)
   useEffect(() => {
@@ -536,7 +544,15 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
               <div className="text-sm font-medium text-blue-900">Projected season demand (reference)</div>
               <div className="text-2xl font-bold text-blue-900 font-mono">{Number(projectedSeasonDemand || 0).toLocaleString()} units</div>
             </div>
-            {/* Over‑commitment warning temporarily disabled */}
+            {overCommitUnits > 0 && (
+              <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-md p-2">
+                Over‑commitment risk: total GMC exceeds projected demand by{" "}
+                <span className="font-mono font-semibold">{overCommitUnits.toLocaleString()}</span>{" "}
+                units (&gt;3% buffer). If those units stay undelivered at end of Week 15, the
+                shortfall fee would be ≈ <span className="font-mono font-semibold">{formatCurrency(potentialPenalty)}</span>{" "}
+                (20% of undelivered value at the average unit price).
+              </div>
+            )}
           </div>
         </CardHeader>
         <CardContent>
