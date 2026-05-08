@@ -17,7 +17,12 @@ export interface ShippingPlanBatchRowData {
   method?: "inhouse" | "outsource";
   quantity: number;
   startWeek: number;
+  /** First week after manufacturing; WIP clears when current week reaches this value (matches engine). */
   endWeek: number;
+  /** Manufacturing lead in weeks — count of calendar weeks consuming capacity before completion. */
+  leadWeeks?: number;
+  /** Last week of active manufacturing — UI uses this instead of implying `endWeek` is part of prod. */
+  productionLastWeek?: number;
   shipping: "standard" | "expedited";
   shippingLocked: boolean;
   onShelfWeek: number;
@@ -35,6 +40,15 @@ interface ShippingPlanRowProps {
   pending?: boolean;
 }
 
+function productionSpanSubtitle(batch: ShippingPlanBatchRowData): string {
+  const lead = batch.leadWeeks ?? Math.max(1, batch.endWeek - batch.startWeek);
+  const last =
+    batch.productionLastWeek ?? (batch.leadWeeks != null ? batch.startWeek + batch.leadWeeks - 1 : batch.endWeek - 1);
+  const first = batch.startWeek;
+  const wk = lead === 1 ? `W${first}` : `W${first}–W${last}`;
+  return `${wk} (${lead}-wk prod · ships W${batch.endWeek})`;
+}
+
 export function ShippingPlanRow({ batch, onChange, pending }: ShippingPlanRowProps) {
   const recommendsExpedite =
     !batch.shippingLocked &&
@@ -43,42 +57,46 @@ export function ShippingPlanRow({ batch, onChange, pending }: ShippingPlanRowPro
     batch.comparison.expedited.onShelfWeek <= LAUNCH_WEEK;
   const isLate = batch.onShelfWeek > LAUNCH_WEEK;
 
+  const lead = batch.leadWeeks ?? Math.max(1, batch.endWeek - batch.startWeek);
+
   return (
     <Card className="border border-gray-200 mb-2">
       <div className="flex flex-col md:flex-row md:items-center gap-3 p-4">
-        <div className="md:w-56 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-sm font-semibold text-gray-900 truncate">
+        <div className="md:w-64 shrink-0 min-w-0">
+          <div className="flex items-start justify-between gap-2 min-h-[1.5rem]">
+            <span className="text-sm font-semibold text-gray-900 truncate min-w-0 pr-2">
               {PRODUCT_LABELS[batch.product] || batch.product}
             </span>
-            <span
-              className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border ${statusChipClasses(batch.status)}`}
-            >
-              {STATUS_LABEL[batch.status]}
-            </span>
-          </div>
-          <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
-            <span>{formatNumber(batch.quantity)} units · W{batch.startWeek}–W{batch.endWeek}</span>
-            {batch.method && (
-              <TooltipWrapper
-                content={
-                  batch.method === "inhouse"
-                    ? "In-house production: 2-week lead time, lower per-unit cost, consumes one 25k rung of in-house capacity."
-                    : "Outsourced production: 1-week lead time, higher per-unit cost, no in-house capacity used."
-                }
+            <div className="flex shrink-0 items-center gap-1 flex-wrap justify-end max-w-[9.5rem]">
+              <span
+                className={`text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border whitespace-nowrap ${statusChipClasses(batch.status)}`}
               >
-                <span
-                  className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border cursor-help ${
+                {STATUS_LABEL[batch.status]}
+              </span>
+              {batch.method && (
+                <TooltipWrapper
+                  content={
                     batch.method === "inhouse"
-                      ? "bg-indigo-50 text-indigo-700 border-indigo-200"
-                      : "bg-amber-50 text-amber-700 border-amber-200"
-                  }`}
+                      ? `In-house: ${lead}-week manufacturing lead before shipping (SKU-specific jacket 3 · dress/pants 2). Uses one 25k rung of capacity each active week; lower unit cost vs outsource.`
+                      : `Outsourced: ${lead}-week manufacturing before shipping — higher unit cost, no in-house capacity.`
+                  }
                 >
-                  {batch.method === "inhouse" ? <Factory size={10} /> : <ExternalLink size={10} />}
-                  {batch.method === "inhouse" ? "In-house" : "Outsourced"}
-                </span>
-              </TooltipWrapper>
-            )}
+                  <span
+                    className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border cursor-help whitespace-nowrap ${
+                      batch.method === "inhouse"
+                        ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                        : "bg-amber-50 text-amber-700 border-amber-200"
+                    }`}
+                  >
+                    {batch.method === "inhouse" ? <Factory size={10} /> : <ExternalLink size={10} />}
+                    {batch.method === "inhouse" ? "In-house" : "Outsourced"}
+                  </span>
+                </TooltipWrapper>
+              )}
+            </div>
+          </div>
+          <div className="text-xs text-gray-500 mt-1 leading-snug">
+            {formatNumber(batch.quantity)} units · {productionSpanSubtitle(batch)}
           </div>
         </div>
 

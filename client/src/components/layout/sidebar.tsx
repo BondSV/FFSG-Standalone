@@ -5,6 +5,7 @@ import {
   Palette, 
   ShoppingCart, 
   Factory, 
+  Layers,
   Truck, 
   Megaphone, 
   BarChart3,
@@ -25,7 +26,8 @@ const tabs = [
   { id: 'marketing', label: 'Marketing', icon: Megaphone },
   { id: 'procurement', label: 'Procurement', icon: ShoppingCart },
   { id: 'production', label: 'Production', icon: Factory },
-  { id: 'logistics', label: 'Inventory & Logistics', icon: Truck },
+  { id: 'inventory', label: 'Inventory', icon: Layers },
+  { id: 'logistics', label: 'Logistics', icon: Truck },
   { id: 'analytics', label: 'Analytics', icon: BarChart3 },
 ];
 
@@ -69,7 +71,7 @@ export default function Sidebar({ activeTab, onTabChange, currentState }: Sideba
             const pricesLocked = Boolean((currentState?.productData?.jacket?.rrpLocked
               && currentState?.productData?.dress?.rrpLocked
               && currentState?.productData?.pants?.rrpLocked));
-            // Lock until prices locked, except overview/pricing. No extra gating for Production or Inventory & Logistics.
+            // Lock until prices locked, except overview/pricing. Inventory & Logistics gated with production.
             const baseAllowed = tab.id === 'overview' || tab.id === 'pricing' || pricesLocked;
             const allowTab = baseAllowed;
             const isDisabled = !allowTab;

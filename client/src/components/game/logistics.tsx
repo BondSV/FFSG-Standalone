@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { apiRequest } from "@/lib/queryClient";
 import { InventoryTab } from "./logistics/inventory-tab";
 import { LogisticsTab } from "./logistics/logistics-tab";
@@ -7,9 +6,11 @@ import { LogisticsTab } from "./logistics/logistics-tab";
 interface LogisticsProps {
   gameSession: any;
   currentState: any;
+  /** Which sub-section to show — matches sidebar entries for Inventory vs Logistics. */
+  defaultSection?: "inventory" | "logistics";
 }
 
-export default function Logistics({ gameSession, currentState }: LogisticsProps) {
+export default function Logistics({ gameSession, currentState, defaultSection = "inventory" }: LogisticsProps) {
   const { data: inventory, isLoading } = useQuery({
     queryKey: ["/api/game", gameSession?.id, "inventory-overview"],
     queryFn: async () => {
@@ -20,37 +21,30 @@ export default function Logistics({ gameSession, currentState }: LogisticsProps)
     staleTime: 15000,
   });
 
+  const loading = isLoading && !inventory;
+
   return (
     <div className="p-6">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900 mb-1">Inventory & Logistics</h1>
+        <h1 className="text-2xl font-bold text-gray-900 mb-1">{defaultSection === "logistics" ? "Logistics" : "Inventory"}</h1>
         <p className="text-gray-600">
-          Track raw materials, work-in-process, finished goods, and shipments — and decide how each batch gets to your shelves.
+          {defaultSection === "logistics"
+            ? "Shipping modes, launch readiness, lead times, and how each production batch reaches shelves."
+            : "Raw materials, work-in-process, finished goods, and warehouse-level metrics."}
         </p>
       </div>
 
-      <Tabs defaultValue="inventory" className="w-full">
-        <TabsList className="mb-4">
-          <TabsTrigger value="inventory">Inventory</TabsTrigger>
-          <TabsTrigger value="logistics">Logistics</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="inventory">
-          {isLoading && !inventory ? (
-            <div className="text-sm text-gray-500 py-12 text-center">Loading inventory…</div>
-          ) : (
-            <InventoryTab inventory={inventory} currentState={currentState} />
-          )}
-        </TabsContent>
-
-        <TabsContent value="logistics">
-          {isLoading && !inventory ? (
-            <div className="text-sm text-gray-500 py-12 text-center">Loading logistics plan…</div>
-          ) : (
-            <LogisticsTab inventory={inventory} currentState={currentState} gameSession={gameSession} />
-          )}
-        </TabsContent>
-      </Tabs>
+      {defaultSection === "inventory" ? (
+        loading ? (
+          <div className="text-sm text-gray-500 py-12 text-center">Loading inventory…</div>
+        ) : (
+          <InventoryTab inventory={inventory} currentState={currentState} />
+        )
+      ) : loading ? (
+        <div className="text-sm text-gray-500 py-12 text-center">Loading logistics…</div>
+      ) : (
+        <LogisticsTab inventory={inventory} currentState={currentState} gameSession={gameSession} />
+      )}
     </div>
   );
 }

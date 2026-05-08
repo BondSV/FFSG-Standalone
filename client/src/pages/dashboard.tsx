@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { ArrowRight } from "lucide-react";
 import { ErrorBoundary } from "@/components/ui/error-boundary";
 
-type Tab = 'overview' | 'pricing' | 'design' | 'procurement' | 'production' | 'logistics' | 'marketing' | 'analytics';
+type Tab = 'overview' | 'pricing' | 'design' | 'procurement' | 'production' | 'inventory' | 'logistics' | 'marketing' | 'analytics';
 
 export default function Dashboard() {
   const { toast } = useToast();
@@ -153,8 +153,10 @@ export default function Dashboard() {
         return <Procurement gameSession={gameSession} currentState={currentState} />;
       case 'production':
         return <Production gameSession={gameSession} currentState={currentState} />;
+      case 'inventory':
+        return <Logistics gameSession={gameSession} currentState={currentState} defaultSection="inventory" />;
       case 'logistics':
-        return <Logistics gameSession={gameSession} currentState={currentState} />;
+        return <Logistics gameSession={gameSession} currentState={currentState} defaultSection="logistics" />;
       case 'marketing':
         return <Marketing gameSession={gameSession} currentState={currentState} />;
       case 'analytics':

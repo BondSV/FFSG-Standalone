@@ -365,8 +365,16 @@ export function InventoryTab({ inventory, currentState }: InventoryTabProps) {
                   <th className="text-left py-2 px-3">Batch</th>
                   <th className="text-left py-2 px-3">Product</th>
                   <th className="text-left py-2 px-3">Method</th>
-                  <th className="text-right py-2 px-3">Start</th>
-                  <th className="text-right py-2 px-3">End</th>
+                  <th className="text-right py-2 px-3">
+                    <TooltipWrapper content="First week manufacturing work starts for this batch (matches your production plan).">
+                      <span className="cursor-help border-b border-dotted border-gray-400">Start prod</span>
+                    </TooltipWrapper>
+                  </th>
+                  <th className="text-right py-2 px-3">
+                    <TooltipWrapper content="First week the batch finishes manufacturing and leaves the factory (enters shipping / in-transit). Matches engine WIP endWeek.">
+                      <span className="cursor-help border-b border-dotted border-gray-400">Leaves WIP</span>
+                    </TooltipWrapper>
+                  </th>
                   <th className="text-right py-2 px-3">Quantity</th>
                   <th className="text-right py-2 px-3">Unit £</th>
                   <th className="text-right py-2 px-3">Total value</th>

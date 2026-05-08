@@ -342,7 +342,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
         const shipWeeks = SHIPPING_WEEKS[shipMethod];
         const startWeek = Number(b.startWeek || 0);
+        // endWeek = first calendar week AFTER the last manufacturing week — WIP clears
+        // when currentWeek === endWeek (see commitWeek). Display uses productionLastWeek:
         const endWeek = startWeek + lead;
+        const productionLastWeek = startWeek + lead - 1;
         const onShelfWeek = endWeek + shipWeeks + 1;
         const qty = Number(b.quantity || 0);
 
@@ -366,6 +369,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           quantity: qty,
           startWeek,
           endWeek,
+          leadWeeks: lead,
+          productionLastWeek,
           shipping: shipMethod,
           shippingLocked: status !== 'planned' && status !== 'inProduction',
           onShelfWeek,
