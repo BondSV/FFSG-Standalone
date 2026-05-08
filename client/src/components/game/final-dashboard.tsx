@@ -10,17 +10,9 @@ interface FinalDashboardProps {
 
 export default function FinalDashboard({ gameId }: FinalDashboardProps) {
   const { data } = useQuery({
-    queryKey: [
-      `/api/game/${gameId}/weeks`
-    ],
+    queryKey: [`/api/game/${gameId}/weeks`],
     enabled: !!gameId,
   });
-
-  if (!data) return null;
-  const weeks = (data as any).weeks || [];
-  if (!weeks.length) return null;
-
-  // Compute KPIs
   const { data: ledgerData } = useQuery({
     queryKey: ["/api/game", gameId, "ledger", "rollup"],
     queryFn: async () => {
@@ -30,6 +22,11 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
     enabled: !!gameId,
     staleTime: 30_000,
   });
+
+  if (!data) return null;
+  const weeks = (data as any).weeks || [];
+  if (!weeks.length) return null;
+
   const ledgerRows = (ledgerData?.rows || []) as Array<{ entryType: string; amount: number; weekNumber: number }>;
   const sumByType = (type: string) => ledgerRows.filter(r => r.entryType === type).reduce((s, r) => s + Number(r.amount || 0), 0);
   const salesWeeks = weeks.filter((w: any) => w.weekNumber >= 7 && w.weekNumber <= 12);
@@ -49,7 +46,21 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
   const interestCosts = sumByType('interest');
   const marketingSpend = sumByType('marketing');
   const totalCosts = materialCosts + productionCosts + logisticsCosts + holdingCosts + interestCosts + marketingSpend;
-  const avgCapital = 1000000; // same as STARTING_CAPITAL
+  // Compute average capital employed across all weeks: cash + credit drawn + inventory value.
+  // Mirrors the engine's calculateEconomicProfit logic so the dashboard is consistent with stored EP.
+  const avgCapital = (() => {
+    if (!weeks.length) return 0;
+    const sum = weeks.reduce((acc: number, w: any) => {
+      const cash = Number(w.cashOnHand || 0);
+      const credit = Number(w.creditUsed || 0);
+      const rmVal = Object.values((w as any).rawMaterials || {}).reduce((s: number, v: any) => s + Number(v.onHandValue || 0), 0);
+      const wipVal = ((w as any).workInProcess?.batches || []).reduce((s: number, b: any) => s + Number(b.quantity || 0) * (Number(b.materialUnitCost || 0) + Number(b.productionUnitCost || 0)), 0);
+      const itVal = ((w as any).shipmentsInTransit || []).reduce((s: number, sh: any) => s + Number(sh.units || 0) * (Number(sh.materialCostPerUnit || 0) + Number(sh.productionCostPerUnit || 0) + Number(sh.shippingCostPerUnit || 0)), 0);
+      const fgVal = ((w as any).finishedGoods?.lots || []).reduce((s: number, l: any) => s + Number(l.quantity || 0) * Number(l.unitCostBasis || 0), 0);
+      return acc + cash + credit + rmVal + wipVal + itVal + fgVal;
+    }, 0);
+    return sum / weeks.length;
+  })();
   const economicProfit = totalRevenue - totalCosts - avgCapital * 0.10;
 
   // Cost breakdown pie data
@@ -113,7 +124,7 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
         <h1 className="text-2xl font-bold">Final Performance Dashboard</h1>
 
         {/* Headline KPIs */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
           <Card>
             <CardContent className="p-4">
               <div className="text-sm text-gray-600">
@@ -125,9 +136,17 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
           <Card>
             <CardContent className="p-4">
               <div className="text-sm text-gray-600">
-                <TooltipWrapper content="Total revenue - total costs - 10% capital charge">Economic Profit</TooltipWrapper>
+                <TooltipWrapper content="Total revenue minus total costs minus a 10% charge on the average capital employed across the season (cash + drawn credit + inventory value)">Economic Profit</TooltipWrapper>
               </div>
-              <div className="text-2xl font-bold">{formatCurrency(economicProfit)}</div>
+              <div className={`text-2xl font-bold ${economicProfit >= 0 ? "text-emerald-700" : "text-red-700"}`}>{formatCurrency(economicProfit)}</div>
+            </CardContent>
+          </Card>
+          <Card>
+            <CardContent className="p-4">
+              <div className="text-sm text-gray-600">
+                <TooltipWrapper content="Average capital employed across the season (cash + drawn credit + inventory value), used to charge a 10% capital cost in Economic Profit">Avg Capital</TooltipWrapper>
+              </div>
+              <div className="text-2xl font-bold">{formatCurrency(avgCapital)}</div>
             </CardContent>
           </Card>
           <Card>

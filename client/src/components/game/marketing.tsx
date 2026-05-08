@@ -349,7 +349,17 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   <div className="text-xs text-gray-600 mb-1">{lastWeekUnits.toLocaleString()} units {(!isFinalWeek && nextForecast>0) ? `→ next week ~ ${nextForecast.toLocaleString()} (forecast)` : ''}</div>
                 );
               })()}
-              <Sparkline points={[]} />
+              {(() => {
+                const weeks = (weeksData?.weeks || []) as Array<any>;
+                const committed = weeks
+                  .filter((w: any) => Boolean(w.isCommitted))
+                  .sort((a: any, b: any) => Number(a.weekNumber) - Number(b.weekNumber));
+                const points = committed.map((w: any) => {
+                  const d = (w.weeklyDemand || {}) as any;
+                  return Number(d.jacket || 0) + Number(d.dress || 0) + Number(d.pants || 0);
+                });
+                return <Sparkline points={points} colorClass="stroke-blue-500" />;
+              })()}
             </div>
           </div>
           {/* KPI chips (cumulative across committed weeks) */}

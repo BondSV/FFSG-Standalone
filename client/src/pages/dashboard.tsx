@@ -140,7 +140,7 @@ export default function Dashboard() {
       case 'overview':
         return (
           <div className="p-6 space-y-8">
-            <KpiCards currentState={currentState} />
+            <KpiCards currentState={currentState} gameSession={gameSession} />
             <ProductPortfolio currentState={currentState} />
             <Timeline currentState={currentState} />
           </div>
