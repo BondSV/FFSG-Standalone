@@ -28,7 +28,7 @@ function trendIcon(delta: number) {
 export default function KpiCards({ currentState, gameSession }: KpiCardsProps) {
   const { data: gameConstants } = useQuery({ queryKey: ["/api/game/constants"], retry: false });
   const { data: weeksData } = useQuery<{ weeks: any[] }>({
-    queryKey: [`/api/game/${gameSession?.id}/weeks`],
+    queryKey: ["/api/game", gameSession?.id, "weeks"],
     enabled: !!gameSession?.id,
     retry: false,
   });

@@ -95,15 +95,23 @@ function num(v: any): number {
 export default function Analytics({ gameSession, currentState }: AnalyticsProps) {
   const { data: gameConstants } = useQuery({ queryKey: ["/api/game/constants"], retry: false });
   const { data: weeksData } = useQuery<{ weeks: any[] }>({
-    queryKey: [`/api/game/${gameSession?.id}/weeks`],
+    queryKey: ["/api/game", gameSession?.id, "weeks"],
     enabled: !!gameSession?.id,
     retry: false,
   });
 
+  // Merge currentState in as the latest week if /weeks hasn't picked it up yet
+  // (covers cache staleness and the brief window after a commit before refetch).
   const weeks = useMemo<any[]>(() => {
-    const arr = (weeksData as any)?.weeks || [];
-    return arr.slice().sort((a: any, b: any) => num(a.weekNumber) - num(b.weekNumber));
-  }, [weeksData]);
+    const arr = ((weeksData as any)?.weeks || []).slice() as any[];
+    const cur = currentState;
+    if (cur && cur.weekNumber != null) {
+      const idx = arr.findIndex((w: any) => num(w.weekNumber) === num(cur.weekNumber));
+      if (idx >= 0) arr[idx] = cur;
+      else arr.push(cur);
+    }
+    return arr.sort((a: any, b: any) => num(a.weekNumber) - num(b.weekNumber));
+  }, [weeksData, currentState]);
 
   const currentWeek = num(currentState?.weekNumber) || 1;
   const isPostLaunch = currentWeek >= LAUNCH_WEEK;
@@ -257,23 +265,28 @@ export default function Analytics({ gameSession, currentState }: AnalyticsProps)
     : 0;
   const slStatus: "success" | "warning" | "danger" = rollingService >= 0.95 ? "success" : rollingService >= 0.85 ? "warning" : "danger";
 
+  // KPIs that represent point-in-time values (cash, credit) MUST come from the
+  // single most-recent week in the merged series — using `||` to fall back to
+  // currentState mixes data from different weeks (e.g. W2 cash with W3 credit).
+  const cashNow = num(last?.cash);
+  const creditNow = num(last?.credit);
   const kpis = [
     {
       title: "Cash on Hand",
-      value: formatCurrency(num(last?.cash) || num(currentState?.cashOnHand)),
+      value: formatCurrency(cashNow),
       change: cashChange,
       target: "≥ £0",
       icon: Banknote,
-      status: (num(last?.cash) || num(currentState?.cashOnHand)) >= 0 ? "success" : "danger",
+      status: cashNow >= 0 ? "success" : "danger",
       delta: cashChange !== 0 ? `${cashChange >= 0 ? "+" : ""}${formatCurrency(cashChange)}` : "—",
     },
     {
       title: "Credit Used",
-      value: formatCurrency(num(last?.credit) || num(currentState?.creditUsed)),
+      value: formatCurrency(creditNow),
       change: 0,
       target: "≤ £500k",
       icon: Wallet,
-      status: (num(last?.credit) || num(currentState?.creditUsed)) <= 500_000 ? "success" : "warning",
+      status: creditNow <= 500_000 ? "success" : "warning",
       delta: "",
     },
     {
@@ -413,7 +426,7 @@ export default function Analytics({ gameSession, currentState }: AnalyticsProps)
             Live KPIs, P&amp;L, demand fulfilment, and product economics — all derived from your committed weeks.
           </p>
         </div>
-        <div className="text-sm text-gray-500">Week {currentWeek} • {series.length} weeks committed</div>
+        <div className="text-sm text-gray-500">Week {currentWeek} • {series.filter((r) => r.week < currentWeek).length} weeks committed</div>
       </div>
 
       {/* KPI strip */}

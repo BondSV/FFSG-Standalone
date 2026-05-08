@@ -10,7 +10,7 @@ interface FinalDashboardProps {
 
 export default function FinalDashboard({ gameId }: FinalDashboardProps) {
   const { data } = useQuery({
-    queryKey: [`/api/game/${gameId}/weeks`],
+    queryKey: ["/api/game", gameId, "weeks"],
     enabled: !!gameId,
   });
   const { data: ledgerData } = useQuery({
