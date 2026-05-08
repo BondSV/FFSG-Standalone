@@ -128,7 +128,7 @@ export const ordersLog = pgTable("orders_log", {
   weekNumber: integer("week_number").notNull(),
   orderTimestamp: varchar("order_timestamp").notNull(),
   supplier: varchar("supplier").notNull(),
-  orderType: varchar("order_type").notNull(), // 'spot' | 'gmc' | 'fvc'
+  orderType: varchar("order_type").notNull(), // 'spot' | 'gmc'
   material: varchar("material").notNull(),
   quantity: integer("quantity").notNull(),
   effectiveUnitPrice: decimal("effective_unit_price", { precision: 12, scale: 4 }).notNull(),
