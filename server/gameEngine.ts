@@ -1237,14 +1237,24 @@ export class GameEngine {
 
       const capacityMap: Record<number, number> = {};
       for (const b of productionSchedule?.batches || []) {
-        // Batch size multiple of 25k
-        if (Number(b.quantity || 0) % GAME_CONSTANTS.BATCH_SIZE !== 0) {
-          errors.push(`Batch ${b.id} quantity must be in increments of ${GAME_CONSTANTS.BATCH_SIZE}`);
+        // Each batch must fit within a single 25k rung. Partial batches
+        // (less than 25k) are allowed when materials are insufficient — the
+        // production UI explicitly offers this when defective deliveries
+        // shrink the on-hand pool. We still flag obviously bad data.
+        const qty = Number(b.quantity || 0);
+        if (qty <= 0) {
+          errors.push(`Batch ${b.id} has invalid quantity (must be > 0)`);
+        } else if (qty > GAME_CONSTANTS.BATCH_SIZE) {
+          errors.push(`Batch ${b.id} quantity ${qty} exceeds the single-rung limit of ${GAME_CONSTANTS.BATCH_SIZE}; split into multiple batches`);
         }
         const lead = this.getProductionLead(b.product, b.method);
         for (let w = b.startWeek; w < b.startWeek + lead; w++) {
           if (b.method === 'inhouse') {
-            capacityMap[w] = (capacityMap[w] || 0) + Number(b.quantity);
+            // Each batch consumes one 25k rung regardless of how full it is,
+            // so charge full BATCH_SIZE against capacity. Otherwise three
+            // partial batches of 24,800 would slip past a 75k capacity gate
+            // even though they truly need three rungs.
+            capacityMap[w] = (capacityMap[w] || 0) + GAME_CONSTANTS.BATCH_SIZE;
             const available = GAME_CONSTANTS.CAPACITY_SCHEDULE[w - 1] || 0;
             if (capacityMap[w] > available) {
               errors.push(`Production capacity exceeded in week ${w}`);

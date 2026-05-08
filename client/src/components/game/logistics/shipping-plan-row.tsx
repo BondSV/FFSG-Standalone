@@ -1,6 +1,6 @@
 import { Card } from "@/components/ui/card";
 import { TooltipWrapper } from "@/components/ui/tooltip-wrapper";
-import { Lock, Truck, Zap, AlertTriangle } from "lucide-react";
+import { Lock, Truck, Zap, AlertTriangle, Factory, ExternalLink } from "lucide-react";
 import {
   PRODUCT_LABELS,
   formatCurrency,
@@ -14,6 +14,7 @@ import {
 export interface ShippingPlanBatchRowData {
   id: string;
   product: string;
+  method?: "inhouse" | "outsource";
   quantity: number;
   startWeek: number;
   endWeek: number;
@@ -56,8 +57,28 @@ export function ShippingPlanRow({ batch, onChange, pending }: ShippingPlanRowPro
               {STATUS_LABEL[batch.status]}
             </span>
           </div>
-          <div className="text-xs text-gray-500 mt-0.5">
-            {formatNumber(batch.quantity)} units · W{batch.startWeek}–W{batch.endWeek}
+          <div className="text-xs text-gray-500 mt-0.5 flex items-center gap-2">
+            <span>{formatNumber(batch.quantity)} units · W{batch.startWeek}–W{batch.endWeek}</span>
+            {batch.method && (
+              <TooltipWrapper
+                content={
+                  batch.method === "inhouse"
+                    ? "In-house production: 2-week lead time, lower per-unit cost, consumes one 25k rung of in-house capacity."
+                    : "Outsourced production: 1-week lead time, higher per-unit cost, no in-house capacity used."
+                }
+              >
+                <span
+                  className={`inline-flex items-center gap-1 text-[10px] uppercase tracking-wide px-1.5 py-0.5 rounded border cursor-help ${
+                    batch.method === "inhouse"
+                      ? "bg-indigo-50 text-indigo-700 border-indigo-200"
+                      : "bg-amber-50 text-amber-700 border-amber-200"
+                  }`}
+                >
+                  {batch.method === "inhouse" ? <Factory size={10} /> : <ExternalLink size={10} />}
+                  {batch.method === "inhouse" ? "In-house" : "Outsourced"}
+                </span>
+              </TooltipWrapper>
+            )}
           </div>
         </div>
 
