@@ -831,7 +831,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Game session not found" });
       }
       
-      const validation = GameEngine.validateWeeklyDecisions(week, weeklyState, gameSession);
+      // Mirror commit path: trim oversize planned marketing before liquidity check
+      const stateForValidation = JSON.parse(JSON.stringify(weeklyState)) as any;
+      GameEngine.clampPlannedMarketingToLiquidity(stateForValidation);
+      const validation = GameEngine.validateWeeklyDecisions(week, stateForValidation, gameSession);
       
       // Update validation results in the state
       await storage.updateWeeklyState(weeklyState.id, {
@@ -861,17 +864,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Game session not found" });
       }
       
-      // Validate before committing
-      const validation = GameEngine.validateWeeklyDecisions(week, weeklyState, gameSession);
+      // Clamp happens inside commitWeek, but validation runs first — apply the same
+      // quiet trim here so liquidity checks match what commit will actually run.
+      const stateForCommit = JSON.parse(JSON.stringify(weeklyState)) as any;
+      GameEngine.clampPlannedMarketingToLiquidity(stateForCommit);
+      const validation = GameEngine.validateWeeklyDecisions(week, stateForCommit, gameSession);
       if (!validation.canCommit) {
         return res.status(400).json({ 
           message: "Cannot commit week due to validation errors",
           errors: validation.errors 
         });
       }
+
+      const prevPlan = JSON.stringify((weeklyState as any).plannedMarketingPlan ?? null);
+      const nextPlan = JSON.stringify(stateForCommit.plannedMarketingPlan ?? null);
+      if (prevPlan !== nextPlan) {
+        await storage.updateWeeklyState(weeklyState.id, {
+          plannedMarketingPlan: stateForCommit.plannedMarketingPlan,
+        });
+      }
       
       // Commit the week via engine (full simulation); persist result
-      const computed = await GameEngine.commitWeek(weeklyState as any);
+      const computed = await GameEngine.commitWeek(stateForCommit as any);
       // Preserve Orders Log (materialPurchases) in the committed week
       (computed as any).materialPurchases = (weeklyState as any).materialPurchases || [];
       const { ledgerEntries, createdAt: _ca, updatedAt: _ua, ...toPersist } = (computed as any);
