@@ -353,14 +353,14 @@ export function LogisticsTab({ inventory, currentState, gameSession }: Logistics
                 <tr>
                   <th className="text-left py-2 px-3">Product</th>
                   <th className="text-right py-2 px-3">
-                    <TooltipWrapper content="Standard shipping: 2-week transit, lower per-unit cost.">
+                    <TooltipWrapper content="Lower unit rate; 2 simulated freight weeks from hand-off, then +1 stocking week before on-shelf (vs Expedited: 1 freight + 1 stocking).">
                       <span className="cursor-help inline-flex items-center gap-1">
                         <Truck size={12} /> Standard
                       </span>
                     </TooltipWrapper>
                   </th>
                   <th className="text-right py-2 px-3">
-                    <TooltipWrapper content="Expedited shipping: 1-week transit, higher per-unit cost.">
+                    <TooltipWrapper content="Higher unit rate; 1 freight week from hand-off, then +1 stocking week. Saves one ladder step vs Standard overall.">
                       <span className="cursor-help inline-flex items-center gap-1">
                         <Zap size={12} /> Expedited
                       </span>

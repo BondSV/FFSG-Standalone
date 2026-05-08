@@ -346,6 +346,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // when currentWeek === endWeek (see commitWeek). Display uses productionLastWeek:
         const endWeek = startWeek + lead;
         const productionLastWeek = startWeek + lead - 1;
+        // On-shelf week matches engine: freight leg (shipWeeks) + one stocking week after hand-off.
+        // endWeek = manufacturing completion; see commitWeek arrivalWeek: week + shipWeeks + 1.
         const onShelfWeek = endWeek + shipWeeks + 1;
         const qty = Number(b.quantity || 0);
 

@@ -40,11 +40,12 @@ export function IntroCard({ gameId }: IntroCardProps) {
           <div className="flex-1">
             <h3 className="font-semibold text-gray-900 mb-1">How Logistics Works</h3>
             <p className="text-sm text-gray-700 leading-relaxed">
-              Logistics is how finished goods move from production to your shelves. For each batch you choose
-              {" "}<strong>Standard</strong> (cheaper, 2 weeks transit) or <strong>Expedited</strong> (faster, 1 week).
-              Goods arrive on shelves at <em>completion week + transit weeks + 1</em>. Your goal is to have every
-              product on shelves <strong>before Week 7</strong> when sales begin. Holding cost (0.3% / week) applies
-              to all stored inventory at every stage.
+              Logistics is how finished goods move from production to your shelves. Pick{" "}
+              <strong>Standard</strong> or <strong>Expedited</strong> freight (<strong>2</strong> vs{" "}
+              <strong>1</strong> simulated in‑transit week). Units only book <strong>on shelf</strong> after an extra{" "}
+              <strong>+1 stocking week</strong>: <em>arrival week = week production finishes (“ships”) + freight weeks + 1</em>.
+              Expedited trims one ladder step vs Standard overall. Aim to land everything <strong>before Week 7</strong>.
+              Holding cost (0.3% per week on stored value) applies at every stage.
             </p>
           </div>
           <Button variant="ghost" size="icon" onClick={handleDismiss} aria-label="Dismiss" className="shrink-0">

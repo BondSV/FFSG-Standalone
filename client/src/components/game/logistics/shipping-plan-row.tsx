@@ -58,6 +58,11 @@ export function ShippingPlanRow({ batch, onChange, pending }: ShippingPlanRowPro
   const isLate = batch.onShelfWeek > LAUNCH_WEEK;
 
   const lead = batch.leadWeeks ?? Math.max(1, batch.endWeek - batch.startWeek);
+  /** Full calendar ladder from production hand-off (same as `ships W{endWeek}`) to on-shelf week (matches engine: freight weeks + one stocking week). */
+  const standardWeeksToShelf = batch.comparison.standard.onShelfWeek - batch.endWeek;
+  const expeditedWeeksToShelf = batch.comparison.expedited.onShelfWeek - batch.endWeek;
+  const SHELF_TIMING_HELP =
+    "The engine counts two steps after production finishes (“ships Wx”): a freight leg (2wk Standard vs 1wk Expedited) plus one stocking week before units are booked on shelves. So Expedited saves one week vs Standard overall.";
 
   return (
     <Card className="border border-gray-200 mb-2">
@@ -115,7 +120,11 @@ export function ShippingPlanRow({ batch, onChange, pending }: ShippingPlanRowPro
               <div className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
                 <Truck size={14} /> Standard
               </div>
-              <span className="text-[10px] text-gray-500">2 weeks transit</span>
+              <TooltipWrapper content={SHELF_TIMING_HELP}>
+                <span className="text-[10px] text-gray-500 cursor-help border-b border-dotted border-gray-300">
+                  {standardWeeksToShelf} wk handoff→shelf
+                </span>
+              </TooltipWrapper>
             </div>
             <div className="text-xs text-gray-600">
               {formatCurrency(batch.comparison.standard.totalCost)} ·
@@ -140,7 +149,11 @@ export function ShippingPlanRow({ batch, onChange, pending }: ShippingPlanRowPro
               <div className="flex items-center gap-1.5 text-sm font-medium text-gray-900">
                 <Zap size={14} /> Expedited
               </div>
-              <span className="text-[10px] text-gray-500">1 week transit</span>
+              <TooltipWrapper content={SHELF_TIMING_HELP}>
+                <span className="text-[10px] text-gray-500 cursor-help border-b border-dotted border-gray-300">
+                  {expeditedWeeksToShelf} wk handoff→shelf
+                </span>
+              </TooltipWrapper>
             </div>
             <div className="text-xs text-gray-600">
               {formatCurrency(batch.comparison.expedited.totalCost)} ·
