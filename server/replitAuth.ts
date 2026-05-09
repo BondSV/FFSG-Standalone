@@ -1,13 +1,10 @@
 /*
- * Stand‑alone authentication stub
+ * Session identification for the stand‑alone app (legacy module name).
  *
- * The original project integrated with Replit's OIDC provider via Passport.js.
- * That workflow requires environment variables such as `REPLIT_DOMAINS`,
- * `REPL_ID`, `SESSION_SECRET` and a Postgres session store. None of these
- * dependencies exist in a generic Node environment, and for a local preview
- * they're unnecessary. To provide a frictionless demo, this module exports
- * replacements for `setupAuth` and `isAuthenticated` that simply attach a
- * dummy user to each request and allow all requests to proceed.
+ * This file is not tied to any vendor. It issues an `sid` cookie, upserts a
+ * lightweight user row, and sets `req.user` so game routes have a stable user
+ * id. `isAuthenticated` passes all requests — replace with real auth for
+ * production if you need login, SSO, or stricter checks.
  */
 
 import type { Express, RequestHandler } from "express";
@@ -64,8 +61,7 @@ export async function setupAuth(app: Express) {
   });
 }
 
-// Authentication middleware that always passes. In the original version
-// this would ensure the session token is valid and refresh it if needed.
+// Authentication middleware that always passes (demo / single-tenant default).
 export const isAuthenticated: RequestHandler = (_req, _res, next) => {
   return next();
 };

@@ -53,7 +53,7 @@ Launch on time (Week 7), maintain a service level of ≥95% (Weeks 7-12), and fi
     *   **In-house:** Lower cost, longer lead times, constrained by weekly capacity.
     *   **Outsourced:** Higher cost, faster (1 week), unlimited capacity.
 *   **Capacity Model:** For a multi-week production run, the batch size is checked against the available capacity **concurrently** for each week of its duration. When the batch is scheduled, it will reserve that amount of capacity in each of those weeks.
-*   **Batches:** All manufacturing is planned in batches of 25,000 units.
+*   **Batches:** Manufacturing is organized in **up to** 25,000 units per batch row. The **canonical rung** for in-house capacity is still 25,000 units per batch-week. **Implementation:** partial batches **below 25k** are allowed when **net available materials** cannot support a full rung (UI and `validateWeeklyDecisions` are aligned); quantity must still be **positive** and **at most 25,000** per batch.
 
 ### 2.7. Procurement, Suppliers, and Dynamic Discounts:
 *   **Suppliers:**
@@ -91,9 +91,9 @@ Launch on time (Week 7), maintain a service level of ≥95% (Weeks 7-12), and fi
     **A. Errors (Hard Validation - Block Commitment):**
     *   If any of these conditions are met, the "Commit Week" button must be disabled, and a clear error message must be shown to the user explaining the specific issue.
         1.  **Insufficient Materials:** Attempting to schedule a production batch when the Net Available materials are less than the required amount.
-        2.  **Inadequate Cash:** Committing to decisions where immediate payments exceed the total available funds (Cash on Hand + Unused Credit).
+        2.  **Inadequate Cash:** Committing to decisions where **the engine’s staged cash need** exceeds **Cash on Hand + Unused Credit**. **Implementation:** this includes **this week’s** production and shipping for batches starting in the current week **plus** amounts **staged for the start of next week**: procurement payments due then (per SPT/GMC timing in code), **planned next-week marketing** (`plannedMarketingPlan.totalSpend`), **holding cost** on current inventory value, and **interest** on outstanding credit. A dedicated **maximum affordable next-week marketing** cap is enforced when locking the marketing plan (see §6.3).
         3.  **Production Exceeds Capacity:** Scheduling an in-house production batch that is larger than the available capacity in any of the weeks during its production run.
-        4.  **Impossible Launch Deadline:** Making a production or logistics choice that results in the product arriving in stores after the start of Week 7.
+        4.  **Impossible Launch Deadline:** *(Original spec.)* **Implementation:** late launch is **not** hard-blocked; validation focuses on materials, capacity, liquidity, and pricing floors. Service level and lost sales reflect late arrivals.
         5.  **Pricing Below Cost Floor:** Setting a product's RRP or applying a discount that results in the selling price being less than 105% of its Confirmed Material Cost + Production Cost.
 
     **B. Warnings (Soft Validation - Allow Commitment, but Highlight Risk):**
@@ -196,13 +196,8 @@ Launch on time (Week 7), maintain a service level of ≥95% (Weeks 7-12), and fi
 ### 5.2. Layout & Structure:
 *   **Top Navigation Bar (Fixed):** Must contain [Week X of 15], [Service Level %], [Economic Profit £], [Cash £], and the [COMMIT WEEK] button.
 *   **Main Dashboard (3-Column):** Left Sidebar (25%), Center Area (50%), Right Panel (25%).
-*   **Dashboard Tabs Order:**
-    1.  **Design & Pricing:** For setting RRP and selecting materials/print. Must have a "Add Print?" toggle.
-    2.  **Procurement**
-    3.  **Production**
-    4.  **Logistics**
-    5.  **Marketing**
-    6.  **Finance**
+*   **Dashboard Tabs Order (original spec):** Design & Pricing, Procurement, Production, Logistics, Marketing, Finance.
+*   **Dashboard tabs (current implementation):** **Overview**, **Price Positioning**, **Design**, **Procurement**, **Production**, **Inventory**, **Logistics**, **Marketing**, **Analytics**. There is no separate **Finance** tab; financial KPIs, cash flow, and analytics appear in the header, Overview, and Analytics / final dashboard. **FVC** contract type is **not** implemented in the current UI; use **GMC** and **Spot (SPT)**.
 *   **Responsiveness:** Must adapt gracefully for tablet and mobile screens.
 
 ### 5.3. Interactivity & Data Visualization:
@@ -250,3 +245,33 @@ Launch on time (Week 7), maintain a service level of ≥95% (Weeks 7-12), and fi
 **F. Financial Concepts:**
 *   **Holding Costs:** (Hover text on this line item in a financial report) "The cost of storing unsold inventory in your warehouse (0.3% of inventory value per week). High holding costs are a sign of inefficient inventory management."
 *   **Outstanding Credit:** (Hover text on this KPI) "The amount of money you have currently borrowed from your credit line. You are charged 0.2% interest on this balance every week."
+
+---
+
+## 6. Implementation deltas (current codebase — 2026)
+
+This section records **behavior as implemented** in the standalone repository when it differs from or clarifies sections 1–5 above. For architecture and file mapping, see [`PROJECT.md`](PROJECT.md).
+
+### 6.1 Deployment & persistence
+- Production uses **PostgreSQL** when **`DATABASE_URL`** is set (e.g. **Render** + Neon or other hosts). Without it, storage falls back to **in-memory** (non-persistent).
+- Auth in this repo is a **lightweight session cookie + pseudo-user** pattern in `server/replitAuth.ts` (legacy **filename** only — **no Replit**). Replace with your own login/OIDC if you need multi-user security.
+
+### 6.2 Logistics timing (on-shelf week)
+- Finished goods are modeled with **production handoff**, **shipping** (standard/expedited weeks), and an **on-shelf week** used in UI copy and inventory arrival logic. The engine treats goods as available for sale at the **start of the week after** transit completes **including a stocking week** (see server/engine and Logistics tab tooltips).
+
+### 6.3 Marketing: next week plan, lock, and liquidity
+- Players edit **`plannedMarketingPlan`** (total spend + channel splits + optional manual flag) and **`plannedWeeklyDiscounts`** for **next week**. **`plannedLocked: true`** freezes the plan until the week advances.
+- **`GET /api/game/:gameId/week/:weekNumber/planned-marketing-cap`** returns **`maxPlannedMarketingSpend`** from **`GameEngine.getMaxAffordablePlannedMarketingSpend`** (cash + unused credit minus non-marketing commitments as in validation).
+- Locking via **`POST .../update`** with **`plannedLocked: true`** is **rejected (400)** if spend exceeds that cap.
+- On **commit**, the server **clones** state, runs **`GameEngine.clampPlannedMarketingToLiquidity`** (scales **`totalSpend`** and channel **`spend`** proportionally), **re-validates**, **writes** the trimmed plan to the DB if it changed, then runs **`commitWeek`**. This fixes legacy saves with an oversized locked plan.
+
+### 6.4 Procurement & contracts in code
+- **GMC** and **SPT (Spot)** are fully wired. **FVC** paths are **not** present in the current TypeScript UI/engine surface.
+- **`materialPurchases`** / **`procurementContracts`** / **`orders_log`** (when using DB) support audit and reconciliation.
+
+### 6.5 Analytics & completion
+- **Analytics** tab: multi-panel dashboard over committed weeks (charts and KPIs; implementation in `client/src/components/game/analytics.tsx` and related APIs).
+- **Week 15 commit** triggers end-game scoring path in routes and **`final-dashboard`** presentation.
+
+### 6.6 Validation & sales-phase pricing
+- **Sales phase (weeks 7–12):** discounted price must respect a **floor** based on **confirmed material + in-house production** and, when available, **actual unit cost** (105% buffer), in line with engine rules in `validateWeeklyDecisions`.
