@@ -22,6 +22,7 @@ interface MarketingProps {
 
 type PresetId = 'awareness' | 'balanced' | 'conversion';
 type CampaignComponentId = 'social' | 'influencer' | 'google_display' | 'google_search' | 'print' | 'tv';
+type SplitSource = 'preset' | 'components' | 'manual';
 
 const marketingChannels = [
   { id: 'social', name: 'Social Media', icon: Share2, description: 'Efficient awareness and conversion; strong with Influencers and Search' },
@@ -41,10 +42,10 @@ const channelThemes: Record<string, { iconBg: string; iconColor: string; ring: s
   google_display: { iconBg: 'bg-indigo-100', iconColor: 'text-indigo-700', ring: 'ring-indigo-100', gradientFrom: 'from-indigo-50', gradientTo: 'to-white', chipBg: 'bg-indigo-100', chipText: 'text-indigo-800' },
 };
 
-const DEFAULT_COMPONENTS: Record<PresetId, CampaignComponentId[]> = {
-  awareness: ['social', 'influencer', 'google_display', 'print', 'google_search'],
-  balanced: ['social', 'influencer', 'google_display', 'google_search', 'print'],
-  conversion: ['social', 'influencer', 'google_display', 'google_search'],
+const PRESET_SPLITS: Record<PresetId, Record<string, number>> = {
+  awareness: { social: 45, influencer: 20, google_display: 25, print: 10, google_search: 0, tv: 0 },
+  balanced: { social: 30, influencer: 25, google_display: 20, google_search: 20, print: 5, tv: 0 },
+  conversion: { google_search: 45, google_display: 25, influencer: 20, social: 10, print: 0, tv: 0 },
 };
 
 const CAMPAIGN_COMPONENTS: Array<{ id: CampaignComponentId; label: string; description: string; weight: number }> = [
@@ -74,6 +75,12 @@ const splitFromComponents = (components: CampaignComponentId[]): Record<string, 
   });
   return split;
 };
+
+const componentsFromSplit = (split: Record<string, number>): CampaignComponentId[] => (
+  marketingChannels
+    .filter((channel) => Number(split[channel.id] || 0) > 0)
+    .map((channel) => channel.id as CampaignComponentId)
+);
 
 export default function Marketing({ gameSession, currentState }: MarketingProps) {
   const { toast } = useToast();
@@ -108,8 +115,9 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   const planned = (currentState as any)?.plannedMarketingPlan as any;
   const initialManual = Boolean(planned?.manual);
   const [manual, setManual] = useState<boolean>(initialManual);
+  const [splitSource, setSplitSource] = useState<SplitSource>(initialManual ? 'manual' : 'preset');
   const [preset, setPreset] = useState<PresetId>(recommendedPreset);
-  const [campaignComponents, setCampaignComponents] = useState<CampaignComponentId[]>(() => DEFAULT_COMPONENTS[recommendedPreset]);
+  const [campaignComponents, setCampaignComponents] = useState<CampaignComponentId[]>(() => componentsFromSplit(PRESET_SPLITS[recommendedPreset]));
   const [channelAllocation, setChannelAllocation] = useState<Record<string, number>>(() => {
     if (initialManual && planned?.channels && Number(planned?.totalSpend) >= 0) {
       const total = Number(planned.totalSpend) || 1;
@@ -117,7 +125,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       (planned.channels as any[]).forEach((c) => { pct[c.name] = Math.round((Number(c.spend||0) / total) * 100); });
       return pct;
     }
-    return { ...splitFromComponents(DEFAULT_COMPONENTS[recommendedPreset]) };
+    return { ...PRESET_SPLITS[recommendedPreset] };
   });
   // Remember the last non-zero allocation to restore after leaving £0 with manual on
   const lastNonZeroAllocation = useRef<Record<string, number> | null>(null);
@@ -140,6 +148,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
     setMarketingSpend(nextSpend);
     setManual(nextManual);
+    setSplitSource(nextManual ? 'manual' : 'preset');
     setPreset(recommendedPreset);
     if (nextManual && Array.isArray(plan?.channels)) {
       const total = Number(plan.totalSpend) || 1;
@@ -148,14 +157,11 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       (plan.channels as any[]).forEach((c) => {
         pct[c.name] = Math.round((Number(c.spend || 0) / total) * 100);
       });
-      setCampaignComponents(marketingChannels
-        .filter((c) => Number(pct[c.id] || 0) > 0)
-        .map((c) => c.id as CampaignComponentId));
+      setCampaignComponents(componentsFromSplit(pct));
       setChannelAllocation(pct);
     } else {
-      const nextComponents = DEFAULT_COMPONENTS[recommendedPreset];
-      setCampaignComponents(nextComponents);
-      setChannelAllocation({ ...splitFromComponents(nextComponents) });
+      setCampaignComponents(componentsFromSplit(PRESET_SPLITS[recommendedPreset]));
+      setChannelAllocation({ ...PRESET_SPLITS[recommendedPreset] });
     }
 
     if (nextDiscountPct <= 0) {
@@ -174,20 +180,14 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   }, [currentState?.id, currentWeek, (currentState as any)?.plannedLocked, recommendedPreset]);
 
   useEffect(() => {
-    if (!manual) {
-      setCampaignComponents(DEFAULT_COMPONENTS[preset]);
-      setChannelAllocation({ ...splitFromComponents(DEFAULT_COMPONENTS[preset]) });
+    if (!manual && splitSource === 'preset') {
+      setCampaignComponents(componentsFromSplit(PRESET_SPLITS[preset]));
+      setChannelAllocation({ ...PRESET_SPLITS[preset] });
       if (preset === 'awareness') { setDiscountMode('none'); setDiscountPercent(0); }
       if (preset === 'balanced') { setDiscountMode('none'); }
       if (preset === 'conversion') { setDiscountMode('none'); setDiscountPercent(0); }
     }
-  }, [preset, manual]);
-
-  useEffect(() => {
-    if (!manual) {
-      setChannelAllocation({ ...splitFromComponents(campaignComponents) });
-    }
-  }, [campaignComponents, manual]);
+  }, [preset, manual, splitSource]);
 
   useEffect(() => {
     if (manual) {
@@ -306,9 +306,12 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     } else {
       // marketingSpend > 0
       if (!manual) {
-        const nextComponents = DEFAULT_COMPONENTS[recommendedPreset];
-        setCampaignComponents(nextComponents);
-        setChannelAllocation({ ...splitFromComponents(nextComponents) });
+        if (splitSource === 'preset') {
+          setCampaignComponents(componentsFromSplit(PRESET_SPLITS[recommendedPreset]));
+          setChannelAllocation({ ...PRESET_SPLITS[recommendedPreset] });
+        } else {
+          setChannelAllocation({ ...splitFromComponents(campaignComponents) });
+        }
       } else {
         // manual ON: if allocation is all zeros, try to restore the last non-zero split
         const currentTotal = Object.values(channelAllocation).reduce((s, v) => s + Number(v || 0), 0);
@@ -317,7 +320,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         }
       }
     }
-  }, [marketingSpend, manual, recommendedPreset]);
+  }, [marketingSpend, manual, recommendedPreset, splitSource, campaignComponents]);
 
   // Recommended efficient zones by preset and channel (percent ranges)
   const getEfficientRange = (p: PresetId, channelId: string): [number, number] => {
@@ -385,12 +388,36 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     setConfirmOpen(true);
   };
 
+  const handlePresetChange = (nextPreset: PresetId) => {
+    setManual(false);
+    setSplitSource('preset');
+    setPreset(nextPreset);
+    setCampaignComponents(componentsFromSplit(PRESET_SPLITS[nextPreset]));
+    setChannelAllocation({ ...PRESET_SPLITS[nextPreset] });
+    setDiscountMode('none');
+    setDiscountPercent(0);
+  };
+
+  const handleManualToggle = (enabled: boolean) => {
+    setManual(enabled);
+    if (enabled) {
+      setSplitSource('manual');
+      setCampaignComponents(componentsFromSplit(channelAllocation));
+      return;
+    }
+    setSplitSource('preset');
+    setCampaignComponents(componentsFromSplit(PRESET_SPLITS[preset]));
+    setChannelAllocation({ ...PRESET_SPLITS[preset] });
+  };
+
   const toggleCampaignComponent = (componentId: CampaignComponentId) => {
     if (manual || isLocked) return;
     setCampaignComponents((prev) => {
       const next = prev.includes(componentId)
         ? prev.filter((id) => id !== componentId)
         : [...prev, componentId];
+      setSplitSource('components');
+      setChannelAllocation({ ...splitFromComponents(next) });
       return next;
     });
   };
@@ -627,11 +654,11 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             </div>
             <div className="space-y-2">
               <Label>Preset</Label>
-              <div className="flex gap-2 flex-wrap">
-                {(['awareness','balanced','conversion'] as PresetId[]).map(p => (
-                  <Button key={p} variant={!manual && preset===p?'default':'outline'} onClick={()=> { setManual(false); setPreset(p); }} disabled={isLocked}>{p.charAt(0).toUpperCase()+p.slice(1)}</Button>
-                ))}
-              </div>
+	              <div className="flex gap-2 flex-wrap">
+	                {(['awareness','balanced','conversion'] as PresetId[]).map(p => (
+	                  <Button key={p} variant={!manual && splitSource === 'preset' && preset===p?'default':'outline'} onClick={()=> handlePresetChange(p)} disabled={isLocked}>{p.charAt(0).toUpperCase()+p.slice(1)}</Button>
+	                ))}
+	              </div>
               <div className="text-xs text-gray-500 flex items-center gap-1"><HelpCircle size={12}/> Recommended for next week: {recommendedPreset.charAt(0).toUpperCase()+recommendedPreset.slice(1)}</div>
             </div>
             <div className="space-y-2">
@@ -679,11 +706,11 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   aria-pressed={active}
                   className={`relative text-left rounded-lg border px-3 py-2 transition ${
                     active
-                      ? 'border-amber-500 bg-amber-50 text-gray-900 shadow-sm ring-2 ring-amber-200'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-amber-200'
+                      ? 'border-emerald-500 bg-emerald-50 text-gray-900 shadow-sm ring-2 ring-emerald-200'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-emerald-200'
                   } ${manual || isLocked || marketingSpend === 0 ? 'cursor-not-allowed' : ''}`}
                 >
-                  <div className={`absolute right-3 top-3 h-2.5 w-2.5 rounded-full ${active ? 'bg-amber-500' : 'bg-gray-200'}`} />
+                  <div className={`absolute right-3 top-3 h-2.5 w-2.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-gray-200'}`} />
                   <div className="font-medium">{component.label}</div>
                   <div className="text-xs text-gray-600 mt-0.5">{component.description}</div>
                 </button>
@@ -709,7 +736,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             <p className="text-sm text-gray-600">Allocate percent split (must total 100%).</p>
             <div className="flex items-center gap-2">
               <span className="text-sm text-gray-700">Manual Channel Split Management</span>
-              <Switch checked={manual} onCheckedChange={(v)=> setManual(Boolean(v))} />
+	              <Switch checked={manual} onCheckedChange={(v)=> handleManualToggle(Boolean(v))} />
             </div>
           </div>
         </CardHeader>
@@ -769,7 +796,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
       {/* Actions footer (normal pane at bottom) */}
       <div className="mt-8 bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between">
-        <Button variant="outline" onClick={()=> { const nextComponents = DEFAULT_COMPONENTS[recommendedPreset]; setManual(false); setPreset(recommendedPreset); setCampaignComponents(nextComponents); setChannelAllocation({ ...splitFromComponents(nextComponents) }); setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>Reset to Preset</Button>
+        <Button variant="outline" onClick={()=> handlePresetChange(recommendedPreset)} disabled={isLocked}>Reset to Preset</Button>
         <Button onClick={handleApplyNextWeek} disabled={isFinalWeek || isLocked || updateStateMutation.isPending || (marketingSpend>0 && Math.round(totalAllocation)!==100) || (!isFinalWeek && !!capData && marketingSpend > maxAffordableNextWeek + 0.01)}>
           {isFinalWeek ? 'No Next Week' : updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
           </Button>
