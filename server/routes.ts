@@ -821,6 +821,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 maxPlannedMarketingSpend: maxSpend,
               });
             }
+            const candidate = {
+              ...(weeklyState as any),
+              plannedMarketingPlan: updates.plannedMarketingPlan ?? (weeklyState as any).plannedMarketingPlan,
+              plannedWeeklyDiscounts: updates.plannedWeeklyDiscounts ?? (weeklyState as any).plannedWeeklyDiscounts,
+              plannedLocked: true,
+            };
+            const planValidation = GameEngine.validateWeeklyDecisions(week, candidate, gameSession);
+            const plannedErrors = planValidation.errors.filter((e) => String(e).startsWith('Planned next-week discount'));
+            if (plannedErrors.length > 0) {
+              return res.status(400).json({
+                message: plannedErrors.join(' '),
+                errors: plannedErrors,
+              });
+            }
           }
           // Update planning-only fields without touching purchases
           weeklyState = await storage.updateWeeklyState(weeklyState.id, {
