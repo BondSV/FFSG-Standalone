@@ -46,27 +46,31 @@ export function computeWeekSummary(params: {
     };
   }).filter(d => d.deltaUnits !== 0 || d.deltaValue !== 0);
 
-  // Aggregate ordered units by material for deliveries that arrive this week (from contracts)
-  const orderedByMaterial: Record<string, number> = {};
+  // Arrivals must come from delivery records, not net raw-material deltas:
+  // opening production can consume material in the same week it arrives.
+  const arrivalsByMaterial: Record<string, { ordered: number; good: number; value: number }> = {};
   try {
     const contracts = (nextState.procurementContracts?.contracts || []) as any[];
     for (const c of contracts) {
       for (const del of (c.deliveries || [])) {
         if (Number(del.week) === w) {
           const mat = String(c.material || 'unknown');
-          orderedByMaterial[mat] = (orderedByMaterial[mat] || 0) + Number(del.units || 0);
+          const ordered = Number(del.units || 0);
+          const good = Number(del.goodUnits ?? del.units ?? 0);
+          const unitPrice = Number(del.unitPrice ?? c.lockedUnitPrice ?? 0);
+          arrivalsByMaterial[mat] = arrivalsByMaterial[mat] || { ordered: 0, good: 0, value: 0 };
+          arrivalsByMaterial[mat].ordered += ordered;
+          arrivalsByMaterial[mat].good += good;
+          arrivalsByMaterial[mat].value += ordered * unitPrice;
         }
       }
     }
   } catch {}
-  const arrivals = rmDeltas
-    .filter(d => d.deltaUnits > 0)
-    .map(d => {
-      const unitPrice = d.deltaUnits !== 0 ? Math.abs(d.deltaValue) / Math.abs(d.deltaUnits) : 0;
-      const ordered = Number(orderedByMaterial[d.material] || 0);
-      const defectiveUnits = ordered > 0 && ordered > d.deltaUnits ? ordered - d.deltaUnits : undefined;
-      return { material: d.material, goodUnits: d.deltaUnits, defectiveUnits, unitPrice, amount: unitPrice * d.deltaUnits };
-    });
+  const arrivals = Object.entries(arrivalsByMaterial).map(([material, a]) => {
+    const defectiveUnits = a.ordered > a.good ? a.ordered - a.good : undefined;
+    const unitPrice = a.good > 0 ? a.value / a.good : 0;
+    return { material, goodUnits: a.good, defectiveUnits, unitPrice, amount: a.value };
+  });
 
   const settlements = ledgerRowsN1
     .filter(r => r.entryType === 'materials_spt' || r.entryType === 'materials_gmc')
@@ -148,4 +152,3 @@ export function computeWeekSummary(params: {
     demandSeries,
   };
 }
-
