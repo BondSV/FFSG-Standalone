@@ -117,7 +117,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   const [manual, setManual] = useState<boolean>(initialManual);
   const [splitSource, setSplitSource] = useState<SplitSource>(initialManual ? 'manual' : 'preset');
   const [preset, setPreset] = useState<PresetId>(recommendedPreset);
-  const [campaignComponents, setCampaignComponents] = useState<CampaignComponentId[]>(() => componentsFromSplit(PRESET_SPLITS[recommendedPreset]));
+  const [campaignComponents, setCampaignComponents] = useState<CampaignComponentId[]>(() => initialManual ? componentsFromSplit(PRESET_SPLITS[recommendedPreset]) : []);
   const [channelAllocation, setChannelAllocation] = useState<Record<string, number>>(() => {
     if (initialManual && planned?.channels && Number(planned?.totalSpend) >= 0) {
       const total = Number(planned.totalSpend) || 1;
@@ -160,7 +160,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       setCampaignComponents(componentsFromSplit(pct));
       setChannelAllocation(pct);
     } else {
-      setCampaignComponents(componentsFromSplit(PRESET_SPLITS[recommendedPreset]));
+      setCampaignComponents([]);
       setChannelAllocation({ ...PRESET_SPLITS[recommendedPreset] });
     }
 
@@ -181,7 +181,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
   useEffect(() => {
     if (!manual && splitSource === 'preset') {
-      setCampaignComponents(componentsFromSplit(PRESET_SPLITS[preset]));
+      setCampaignComponents([]);
       setChannelAllocation({ ...PRESET_SPLITS[preset] });
       if (preset === 'awareness') { setDiscountMode('none'); setDiscountPercent(0); }
       if (preset === 'balanced') { setDiscountMode('none'); }
@@ -307,7 +307,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       // marketingSpend > 0
       if (!manual) {
         if (splitSource === 'preset') {
-          setCampaignComponents(componentsFromSplit(PRESET_SPLITS[recommendedPreset]));
+          setCampaignComponents([]);
           setChannelAllocation({ ...PRESET_SPLITS[recommendedPreset] });
         } else {
           setChannelAllocation({ ...splitFromComponents(campaignComponents) });
@@ -392,7 +392,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     setManual(false);
     setSplitSource('preset');
     setPreset(nextPreset);
-    setCampaignComponents(componentsFromSplit(PRESET_SPLITS[nextPreset]));
+    setCampaignComponents([]);
     setChannelAllocation({ ...PRESET_SPLITS[nextPreset] });
     setDiscountMode('none');
     setDiscountPercent(0);
@@ -406,7 +406,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       return;
     }
     setSplitSource('preset');
-    setCampaignComponents(componentsFromSplit(PRESET_SPLITS[preset]));
+    setCampaignComponents([]);
     setChannelAllocation({ ...PRESET_SPLITS[preset] });
   };
 
@@ -690,13 +690,16 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         <CardHeader>
           <CardTitle>Campaign Components</CardTitle>
           <div className="text-sm text-gray-600">
-            Choose the campaign elements you want to run. The channel split below is generated from the active components; switch to manual to fine-tune percentages.
+            Choose the campaign elements you want to run. Presets use their own split; selecting a component switches to a component-generated split. Switch to manual to fine-tune percentages.
           </div>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
             {CAMPAIGN_COMPONENTS.map((component) => {
               const active = campaignComponents.includes(component.id);
+              const activeStyle = active
+                ? { borderColor: '#57cd07', backgroundColor: 'rgba(87, 205, 7, 0.10)', boxShadow: '0 0 0 2px rgba(87, 205, 7, 0.22)' }
+                : undefined;
               return (
                 <button
                   key={component.id}
@@ -704,13 +707,14 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   onClick={() => toggleCampaignComponent(component.id)}
                   disabled={manual || isLocked || marketingSpend === 0}
                   aria-pressed={active}
+                  style={activeStyle}
                   className={`relative text-left rounded-lg border px-3 py-2 transition ${
                     active
-                      ? 'border-emerald-500 bg-emerald-50 text-gray-900 shadow-sm ring-2 ring-emerald-200'
-                      : 'border-gray-200 bg-white text-gray-700 hover:border-emerald-200'
+                      ? 'text-gray-900 shadow-sm'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-lime-300'
                   } ${manual || isLocked || marketingSpend === 0 ? 'cursor-not-allowed' : ''}`}
                 >
-                  <div className={`absolute right-3 top-3 h-2.5 w-2.5 rounded-full ${active ? 'bg-emerald-500' : 'bg-gray-200'}`} />
+                  <div className="absolute right-3 top-3 h-2.5 w-2.5 rounded-full" style={{ backgroundColor: active ? '#57cd07' : '#e5e7eb' }} />
                   <div className="font-medium">{component.label}</div>
                   <div className="text-xs text-gray-600 mt-0.5">{component.description}</div>
                 </button>
