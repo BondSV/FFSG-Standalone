@@ -1,0 +1,4 @@
+ffsim.sbond.uk {
+	encode zstd gzip
+	reverse_proxy ffbsg:5000
+}
