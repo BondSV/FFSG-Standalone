@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { useToast } from "@/hooks/use-toast";
-import { AlertTriangle, Factory, Package, BarChart3, List } from "lucide-react";
+import { AlertTriangle, Factory, Package, BarChart3, List, Info } from "lucide-react";
 
 interface ProductionProps {
   gameSession: any;
@@ -228,10 +228,13 @@ export default function Production({ gameSession, currentState }: ProductionProp
         return;
       }
       if (!confirmPartial) {
+        const partialDescription = method === "inhouse"
+          ? `Only ${avail.toLocaleString()} units available. Running partial will consume full in-house capacity and full 25k production cost. Confirm to proceed and click Add again.`
+          : `Only ${avail.toLocaleString()} units available. Running partial will still carry a higher per-unit cost. Confirm to proceed and click Add again.`;
         setConfirmPartial(true);
         toast({
           title: "Partial batch possible",
-          description: `Only ${avail.toLocaleString()} units available. Running partial will consume full in‑house capacity and full 25k production cost. Confirm to proceed and click Add again.`,
+          description: partialDescription,
         });
         return;
       }
@@ -485,6 +488,10 @@ export default function Production({ gameSession, currentState }: ProductionProp
               </div>
             </div>
             <div className="p-5">
+            <div className="mb-4 text-sm text-blue-900 bg-blue-50 border border-blue-200 rounded-md p-3 flex items-start gap-2">
+              <Info size={15} className="mt-0.5 shrink-0" />
+              <span>You can schedule production and shipping against confirmed future material arrivals.</span>
+            </div>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
               <div>
                 <div className="text-xs text-gray-600 mb-1">SKU</div>
@@ -523,7 +530,11 @@ export default function Production({ gameSession, currentState }: ProductionProp
             {confirmPartial && (
               <div className="mt-3 text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded p-2 flex items-start gap-2">
                 <AlertTriangle size={14} className="mt-0.5" />
-                <div>Partial batch mode: this will consume full in‑house capacity and full 25k production cost; per‑unit cost will be higher.</div>
+                <div>
+                  {method === "inhouse"
+                    ? "Partial batch mode: this will consume full in-house capacity and full 25k production cost; per-unit cost will be higher."
+                    : "Partial batch mode: per-unit cost will be higher because fixed setup effort is spread over fewer units."}
+                </div>
               </div>
             )}
             {/* Feasibility */}

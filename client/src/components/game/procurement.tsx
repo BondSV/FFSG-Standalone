@@ -97,7 +97,10 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   }, [designPrintLocks]);
 
   // Helper: supplier basket counts
-  const getSupplierBasketCount = (supplier: 'supplier1' | 'supplier2') => Object.keys(supplierPrices[supplier]).reduce((count, material) => count + ((materialQuantities[material] || 0) > 0 ? 1 : 0), 0);
+  const getSupplierBasketCount = (supplier: 'supplier1' | 'supplier2') => {
+    if (supplier !== selectedSupplier) return 0;
+    return Object.keys(supplierPrices[supplier]).reduce((count, material) => count + ((materialQuantities[material] || 0) > 0 ? 1 : 0), 0);
+  };
 
   // Supplier tiers from server constants
   const computeTierForSupplier = (supplier: 'supplier1' | 'supplier2', units: number): { discount: number; tierIndex: number | null } => {

@@ -1043,6 +1043,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           nextWeekState.rawMaterials[mat] = entry;
         }
 
+        // Materialise opening production/logistics events for the new live week.
+        // This keeps Inventory, Logistics, summaries, and validation on the
+        // same clock: if Week N+1 has started, its starting batches have
+        // consumed materials, entered WIP, and locked their shipping plan.
+        GameEngine.applyOpeningPipelineEvents(nextWeekState, week + 1);
+
         // Apply cash waterfall for N+1 outflows at start of week (interest + ops)
         const out = (computed as any).nextWeekOutflows || {};
         let cashOnHandN1 = Number(nextWeekState.cashOnHand || 0);
@@ -1052,7 +1058,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
           if (cashOnHandN1 >= costInterest) cashOnHandN1 -= costInterest; else { creditUsedN1 += (costInterest - cashOnHandN1); cashOnHandN1 = 0; }
           nextWeekState.interestAccrued = (Number(nextWeekState.interestAccrued || 0) + costInterest).toFixed(2);
         }
-        const ops = Number(out.marketing || 0) + Number(out.materials_spt || 0) + Number(out.materials_gmc || 0) + Number(out.holding || 0);
+        const ops = Number(out.marketing || 0)
+          + Number(out.materials_spt || 0)
+          + Number(out.materials_gmc || 0)
+          + Number(out.production || 0)
+          + Number(out.logistics || 0)
+          + Number(out.holding || 0);
         if (ops > 0) {
           if (cashOnHandN1 >= ops) cashOnHandN1 -= ops; else { creditUsedN1 += (ops - cashOnHandN1); cashOnHandN1 = 0; }
         }
@@ -1060,6 +1071,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (supplierMaterialsPaid > 0) {
           nextWeekState.materialCosts = (Number(nextWeekState.materialCosts || 0) + supplierMaterialsPaid).toFixed(2);
         }
+        if (Number(out.production || 0) > 0) {
+          nextWeekState.productionCosts = (Number(nextWeekState.productionCosts || 0) + Number(out.production || 0)).toFixed(2);
+        }
+        if (Number(out.logistics || 0) > 0) {
+          nextWeekState.logisticsCosts = (Number(nextWeekState.logisticsCosts || 0) + Number(out.logistics || 0)).toFixed(2);
+        }
+        nextWeekState.costBreakdown = {
+          materials: supplierMaterialsPaid,
+          production: Number(out.production || 0),
+          logistics: Number(out.logistics || 0),
+          marketing: Number(out.marketing || 0),
+          holding: Number(out.holding || 0),
+          interest: costInterest,
+        };
         nextWeekState.cashOnHand = cashOnHandN1.toFixed(2);
         nextWeekState.creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsedN1).toFixed(2);
 

@@ -131,24 +131,27 @@ export default function Design({ gameSession, currentState }: DesignProps) {
 
   const updateStateMutation = useMutation({
     mutationFn: async (updates: any) => {
-      await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, updates);
+      const res = await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, updates);
+      return res.json();
     },
-    onSuccess: (_data, variables) => {
-      // Optimistic: ensure cache reflects locked design
+    onSuccess: (savedState, variables) => {
+      // Keep commit validation and adjacent tabs on the persisted state.
       queryClient.setQueryData(['/api/game/current'], (old: any) => {
         if (!old) return old;
         return {
           ...old,
           currentState: {
             ...old.currentState,
+            ...savedState,
             productData: {
               ...old.currentState?.productData,
               ...variables.productData,
+              ...savedState?.productData,
             },
           },
         };
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/game/current'], refetchType: 'active' });
       toast({ title: "Locked", description: "Your design choices have been locked." });
     },
     onError: (error) => {

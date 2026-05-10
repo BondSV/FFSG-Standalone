@@ -234,23 +234,26 @@ export default function Pricing({ gameSession, currentState }: PricingProps) {
 
   const updateStateMutation = useMutation({
     mutationFn: async (updates: any) => {
-      await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, updates);
+      const res = await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentState.weekNumber}/update`, updates);
+      return res.json();
     },
-    onSuccess: (_data, variables) => {
-      // Optimistically update cached current state so other tabs unlock immediately
+    onSuccess: (savedState, variables) => {
+      // Keep commit validation and adjacent tabs on the persisted state.
       queryClient.setQueryData(['/api/game/current'], (old: any) => {
         if (!old) return old;
         const next = { ...old };
         next.currentState = {
           ...next.currentState,
+          ...savedState,
           productData: {
             ...next.currentState?.productData,
             ...variables.productData,
+            ...savedState?.productData,
           },
         };
         return next;
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/game/current'], refetchType: 'active' });
       toast({
         title: "Locked",
         description: "Your RRPs have been locked.",

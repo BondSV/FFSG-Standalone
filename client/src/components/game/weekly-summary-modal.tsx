@@ -12,6 +12,9 @@ type Props = { open: boolean; onOpenChange: (v: boolean) => void; summary: Weekl
 export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
   const { cash, procurement, inventory, production, marketing } = summary;
   const demandData = (summary.demandSeries || []).filter(d => Number(d.week) <= Number(summary.weekNumber));
+  const hasDemandSignal = demandData.some(d =>
+    Number(d.awareness || 0) > 0 || Number(d.intent || 0) > 0 || Number(d.demand || 0) > 0
+  );
 
   const outflows = [
     { name: 'Marketing', value: cash.outflows.marketing },
@@ -116,22 +119,28 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             </div>
             <Separator className="my-2" />
             <div className="mt-1 h-[calc(100%-1.75rem)]">
-              <ChartContainer
-                config={{ awareness: { label: 'Awareness', color: 'hsl(217, 91%, 60%)' }, intent: { label: 'Intent to buy', color: 'hsl(142, 71%, 45%)' }, demand: { label: 'Demand', color: 'hsl(10, 78%, 45%)' } }}
-                className="h-full aspect-auto overflow-hidden"
-              >
-                <LineChart data={demandData} margin={{ top: 6, right: 8, left: 8, bottom: 6 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                  <XAxis dataKey="week" tickLine={false} axisLine={false} />
-                  <YAxis yAxisId="left" tickLine={false} axisLine={false} domain={[0, 100]} width={30} />
-                  <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} width={36} />
-                  <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                  <Line yAxisId="left" type="monotone" dataKey="awareness" stroke="var(--color-awareness)" strokeWidth={2} dot={false} />
-                  <Line yAxisId="left" type="monotone" dataKey="intent" stroke="var(--color-intent)" strokeWidth={2} dot={false} />
-                  <Line yAxisId="right" type="monotone" dataKey="demand" stroke="var(--color-demand)" strokeWidth={2} dot={false} />
-                  <ChartLegend verticalAlign="top" content={<ChartLegendContent className="!pb-1" />} />
-                </LineChart>
-              </ChartContainer>
+              {hasDemandSignal ? (
+                <ChartContainer
+                  config={{ awareness: { label: 'Awareness', color: 'hsl(217, 91%, 60%)' }, intent: { label: 'Intent to buy', color: 'hsl(142, 71%, 45%)' }, demand: { label: 'Demand', color: 'hsl(10, 78%, 45%)' } }}
+                  className="h-full aspect-auto overflow-hidden"
+                >
+                  <LineChart data={demandData} margin={{ top: 6, right: 8, left: 8, bottom: 6 }}>
+                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                    <XAxis dataKey="week" tickLine={false} axisLine={false} />
+                    <YAxis yAxisId="left" tickLine={false} axisLine={false} domain={[0, 100]} width={30} />
+                    <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} width={36} />
+                    <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+                    <Line yAxisId="left" type="monotone" dataKey="awareness" stroke="var(--color-awareness)" strokeWidth={2} dot={false} />
+                    <Line yAxisId="left" type="monotone" dataKey="intent" stroke="var(--color-intent)" strokeWidth={2} dot={false} />
+                    <Line yAxisId="right" type="monotone" dataKey="demand" stroke="var(--color-demand)" strokeWidth={2} dot={false} />
+                    <ChartLegend verticalAlign="top" content={<ChartLegendContent className="!pb-1" />} />
+                  </LineChart>
+                </ChartContainer>
+              ) : (
+                <div className="h-full rounded-md border border-dashed border-gray-200 bg-gray-50/70 flex items-center justify-center px-4 text-center text-sm text-muted-foreground">
+                  You can build demand by running marketing.
+                </div>
+              )}
             </div>
           </Card>
 
@@ -185,5 +194,4 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
     </Dialog>
   );
 }
-
 

@@ -193,6 +193,123 @@ export class GameEngine {
     return quantity > 0 ? totalCost / quantity : 0;
   }
 
+  private static hasMaterializedBatch(state: any, batchId: string): boolean {
+    const id = String(batchId || "");
+    if (!id) return false;
+    if (((state.workInProcess as any)?.batches || []).some((b: any) => String(b.id) === id)) return true;
+    if ((state.shipmentsInTransit || []).some((s: any) => String(s.id || "").startsWith(`${id}-ship-`))) return true;
+    if (((state.finishedGoods as any)?.lots || []).some((l: any) => String(l.id || "").includes(`${id}-ship-`))) return true;
+    return false;
+  }
+
+  private static startProductionBatch(state: any, b: any, week: number): void {
+    const product = b.product as ProductKey;
+    const method = b.method as "inhouse" | "outsource";
+    const prodLead = this.getProductionLead(product, method);
+    const prodUnitCost = this.getProductionUnitCost(product, method);
+    const quantity = this.toNumber(b.quantity);
+    const fabric = (state.productData as any)[product]?.fabric as MaterialKey;
+    const rmEntry: any = state.rawMaterials[fabric] || { onHand: 0, allocated: 0, inTransit: [], costLots: [] };
+    const netAvailable = this.toNumber(rmEntry.onHand) - this.toNumber(rmEntry.allocated);
+
+    if (!fabric || netAvailable + 1e-6 < quantity) {
+      throw new Error(`Insufficient materials to start batch ${b.id || ""} (${product}) in week ${week}`);
+    }
+
+    rmEntry.allocated = Math.max(0, this.toNumber(rmEntry.allocated) - quantity);
+    rmEntry.onHand = this.toNumber(rmEntry.onHand) - quantity;
+    const avgUnitRM = this.consumeRawMaterialFifo(rmEntry, quantity);
+    rmEntry.lastUnitCost = avgUnitRM;
+    state.rawMaterials[fabric] = rmEntry;
+
+    const chargedProductionUnits = method === "inhouse"
+      ? Math.max(GAME_CONSTANTS.BATCH_SIZE, quantity)
+      : quantity;
+    const productionCash = chargedProductionUnits * prodUnitCost;
+    const productionUnitCostBasis = quantity > 0 ? productionCash / quantity : prodUnitCost;
+
+    const endWeek = week + prodLead;
+    (state.workInProcess as any).batches.push({
+      id: b.id,
+      product,
+      method,
+      startWeek: week,
+      endWeek,
+      quantity,
+      materialUnitCost: avgUnitRM || this.toNumber((state.productData as any)[product]?.confirmedMaterialCost),
+      productionUnitCost: productionUnitCostBasis,
+    });
+  }
+
+  private static completeProductionAndArrivalsForWeek(state: any, week: number): void {
+    const remainingWip: any[] = [];
+    for (const wb of ((state.workInProcess as any)?.batches || [])) {
+      if (this.toNumber(wb.endWeek) === week) {
+        const plan = ((state.productionSchedule as any)?.batches || []).find((x: any) => String(x.id) === String(wb.id));
+        const shipMethod = (plan?.shipping || "standard") as "standard" | "expedited";
+        const shipWeeks = this.getShippingWeeks(shipMethod);
+        const shipUnitCost = this.getShippingUnitCost(wb.product, shipMethod);
+        state.shipmentsInTransit!.push({
+          id: `${wb.id}-ship-${week}`,
+          product: wb.product,
+          quantity: wb.quantity,
+          unitShippingCost: shipUnitCost,
+          unitMaterialCost: this.toNumber(wb.materialUnitCost),
+          unitProductionCost: this.toNumber(wb.productionUnitCost),
+          arrivalWeek: week + shipWeeks + 1,
+        });
+      } else {
+        remainingWip.push(wb);
+      }
+    }
+    (state.workInProcess as any).batches = remainingWip;
+
+    const remainingShipments: any[] = [];
+    for (const sh of state.shipmentsInTransit || []) {
+      if (this.toNumber(sh.arrivalWeek) === week) {
+        const materialCost = this.toNumber(sh.unitMaterialCost, this.toNumber((state.productData as any)[sh.product]?.confirmedMaterialCost));
+        const productionCost = this.toNumber(sh.unitProductionCost, this.getProductionUnitCost(sh.product as any, "inhouse"));
+        const unitShipping = this.toNumber(sh.unitShippingCost);
+        const unitCostBasis = materialCost + productionCost + unitShipping;
+        (state.finishedGoods as any).lots.push({
+          id: `lot-${sh.id}`,
+          product: sh.product,
+          quantity: sh.quantity,
+          unitCostBasis,
+          unitMaterialCost: materialCost,
+          unitProductionCost: productionCost,
+          unitShippingCost: unitShipping,
+        });
+      } else {
+        remainingShipments.push(sh);
+      }
+    }
+    state.shipmentsInTransit = remainingShipments;
+  }
+
+  static applyOpeningPipelineEvents(currentState: any, weekNumber?: number): any {
+    const state = currentState;
+    const week = this.toNumber(weekNumber ?? state.weekNumber);
+    state.rawMaterials = state.rawMaterials || {};
+    state.workInProcess = state.workInProcess?.batches ? state.workInProcess : { batches: [] };
+    state.finishedGoods = state.finishedGoods?.lots ? state.finishedGoods : { lots: [] };
+    state.shipmentsInTransit = state.shipmentsInTransit || [];
+    state.productionSchedule = state.productionSchedule || { batches: [] };
+
+    this.completeProductionAndArrivalsForWeek(state, week);
+
+    const startingBatches = (state.productionSchedule.batches || [])
+      .filter((b: any) => this.toNumber(b.startWeek) === week && !this.hasMaterializedBatch(state, String(b.id)));
+    for (const b of startingBatches) {
+      this.startProductionBatch(state, b, week);
+    }
+
+    const { wipByWeek, fgProjections } = this.computeWipAndFgProjections(state.productionSchedule, week);
+    state.wipByWeek = wipByWeek;
+    state.fgProjections = fgProjections;
+    return state;
+  }
+
   // --------------------
   // Procurement helpers
   // --------------------
@@ -485,35 +602,22 @@ export class GameEngine {
       // No current-week arrival mutation here
     }
 
-    // 3) Start production batches in this week: allocate materials, pay production cost now
-    const startingBatches = (state.productionSchedule.batches || []).filter((b: any) => b.startWeek === week);
+    // 3) Start production batches in this week: allocate materials, pay production cost now.
+    // New week snapshots materialise starts before the player sees the week;
+    // the idempotence guard keeps legacy/current-week commits from double-starting.
+    const startingBatches = (state.productionSchedule.batches || [])
+      .filter((b: any) => b.startWeek === week && !this.hasMaterializedBatch(state, String(b.id)));
     for (const b of startingBatches) {
       const product = b.product as ProductKey;
       const method = b.method as 'inhouse' | 'outsource';
-      const prodLead = this.getProductionLead(product, method);
       const prodUnitCost = this.getProductionUnitCost(product, method);
       const quantity = this.toNumber(b.quantity);
-
-      // Determine material to consume from product decision
-      const fabric = (state.productData as any)[product]?.fabric as MaterialKey;
-      const rmEntry: any = state.rawMaterials[fabric] || { onHand: 0, allocated: 0, inTransit: [], costLots: [] };
-      const netAvailable = this.toNumber(rmEntry.onHand) - this.toNumber(rmEntry.allocated);
-      if (netAvailable < quantity) {
-        // Allocation failure will already be surfaced in validation; here we just clamp to 0 to avoid NaNs
-      } else {
-        rmEntry.allocated = Math.max(0, this.toNumber(rmEntry.allocated) - quantity);
-        rmEntry.onHand = this.toNumber(rmEntry.onHand) - quantity;
-        const avgUnitRM = this.consumeRawMaterialFifo(rmEntry, quantity);
-        rmEntry.lastUnitCost = avgUnitRM;
-        state.rawMaterials[fabric] = rmEntry;
-      }
 
       // Pay production cost this week
       const chargedProductionUnits = method === 'inhouse'
         ? Math.max(GAME_CONSTANTS.BATCH_SIZE, quantity)
         : quantity;
       const productionCash = chargedProductionUnits * prodUnitCost;
-      const productionUnitCostBasis = quantity > 0 ? productionCash / quantity : prodUnitCost;
       operationalOutflows += productionCash;
       costProduction += productionCash;
 
@@ -524,76 +628,18 @@ export class GameEngine {
       operationalOutflows += shippingCashAtSchedule;
       costLogistics += shippingCashAtSchedule;
 
-      // Add to WIP with completion at end of week startWeek + lead
-      const endWeek = week + prodLead;
-      (state.workInProcess as any).batches.push({
-        id: b.id,
-        product,
-        method,
-        startWeek: week,
-        endWeek,
-        quantity,
-        materialUnitCost: this.toNumber(rmEntry.lastUnitCost, 0)
-          || this.toNumber((state.productData as any)[product]?.confirmedMaterialCost),
-        productionUnitCost: productionUnitCostBasis,
-      });
+      this.startProductionBatch(state, b, week);
     }
 
-    // 4) Complete production whose endWeek equals current week: create shipments and pay shipping cost now
-    const remainingWip: any[] = [];
-    for (const wb of (state.workInProcess as any).batches) {
-      if (wb.endWeek === week) {
-        // Create shipment according to batch's planned shipping method
-        const plan = (state.productionSchedule.batches || []).find((x: any) => x.id === wb.id);
-        const shipMethod = (plan?.shipping || 'standard') as 'standard' | 'expedited';
-        const shipWeeks = this.getShippingWeeks(shipMethod);
-        const shipUnitCost = this.getShippingUnitCost(wb.product, shipMethod);
-        const shipmentId = `${wb.id}-ship-${week}`;
-        state.shipmentsInTransit!.push({
-          id: shipmentId,
-          product: wb.product,
-          quantity: wb.quantity,
-          unitShippingCost: shipUnitCost,
-          unitMaterialCost: this.toNumber(wb.materialUnitCost),
-          unitProductionCost: this.toNumber(wb.productionUnitCost),
-          // Available for sale at start of the week AFTER shipping completes
-          arrivalWeek: week + shipWeeks + 1,
-        });
-        // Shipping cost was already paid at scheduling time
-      } else {
-        remainingWip.push(wb);
-      }
-    }
-    (state.workInProcess as any).batches = remainingWip;
+    // 4) Complete production and receive shipments for this week. For newly
+    // created weeks this has already happened at opening; this remains as a
+    // legacy/idempotent path for states created before the opening hook existed.
+    this.completeProductionAndArrivalsForWeek(state, week);
 
     // 4b) Update WIP tracking and FG projections for the new system
     const { wipByWeek, fgProjections } = this.computeWipAndFgProjections(state.productionSchedule, week);
     (state as any).wipByWeek = wipByWeek;
     (state as any).fgProjections = fgProjections;
-
-    // 5) At the start of this week, move shipments whose availability week equals current week into finished goods
-    const remainingShipments: any[] = [];
-    for (const sh of state.shipmentsInTransit || []) {
-      if (sh.arrivalWeek === week) {
-        // Lot cost basis = material + production + shipping (per unit)
-        const materialCost = this.toNumber(sh.unitMaterialCost, this.toNumber((state.productData as any)[sh.product]?.confirmedMaterialCost));
-        const productionCost = this.toNumber(sh.unitProductionCost, this.getProductionUnitCost(sh.product as any, 'inhouse'));
-        const unitShipping = this.toNumber(sh.unitShippingCost);
-        const unitCostBasis = materialCost + productionCost + unitShipping;
-        (state.finishedGoods as any).lots.push({
-          id: `lot-${sh.id}`,
-          product: sh.product,
-          quantity: sh.quantity,
-          unitCostBasis,
-          unitMaterialCost: materialCost,
-          unitProductionCost: productionCost,
-          unitShippingCost: unitShipping,
-        });
-      } else {
-        remainingShipments.push(sh);
-      }
-    }
-    state.shipmentsInTransit = remainingShipments;
 
     // Awareness/Intent are applied at the start of the week (when previous week committed).
     // Do NOT apply this week's marketing plan here to avoid double-applying.
@@ -1041,13 +1087,14 @@ export class GameEngine {
     state.interestAccrued = `${(this.toNumber(state.interestAccrued) + costInterest).toFixed(2)}`;
 
     // Persist this week's cost breakdown for Analytics
+    const existingBreakdown = (state as any).costBreakdown || {};
     (state as any).costBreakdown = {
-      materials: Number(costMaterials.toFixed(2)),
-      production: Number(costProduction.toFixed(2)),
-      logistics: Number(costLogistics.toFixed(2)),
-      marketing: Number(costMarketing.toFixed(2)),
-      holding: Number(costHolding.toFixed(2)),
-      interest: Number(costInterest.toFixed(2)),
+      materials: Number((this.toNumber(existingBreakdown.materials) + costMaterials).toFixed(2)),
+      production: Number((this.toNumber(existingBreakdown.production) + costProduction).toFixed(2)),
+      logistics: Number((this.toNumber(existingBreakdown.logistics) + costLogistics).toFixed(2)),
+      marketing: Number((this.toNumber(existingBreakdown.marketing) + costMarketing).toFixed(2)),
+      holding: Number((this.toNumber(existingBreakdown.holding) + costHolding).toFixed(2)),
+      interest: Number((this.toNumber(existingBreakdown.interest) + costInterest).toFixed(2)),
     };
 
     // Update totals (cumulative season-to-date) for actual unit cost tracking
@@ -1075,11 +1122,16 @@ export class GameEngine {
 
     // Stage N+1 effects for routes.ts to apply when creating Week N+1 state
     const nextWeekInterest = this.calculateInterest(creditUsed);
+    const nextWeekProductionCharges = week < 15
+      ? this.computeProductionStartChargesForWeek(week + 1, state)
+      : { production: 0, logistics: 0, total: 0 };
     (state as any).nextWeekArrivals = nextWeekArrivals;
     (state as any).nextWeekOutflows = {
       marketing: nextWeekOutflowsMarketing,
       materials_spt: nextWeekOutflowsSPT,
       materials_gmc: nextWeekOutflowsGMC,
+      production: nextWeekProductionCharges.production,
+      logistics: nextWeekProductionCharges.logistics,
       interest: nextWeekInterest,
       holding: costHolding,
     };
@@ -1091,6 +1143,12 @@ export class GameEngine {
     }
     if (costHolding > 0) {
       ledger.push({ type: 'holding', amount: costHolding, weekNumber: week + 1 });
+    }
+    if (nextWeekProductionCharges.production > 0) {
+      ledger.push({ type: 'production', amount: nextWeekProductionCharges.production, weekNumber: week + 1 });
+    }
+    if (nextWeekProductionCharges.logistics > 0) {
+      ledger.push({ type: 'logistics', amount: nextWeekProductionCharges.logistics, weekNumber: week + 1 });
     }
 
     // Single batch insert for the full week's ledger
@@ -1272,19 +1330,27 @@ export class GameEngine {
   }
 
   /** Production + shipping (batches starting this week) — same as validate/commit liquidity. */
-  private static computeOperationalOutflowsForWeekCommit(weekNumber: number, currentState: Partial<WeeklyState>): number {
-    let operationalOutflows = 0;
+  private static computeProductionStartChargesForWeek(
+    weekNumber: number,
+    currentState: Partial<WeeklyState>,
+  ): { production: number; logistics: number; total: number } {
+    let production = 0;
+    let logistics = 0;
     const prod = currentState.productionSchedule as any;
     for (const b of prod?.batches || []) {
       if (b.startWeek === weekNumber) {
         const qty = Number(b.quantity || 0);
         const chargedQty = b.method === 'inhouse' ? Math.max(GAME_CONSTANTS.BATCH_SIZE, qty) : qty;
-        operationalOutflows += chargedQty * this.getProductionUnitCost(b.product, b.method);
+        production += chargedQty * this.getProductionUnitCost(b.product, b.method);
         const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
-        operationalOutflows += qty * this.getShippingUnitCost(b.product, shipMethod);
+        logistics += qty * this.getShippingUnitCost(b.product, shipMethod);
       }
     }
-    return operationalOutflows;
+    return { production, logistics, total: production + logistics };
+  }
+
+  private static computeOperationalOutflowsForWeekCommit(weekNumber: number, currentState: Partial<WeeklyState>): number {
+    return this.computeProductionStartChargesForWeek(weekNumber, currentState).total;
   }
 
   /** Staged for week N+1 excluding next-week marketing (procurement due, holding, interest). */
@@ -1292,6 +1358,7 @@ export class GameEngine {
     let staged = 0;
     const dueWeekNext = weekNumber + 1;
     const creditUsed = Number((currentState as any).creditUsed || 0);
+    staged += this.computeProductionStartChargesForWeek(dueWeekNext, currentState).total;
     const procurementContracts = currentState.procurementContracts as any;
     if (procurementContracts) {
       for (const c of procurementContracts.contracts || []) {
@@ -1407,7 +1474,8 @@ export class GameEngine {
       const rawMaterials = currentState.rawMaterials as any;
 
       const capacityMap: Record<number, number> = {};
-      for (const b of productionSchedule?.batches || []) {
+      const scheduleBatches = productionSchedule?.batches || [];
+      for (const [batchIndex, b] of scheduleBatches.entries()) {
         // Each batch must fit within a single 25k rung. Partial batches
         // (less than 25k) are allowed when materials are insufficient — the
         // production UI explicitly offers this when defective deliveries
@@ -1460,9 +1528,24 @@ export class GameEngine {
             }
             return [] as any[];
           });
-          const inboundByStart = arrivals.filter((d: any) => d.week <= Number(b.startWeek)).reduce((s: number, d: any) => s + this.toNumber(d.goodUnits), 0);
-          const allocatedBefore = (productionSchedule?.batches || [])
-            .filter((bb: any) => bb !== b && productData[bb.product]?.fabric === fabric && Number(bb.startWeek) < Number(b.startWeek))
+          const currentWeekForMaterials = Number((currentState as any).weekNumber || weekNumber);
+          const batchStart = Number(b.startWeek);
+          if (batchStart <= currentWeekForMaterials && this.hasMaterializedBatch(currentState, String(b.id))) {
+            continue;
+          }
+          const inboundByStart = arrivals
+            .filter((d: any) => Number(d.week) > currentWeekForMaterials && Number(d.week) <= batchStart)
+            .reduce((s: number, d: any) => s + this.toNumber(d.goodUnits), 0);
+          const allocatedBefore = scheduleBatches
+            .filter((bb: any, idx: number) => (
+              idx !== batchIndex
+              && productData[bb.product]?.fabric === fabric
+              && Number(bb.startWeek) > currentWeekForMaterials
+              && (
+                Number(bb.startWeek) < batchStart
+                || (Number(bb.startWeek) === batchStart && idx < batchIndex)
+              )
+            ))
             .reduce((s: number, bb: any) => s + Number(bb.quantity || 0), 0);
           const projected = onHandNow + inboundByStart - allocatedBefore;
           if (projected < Number(b.quantity || 0)) {
