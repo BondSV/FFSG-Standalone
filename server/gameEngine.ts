@@ -451,40 +451,103 @@ export class GameEngine {
     currentAwareness: number,
     currentIntent: number
   ): { dA: number; dI: number } {
-    // Rebalanced effects per £100k spend (higher A growth in awareness channels; search stronger on I)
-    const per100k: Record<string, { a: number; i: number }> = {
-      social: { a: 2.8, i: 2.2 },
-      influencer: { a: 3.6, i: 4.5 },
-      print: { a: 1.2, i: 0.4 },
-      tv: { a: 5.0, i: 0.3 },
-      google_search: { a: 0.4, i: 3.8 },
-      google_display: { a: 1.6, i: 1.0 },
+    const channelModel: Record<string, {
+      minSpend: number;
+      lowEfficiency: number;
+      saturationSpend: number;
+      maxA: number;
+      maxI: number;
+      synergySpend: number;
+      synergyShare: number;
+    }> = {
+      social: { minSpend: 30000, lowEfficiency: 0.45, saturationSpend: 260000, maxA: 12.5, maxI: 6.8, synergySpend: 90000, synergyShare: 0.18 },
+      influencer: { minSpend: 100000, lowEfficiency: 0.18, saturationSpend: 300000, maxA: 9.5, maxI: 13.0, synergySpend: 140000, synergyShare: 0.25 },
+      print: { minSpend: 30000, lowEfficiency: 0.35, saturationSpend: 220000, maxA: 3.8, maxI: 0.9, synergySpend: 80000, synergyShare: 0.12 },
+      tv: { minSpend: 200000, lowEfficiency: 0.0, saturationSpend: 450000, maxA: 22.0, maxI: 0.8, synergySpend: 220000, synergyShare: 0.15 },
+      google_search: { minSpend: 10000, lowEfficiency: 0.60, saturationSpend: 180000, maxA: 2.4, maxI: 13.0, synergySpend: 70000, synergyShare: 0.20 },
+      google_display: { minSpend: 15000, lowEfficiency: 0.55, saturationSpend: 160000, maxA: 8.5, maxI: 5.4, synergySpend: 60000, synergyShare: 0.15 },
     };
+
+    const smoothstep = (t: number) => {
+      const x = this.clamp(t, 0, 1);
+      return x * x * (3 - 2 * x);
+    };
+
+    const spendResponse = (name: string, spend: number): number => {
+      const cfg = channelModel[name];
+      if (!cfg || spend <= 0) return 0;
+      const share = totalSpend > 0 ? spend / totalSpend : 0;
+      if (name === 'tv' && (totalSpend < cfg.minSpend || share < 0.10)) return 0;
+
+      let efficiency = 1;
+      if (cfg.minSpend > 0 && spend < cfg.minSpend) {
+        efficiency = cfg.lowEfficiency * (spend / cfg.minSpend);
+      } else if (cfg.minSpend > 0 && spend < cfg.minSpend * 2) {
+        efficiency = cfg.lowEfficiency + (1 - cfg.lowEfficiency) * smoothstep((spend - cfg.minSpend) / cfg.minSpend);
+      }
+
+      const effectiveSpend = spend * efficiency;
+      return 1 - Math.exp(-effectiveSpend / cfg.saturationSpend);
+    };
+
     const spendBy: Record<string, number> = {};
     for (const c of channels || []) spendBy[c.name] = (spendBy[c.name] || 0) + Number(c.spend || 0);
-    const unit = 100000;
-    // TV waste rule (unchanged)
-    const tvSpend = spendBy['tv'] || 0;
-    const tvShare = totalSpend > 0 ? tvSpend / totalSpend : 0;
-    const tvEffective = (totalSpend < 200000 || tvShare < 0.10) ? 0 : tvSpend;
-    let dA = 0, dIraw = 0;
-    for (const [key, spend] of Object.entries(spendBy)) {
-      const effSpend = key === 'tv' ? tvEffective : spend;
-      const k = per100k[key] || { a: 0, i: 0 };
-      dA += (effSpend / unit) * k.a;
-      dIraw += (effSpend / unit) * k.i;
+
+    const contribution: Record<string, { a: number; i: number }> = {};
+    let dAraw = 0, dIraw = 0;
+    for (const [key, cfg] of Object.entries(channelModel)) {
+      const spend = this.toNumber(spendBy[key], 0);
+      const response = spendResponse(key, spend);
+      const a = cfg.maxA * response;
+      const i = cfg.maxI * response;
+      contribution[key] = { a, i };
+      dAraw += a;
+      dIraw += i;
     }
-    // Synergies on I
-    const has = (k: string) => (spendBy[k] || 0) > 0;
-    let dI = dIraw;
-    if (has('social') && has('influencer')) dI += dIraw * 0.15; // stronger creator synergy
-    if (has('social') && has('google_search')) dI += dIraw * 0.08; // social primes search
-    if (has('google_display') && (has('social') || has('influencer'))) dI += dIraw * 0.06; // retargeting support
+
+    const intensity = (name: string) => {
+      const cfg = channelModel[name];
+      const spend = this.toNumber(spendBy[name], 0);
+      if (!cfg || spend <= 0 || totalSpend <= 0) return 0;
+      const spendScore = this.clamp(spend / cfg.synergySpend, 0, 1);
+      const shareScore = this.clamp((spend / totalSpend) / cfg.synergyShare, 0, 1);
+      return Math.sqrt(spendScore * shareScore);
+    };
+    const pair = (a: string, b: string) => Math.sqrt(intensity(a) * intensity(b));
+
+    // Integrated campaigns create proportional synergy; token channel spends no longer unlock a full bonus.
+    const creatorSynergy = pair('social', 'influencer');
+    const searchSynergy = pair('social', 'google_search');
+    const displaySynergy = Math.max(
+      pair('google_display', 'social'),
+      pair('google_display', 'influencer'),
+      pair('google_display', 'google_search')
+    );
+    const retargetingSynergy = Math.cbrt(
+      intensity('google_display') *
+      Math.max(intensity('social'), intensity('influencer')) *
+      Math.max(intensity('influencer'), intensity('google_search'))
+    );
+    const tvSocialSynergy = pair('tv', 'social');
+
+    dAraw += tvSocialSynergy * contribution.tv.a * 0.10;
+    dIraw += creatorSynergy * (contribution.social.i + contribution.influencer.i) * 0.14;
+    dIraw += searchSynergy * contribution.google_search.i * 0.15;
+    dIraw += displaySynergy * (contribution.google_display.i + contribution.google_search.i * 0.25) * 0.30;
+    dIraw += retargetingSynergy * (
+      contribution.google_display.i +
+      contribution.influencer.i * 0.25 +
+      contribution.google_search.i * 0.20
+    ) * 0.75;
 
     // Intent growth depends on Awareness: very slow when A is low, fast when A is high
     const A01 = this.clamp(currentAwareness, 0, 100) / 100;
+    const I01 = this.clamp(currentIntent, 0, 100) / 100;
+    const awarenessHeadroom = Math.pow(Math.max(0, 1 - A01), 0.72);
+    const intentHeadroom = Math.pow(Math.max(0, 1 - I01), 0.78);
     const awarenessGate = 0.2 + 0.8 * Math.pow(A01, 1.25); // 0.2..1.0
-    dI = dI * awarenessGate;
+    const dA = dAraw * awarenessHeadroom;
+    const dI = dIraw * awarenessGate * intentHeadroom;
 
     return { dA, dI };
   }
@@ -495,7 +558,7 @@ export class GameEngine {
     const A = this.clamp(awareness, 0, 100) / 100; // 0..1
     const I = this.clamp(intent, 0, 100) / 100;    // 0..1
     const fA = Math.pow(A, 0.6);                   // 0 at A=0, ~1 at A=1
-    const gI = 0.7 + 0.6 * Math.pow(I, 0.7);       // 0.7..1.3
+    const gI = 0.55 + 0.75 * Math.pow(I, 0.7);      // 0.55..1.3
     return this.clamp(fA * gI, 0, 1.3);
   }
 
@@ -727,35 +790,6 @@ export class GameEngine {
 
     // 6) Sales for this week
     // discounts already defined above
-    // Automatic run-out markdowns override
-    if (week === 13) { discounts.jacket = 0.20; discounts.dress = 0.20; discounts.pants = 0.20; }
-    if (week === 14) { discounts.jacket = 0.35; discounts.dress = 0.35; discounts.pants = 0.35; }
-    if (week === 15) { discounts.jacket = 0.50; discounts.dress = 0.50; discounts.pants = 0.50; }
-
-    // No-loss-sale floor (run-out only): never let the auto-markdown push the
-    // price below the average fully-loaded unit cost of available FG for that
-    // product. This honours the spec rule that clearance markdowns may not be
-    // used as a tool to sell below cost. Player-chosen W7-12 discounts are
-    // gated by validateWeeklyDecisions and not capped here.
-    if (week >= 13) {
-      const fgLots = ((state.finishedGoods as any).lots || []) as Array<{ product: string; quantity: number; unitMaterialCost: number; unitProductionCost: number; unitShippingCost: number }>;
-      for (const p of ['jacket', 'dress', 'pants'] as const) {
-        const rrp = this.toNumber((state.productData as any)?.[p]?.rrp);
-        if (!rrp) continue;
-        const lotsForP = fgLots.filter((l: any) => l.product === p);
-        const totalUnits = lotsForP.reduce((s: number, l: any) => s + this.toNumber(l.quantity), 0);
-        if (totalUnits === 0) continue;
-        const totalCost = lotsForP.reduce((s: number, l: any) => s + this.toNumber(l.quantity) * (this.toNumber(l.unitMaterialCost) + this.toNumber(l.unitProductionCost) + this.toNumber(l.unitShippingCost)), 0);
-        const avgUnitCost = totalCost / totalUnits;
-        const requested = (discounts as any)[p];
-        const requestedPrice = rrp * (1 - requested);
-        if (requestedPrice < avgUnitCost) {
-          const cappedDiscount = Math.max(0, 1 - avgUnitCost / rrp);
-          (discounts as any)[p] = cappedDiscount;
-        }
-      }
-    }
-
     const productKeys: ProductKey[] = ['jacket', 'dress', 'pants'];
     const demandByProduct: Record<string, number> = {};
     const salesByProduct: Record<string, number> = {};
@@ -1614,13 +1648,11 @@ export class GameEngine {
       if (!marketingSpend || marketingSpend === 0) {
         warnings.push("Zero marketing spend may negatively impact sales");
       }
-      // Aggressive pricing warning: Positioning_Effect penalty > 15%
+      // Aggressive pricing warning: reuse the same positioning effect that demand uses.
       const productData = currentState.productData as any;
       for (const [product, data] of Object.entries(productData || {})) {
         const rrp = Number((data as any).rrp);
-        const hm = GAME_CONSTANTS.PRODUCTS[product as keyof typeof GAME_CONSTANTS.PRODUCTS].hmPrice;
-        const x = rrp / hm - 1;
-        const positioningEffect = 1 + (0.8 / (1 + Math.exp(-(-50) * (x - 0.20)))) - 0.4;
+        const positioningEffect = this.calculatePositioningEffect(product as keyof typeof GAME_CONSTANTS.PRODUCTS, rrp);
         if (positioningEffect < 0.85) {
           warnings.push(`Aggressive pricing for ${product} may hurt demand`);
         }

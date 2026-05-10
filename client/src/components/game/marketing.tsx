@@ -21,6 +21,7 @@ interface MarketingProps {
 }
 
 type PresetId = 'awareness' | 'balanced' | 'conversion';
+type CampaignComponentId = 'social' | 'influencer' | 'google_display' | 'google_search' | 'print' | 'tv';
 
 const marketingChannels = [
   { id: 'social', name: 'Social Media', icon: Share2, description: 'Efficient awareness and conversion; strong with Influencers and Search' },
@@ -28,7 +29,7 @@ const marketingChannels = [
   { id: 'print', name: 'Printed Ads', icon: Newspaper, description: 'Local/regional awareness support; modest conversion' },
   { id: 'tv', name: 'TV Commercials', icon: Tv, description: 'Very costly broad awareness; low conversion for small brands and low budgets' },
   { id: 'google_search', name: 'Google Ads (Search)', icon: Search, description: 'High‑intent capture at point of demand; best in sales phases' },
-  { id: 'google_display', name: 'Google AdSense', icon: MonitorSmartphone, description: 'Cheap broad awareness; good for retarget with Social/Influencer' },
+  { id: 'google_display', name: 'Google AdSense', icon: MonitorSmartphone, description: 'AdSense placements and reminders; weak alone, stronger when used for retargeting with Social, Influencers, and Search' },
 ];
 
 const channelThemes: Record<string, { iconBg: string; iconColor: string; ring: string; gradientFrom: string; gradientTo: string; chipBg: string; chipText: string }> = {
@@ -38,6 +39,40 @@ const channelThemes: Record<string, { iconBg: string; iconColor: string; ring: s
   tv: { iconBg: 'bg-rose-100', iconColor: 'text-rose-700', ring: 'ring-rose-100', gradientFrom: 'from-rose-50', gradientTo: 'to-white', chipBg: 'bg-rose-100', chipText: 'text-rose-800' },
   google_search: { iconBg: 'bg-emerald-100', iconColor: 'text-emerald-700', ring: 'ring-emerald-100', gradientFrom: 'from-emerald-50', gradientTo: 'to-white', chipBg: 'bg-emerald-100', chipText: 'text-emerald-800' },
   google_display: { iconBg: 'bg-indigo-100', iconColor: 'text-indigo-700', ring: 'ring-indigo-100', gradientFrom: 'from-indigo-50', gradientTo: 'to-white', chipBg: 'bg-indigo-100', chipText: 'text-indigo-800' },
+};
+
+const DEFAULT_COMPONENTS: Record<PresetId, CampaignComponentId[]> = {
+  awareness: ['social', 'influencer', 'google_display', 'print', 'google_search'],
+  balanced: ['social', 'influencer', 'google_display', 'google_search', 'print'],
+  conversion: ['social', 'influencer', 'google_display', 'google_search'],
+};
+
+const CAMPAIGN_COMPONENTS: Array<{ id: CampaignComponentId; label: string; description: string; weight: number }> = [
+  { id: 'social', label: 'Social Media', description: 'Builds broad digital attention and supports other channels.', weight: 1.00 },
+  { id: 'influencer', label: 'Celebrity Push', description: 'Creator-led buzz and buyer momentum.', weight: 1.00 },
+  { id: 'google_display', label: 'Retargeting', description: 'Uses Google AdSense to remind warmed-up customers.', weight: 0.85 },
+  { id: 'google_search', label: 'Search Capture', description: 'Captures people already looking or comparing.', weight: 0.90 },
+  { id: 'print', label: 'Printed Media', description: 'Legacy media support with limited efficiency.', weight: 0.55 },
+  { id: 'tv', label: 'Broad TV Blast', description: 'Mass reach when the TV channel budget is large enough.', weight: 1.30 },
+];
+
+const splitFromComponents = (components: CampaignComponentId[]): Record<string, number> => {
+  const split: Record<string, number> = {};
+  for (const c of marketingChannels) split[c.id] = 0;
+  if (components.length === 0) return split;
+
+  const selected = CAMPAIGN_COMPONENTS.filter((component) => components.includes(component.id));
+  const totalWeight = selected.reduce((sum, component) => sum + component.weight, 0);
+  if (totalWeight <= 0) return split;
+
+  let roundedTotal = 0;
+  selected.forEach((component, index) => {
+    const exact = component.weight / totalWeight * 100;
+    const rounded = index === selected.length - 1 ? 100 - roundedTotal : Math.round(exact / 5) * 5;
+    split[component.id] = Math.max(0, rounded);
+    roundedTotal += split[component.id];
+  });
+  return split;
 };
 
 export default function Marketing({ gameSession, currentState }: MarketingProps) {
@@ -63,13 +98,6 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     Number((currentState as any)?.plannedMarketingPlan?.totalSpend ?? currentState?.marketingPlan?.totalSpend ?? 0)
   );
 
-  // Presets and default splits
-  const defaultSplits: Record<PresetId, Record<string, number>> = {
-    awareness:  { influencer: 35, social: 30, google_display: 12, print: 12, google_search: 6, tv: 5 },
-    balanced:   { social: 30, google_search: 25, influencer: 20, google_display: 15, print: 5, tv: 5 },
-    conversion: { google_search: 30, influencer: 25, social: 25, google_display: 15, print: 3, tv: 2 },
-  };
-
   const recommendedPreset: PresetId = useMemo(() => {
     // Weeks 1–6: Awareness, 7–10: Balanced, 11–15: Conversion
     if (currentWeek >= 1 && currentWeek <= 6) return 'awareness';
@@ -81,6 +109,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   const initialManual = Boolean(planned?.manual);
   const [manual, setManual] = useState<boolean>(initialManual);
   const [preset, setPreset] = useState<PresetId>(recommendedPreset);
+  const [campaignComponents, setCampaignComponents] = useState<CampaignComponentId[]>(() => DEFAULT_COMPONENTS[recommendedPreset]);
   const [channelAllocation, setChannelAllocation] = useState<Record<string, number>>(() => {
     if (initialManual && planned?.channels && Number(planned?.totalSpend) >= 0) {
       const total = Number(planned.totalSpend) || 1;
@@ -88,7 +117,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       (planned.channels as any[]).forEach((c) => { pct[c.name] = Math.round((Number(c.spend||0) / total) * 100); });
       return pct;
     }
-    return { ...defaultSplits[recommendedPreset] };
+    return { ...splitFromComponents(DEFAULT_COMPONENTS[recommendedPreset]) };
   });
   // Remember the last non-zero allocation to restore after leaving £0 with manual on
   const lastNonZeroAllocation = useRef<Record<string, number> | null>(null);
@@ -98,13 +127,67 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   const [discountPercent, setDiscountPercent] = useState<number>(preset === 'conversion' ? 15 : 0);
 
   useEffect(() => {
+    const plan = (currentState as any)?.plannedMarketingPlan as any;
+    const nextManual = Boolean(plan?.manual);
+    const nextSpend = Number(plan?.totalSpend ?? currentState?.marketingPlan?.totalSpend ?? 0);
+    const discounts = (currentState as any)?.plannedWeeklyDiscounts || {};
+    const avgDiscount = (
+      Number(discounts.jacket || 0) +
+      Number(discounts.dress || 0) +
+      Number(discounts.pants || 0)
+    ) / 3;
+    const nextDiscountPct = Math.round(avgDiscount * 100);
+
+    setMarketingSpend(nextSpend);
+    setManual(nextManual);
+    setPreset(recommendedPreset);
+    if (nextManual && Array.isArray(plan?.channels)) {
+      const total = Number(plan.totalSpend) || 1;
+      const pct: Record<string, number> = {};
+      for (const c of marketingChannels) pct[c.id] = 0;
+      (plan.channels as any[]).forEach((c) => {
+        pct[c.name] = Math.round((Number(c.spend || 0) / total) * 100);
+      });
+      setCampaignComponents(marketingChannels
+        .filter((c) => Number(pct[c.id] || 0) > 0)
+        .map((c) => c.id as CampaignComponentId));
+      setChannelAllocation(pct);
+    } else {
+      const nextComponents = DEFAULT_COMPONENTS[recommendedPreset];
+      setCampaignComponents(nextComponents);
+      setChannelAllocation({ ...splitFromComponents(nextComponents) });
+    }
+
+    if (nextDiscountPct <= 0) {
+      setDiscountMode('none');
+      setDiscountPercent(0);
+    } else if (nextDiscountPct <= 10) {
+      setDiscountMode('minimal');
+      setDiscountPercent(nextDiscountPct);
+    } else if (nextDiscountPct <= 29) {
+      setDiscountMode('standard');
+      setDiscountPercent(nextDiscountPct);
+    } else {
+      setDiscountMode('aggressive');
+      setDiscountPercent(nextDiscountPct);
+    }
+  }, [currentState?.id, currentWeek, (currentState as any)?.plannedLocked, recommendedPreset]);
+
+  useEffect(() => {
     if (!manual) {
-      setChannelAllocation({ ...defaultSplits[preset] });
+      setCampaignComponents(DEFAULT_COMPONENTS[preset]);
+      setChannelAllocation({ ...splitFromComponents(DEFAULT_COMPONENTS[preset]) });
       if (preset === 'awareness') { setDiscountMode('none'); setDiscountPercent(0); }
       if (preset === 'balanced') { setDiscountMode('none'); }
       if (preset === 'conversion') { setDiscountMode('standard'); setDiscountPercent(15); }
     }
   }, [preset, manual]);
+
+  useEffect(() => {
+    if (!manual) {
+      setChannelAllocation({ ...splitFromComponents(campaignComponents) });
+    }
+  }, [campaignComponents, manual]);
 
   const totalAllocation = useMemo(() => Object.values(channelAllocation).reduce((s, v) => s + (Number(v) || 0), 0), [channelAllocation]);
   const isFinalWeek = currentWeek === 15;
@@ -191,11 +274,24 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     const d = discountPercent / 100; return { jacket: d, dress: d, pants: d };
   }, [preset, discountMode, discountPercent]);
 
-  // TV inefficiency indicator (engine will waste TV if spend<£200k or TV share<10%)
+  const discountBounds = useMemo(() => {
+    if (discountMode === 'minimal') return { min: 1, max: 10 };
+    if (discountMode === 'standard') return { min: 11, max: 29 };
+    if (discountMode === 'aggressive') return { min: 30, max: 95 };
+    return { min: 0, max: 0 };
+  }, [discountMode]);
+
+  useEffect(() => {
+    if (discountMode === 'none') return;
+    setDiscountPercent((value) => Math.min(discountBounds.max, Math.max(discountBounds.min, value)));
+  }, [discountMode, discountBounds.min, discountBounds.max]);
+
+  // TV inefficiency indicator: TV needs a meaningful channel budget and share.
   const tvInefficient = useMemo(() => {
     const tvPct = Number(channelAllocation['tv'] || 0);
-    const hasSpend = marketingSpend > 0 && tvPct > 0;
-    return hasSpend && (marketingSpend < 200000 || tvPct < 10);
+    const tvSpend = marketingSpend * tvPct / 100;
+    const hasSpend = marketingSpend > 0 && tvSpend > 0;
+    return hasSpend && (tvSpend < 200000 || tvPct < 10);
   }, [channelAllocation, marketingSpend]);
 
   // When budget is £0, force splits to 0 and lock sliders
@@ -210,7 +306,9 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     } else {
       // marketingSpend > 0
       if (!manual) {
-        setChannelAllocation({ ...defaultSplits[recommendedPreset] });
+        const nextComponents = DEFAULT_COMPONENTS[recommendedPreset];
+        setCampaignComponents(nextComponents);
+        setChannelAllocation({ ...splitFromComponents(nextComponents) });
       } else {
         // manual ON: if allocation is all zeros, try to restore the last non-zero split
         const currentTotal = Object.values(channelAllocation).reduce((s, v) => s + Number(v || 0), 0);
@@ -225,28 +323,28 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   const getEfficientRange = (p: PresetId, channelId: string): [number, number] => {
     const map: Record<PresetId, Record<string, [number, number]>> = {
       awareness: {
-        influencer: [25, 45],
-        social: [25, 40],
-        google_display: [10, 20],
-        print: [8, 15],
+        social: [30, 40],
+        influencer: [25, 35],
+        google_display: [15, 25],
+        print: [5, 12],
         google_search: [3, 8],
-        tv: [5, 15],
+        tv: [0, 0],
       },
       balanced: {
         social: [25, 35],
         google_search: [20, 30],
-        influencer: [15, 25],
+        influencer: [20, 30],
         google_display: [10, 20],
-        print: [5, 10],
-        tv: [3, 10],
+        print: [0, 8],
+        tv: [0, 0],
       },
       conversion: {
-        google_search: [25, 35],
+        google_search: [35, 45],
         influencer: [20, 30],
-        social: [20, 30],
+        social: [15, 25],
         google_display: [10, 20],
-        print: [0, 5],
-        tv: [0, 5],
+        print: [0, 0],
+        tv: [0, 0],
       },
     };
     return map[p][channelId] || [0, 0];
@@ -268,6 +366,10 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   }, [plannedDiscounts, currentState?.productData, gameConstants]);
 
   const handleApplyNextWeek = () => {
+    if (isFinalWeek) {
+      toast({ title: 'Final week', description: 'There is no next week for a new marketing plan to affect.' });
+      return;
+    }
     if (marketingSpend > 0 && Math.round(totalAllocation) !== 100) {
       toast({ title: 'Allocation must be 100%', description: 'Adjust channel percentages to total 100%.', variant: 'destructive' });
       return;
@@ -281,6 +383,16 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       return;
     }
     setConfirmOpen(true);
+  };
+
+  const toggleCampaignComponent = (componentId: CampaignComponentId) => {
+    if (manual || isLocked) return;
+    setCampaignComponents((prev) => {
+      const next = prev.includes(componentId)
+        ? prev.filter((id) => id !== componentId)
+        : [...prev, componentId];
+      return next;
+    });
   };
 
   useEffect(() => {
@@ -332,7 +444,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                 <span className="font-medium">How to use this tab.</span> Set a budget, pick a preset that fits the phase, then fine‑tune the channel split and (later) discounts if needed. Solid gauges show last week; faint arcs preview next week based on your current plan.
               </li>
               <li>
-                <span className="font-medium">Channels work together.</span> Broad channels (social, creators) help more people hear about you. Performance channels (search) capture ready‑to‑buy demand. Display keeps you top‑of‑mind. Print can add credibility and local reach. TV can be powerful at sufficient scale.
+                <span className="font-medium">Channels work together.</span> Broad channels (social, creators) help more people hear about you. Performance channels (search) capture ready‑to‑buy demand. AdSense keeps you top‑of‑mind. Print can add credibility and local reach. TV can be powerful at sufficient scale.
               </li>
             </ul>
             <ul className="space-y-2 list-disc pl-5">
@@ -362,7 +474,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
             <div className="flex items-center gap-3">
-              <DonutGauge key={`A-${awarenessNow}-${preview?.nextAwareness ?? 'na'}`} value={Number.isFinite(awarenessNow)?awarenessNow:undefined} forecast={isFinalWeek?undefined:preview?.nextAwareness} colorClass="stroke-blue-500" />
+              <DonutGauge key={`A-${awarenessNow}-${preview?.nextAwareness ?? 'na'}`} value={Number.isFinite(awarenessNow)?awarenessNow:undefined} forecast={isFinalWeek?undefined:preview?.nextAwareness} colorClass="stroke-blue-500" showNumeric />
               <TooltipWrapper content="Awareness: top-of-mind share of target customers who would name your brand first. Builds slowly with broad-reach channels (Social, Influencers, Print/TV). Higher awareness enables faster growth in intent.">
                 <div>
                   <div className="text-sm text-gray-700">Awareness</div>
@@ -371,7 +483,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               </TooltipWrapper>
             </div>
             <div className="flex items-center gap-3">
-              <DonutGauge key={`I-${intentNow}-${preview?.nextIntent ?? 'na'}`} value={Number.isFinite(intentNow)?intentNow:undefined} forecast={isFinalWeek?undefined:preview?.nextIntent} colorClass="stroke-blue-500" />
+              <DonutGauge key={`I-${intentNow}-${preview?.nextIntent ?? 'na'}`} value={Number.isFinite(intentNow)?intentNow:undefined} forecast={isFinalWeek?undefined:preview?.nextIntent} colorClass="stroke-blue-500" showNumeric />
               <TooltipWrapper content="Intent to Buy: share of target customers likely to buy. Grows faster when awareness is already high and you focus on performance channels (Search) or promotions. Volatile if discounts change erratically.">
                 <div>
                   <div className="text-sm text-gray-700">Intent to Buy</div>
@@ -536,18 +648,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   {discountMode!=='none' && (
                     <div>
                       <div className="flex justify-between text-xs text-gray-600"><span>Discount %</span><span>{discountPercent}%</span></div>
-                      {(() => {
-                        let min = 1, max = 100;
-                        if (discountMode==='minimal') { min = 1; max = 10; }
-                        if (discountMode==='standard') { min = 11; max = 29; }
-                        if (discountMode==='aggressive') { min = 30; max = 100; }
-                        // Keep value within mode bounds automatically
-                        if (discountPercent < min) setDiscountPercent(min);
-                        if (discountPercent > max) setDiscountPercent(max);
-                        return (
-                          <input type="range" min={min} max={max} step={1} value={discountPercent} onChange={(e)=> setDiscountPercent(Number(e.target.value))} className="w-full" disabled={isLocked} />
-                        );
-                      })()}
+                      <input type="range" min={discountBounds.min} max={discountBounds.max} step={1} value={discountPercent} onChange={(e)=> setDiscountPercent(Number(e.target.value))} className="w-full" disabled={isLocked} />
                       {floorWarnings.length>0 && (<div className="text-xs text-red-600 mt-1">Below cost risk: {floorWarnings.join(', ')}</div>)}
                     </div>
                   )}
@@ -555,6 +656,47 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             )}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* Campaign Components */}
+      <Card className="border border-gray-100 mb-8">
+        <CardHeader>
+          <CardTitle>Campaign Components</CardTitle>
+          <div className="text-sm text-gray-600">
+            Choose the campaign elements you want to run. The channel split below is generated from the active components; switch to manual to fine-tune percentages.
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
+            {CAMPAIGN_COMPONENTS.map((component) => {
+              const active = campaignComponents.includes(component.id);
+              return (
+                <button
+                  key={component.id}
+                  type="button"
+                  onClick={() => toggleCampaignComponent(component.id)}
+                  disabled={manual || isLocked || marketingSpend === 0}
+                  className={`text-left rounded-lg border px-3 py-2 transition ${
+                    active
+                      ? 'border-amber-400 bg-amber-50 text-gray-900'
+                      : 'border-gray-200 bg-white text-gray-700 hover:border-amber-200'
+                  } ${manual || isLocked || marketingSpend === 0 ? 'opacity-60 cursor-not-allowed' : ''}`}
+                >
+                  <div className="font-medium">{component.label}</div>
+                  <div className="text-xs text-gray-600 mt-0.5">{component.description}</div>
+                </button>
+              );
+            })}
+          </div>
+          {campaignComponents.length === 0 && marketingSpend > 0 && !manual && (
+            <div className="text-sm text-red-600 mt-3 inline-flex items-center gap-1">
+              <AlertTriangle size={14}/> Select at least one component or switch to manual.
+            </div>
+          )}
+          {manual && (
+            <div className="text-xs text-gray-500 mt-3">Manual mode is active; component buttons are paused while you edit the split directly.</div>
+          )}
         </CardContent>
       </Card>
 
@@ -618,7 +760,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             <div className="text-sm flex items-center justify-between col-span-1 xl:col-span-2 mt-1">
               <div>Total allocation: {totalAllocation.toFixed(1)}%</div>
               {marketingSpend > 0 && Math.round(totalAllocation) !== 100 && (<div className="text-red-600 inline-flex items-center gap-1"><AlertTriangle size={14}/> Must be 100%</div>)}
-              {tvInefficient && (<div className="text-amber-600 inline-flex items-center gap-1"><AlertTriangle size={14}/> TV budget likely wasted at this level</div>)}
+              {tvInefficient && (<div className="text-amber-600 inline-flex items-center gap-1"><AlertTriangle size={14}/> TV needs a larger channel budget to work well</div>)}
                 </div>
           </div>
         </CardContent>
@@ -626,9 +768,9 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
       {/* Actions footer (normal pane at bottom) */}
       <div className="mt-8 bg-white rounded-xl border border-gray-200 p-4 flex items-center justify-between">
-        <Button variant="outline" onClick={()=> { setManual(false); setPreset(recommendedPreset); setChannelAllocation({ ...defaultSplits[recommendedPreset] }); setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>Reset to Preset</Button>
-        <Button onClick={handleApplyNextWeek} disabled={isLocked || updateStateMutation.isPending || (marketingSpend>0 && Math.round(totalAllocation)!==100) || (!isFinalWeek && !!capData && marketingSpend > maxAffordableNextWeek + 0.01)}>
-          {updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
+        <Button variant="outline" onClick={()=> { const nextComponents = DEFAULT_COMPONENTS[recommendedPreset]; setManual(false); setPreset(recommendedPreset); setCampaignComponents(nextComponents); setChannelAllocation({ ...splitFromComponents(nextComponents) }); setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>Reset to Preset</Button>
+        <Button onClick={handleApplyNextWeek} disabled={isFinalWeek || isLocked || updateStateMutation.isPending || (marketingSpend>0 && Math.round(totalAllocation)!==100) || (!isFinalWeek && !!capData && marketingSpend > maxAffordableNextWeek + 0.01)}>
+          {isFinalWeek ? 'No Next Week' : updateStateMutation.isPending ? 'Applying...' : 'Apply to Next Week'}
           </Button>
       </div>
 

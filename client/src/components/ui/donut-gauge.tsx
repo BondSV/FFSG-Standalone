@@ -25,6 +25,13 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
   // For growth, draw only the positive delta segment (from current to forecast)
   const growthDash = ((fPct - pct) / 100) * circumference;
   const growthOffset = circumference * (1 - (pct / 100));
+  const hasForecast = Number.isFinite(forecast as number);
+  const delta = fPct - pct;
+  const numericValue = hasForecast ? fPct : pct;
+  const numericClass = hasForecast
+    ? delta >= 0 ? 'fill-green-600' : 'fill-red-600'
+    : 'fill-gray-900';
+  const formatGaugeValue = (n: number) => n >= 100 ? `${Math.round(n)}` : n.toFixed(1);
 
   const svgKey = `dg-${pct}-${fPct}-${isDecay ? 'decay' : 'growth'}`;
   return (
@@ -69,8 +76,13 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
             />
           )}
           {showNumeric && (
-            <text textAnchor="middle" dominantBaseline="middle" className="fill-gray-900 text-sm font-semibold">
-              {Number.isFinite(value as number) ? `${Math.round(pct)}` : '—'}
+            <text textAnchor="middle" dominantBaseline="middle" className={`${numericClass} text-sm font-semibold`}>
+              <tspan x="0" y={hasForecast ? -4 : 0}>{Number.isFinite(numericValue) ? formatGaugeValue(numericValue) : '—'}</tspan>
+              {hasForecast && Math.abs(delta) >= 0.05 && (
+                <tspan x="0" y="14" className={`${delta >= 0 ? 'fill-green-600' : 'fill-red-600'} text-[10px] font-medium`}>
+                  {`${delta > 0 ? '+' : ''}${delta.toFixed(1)}`}
+                </tspan>
+              )}
             </text>
           )}
         </g>
@@ -78,5 +90,4 @@ export function DonutGauge({ value, forecast, colorClass = 'stroke-blue-500', si
     </div>
   );
 }
-
 
