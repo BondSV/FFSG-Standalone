@@ -1594,15 +1594,20 @@ export class GameEngine {
         // (confirmed material + in-house production) or (b) the running
         // actualUnitCost once available post-launch. Both with a 5% buffer
         // so the player keeps a thin margin per unit.
-        const discount = Number((currentState as any).weeklyDiscounts?.[product as keyof any] ?? 0);
         const prodCost = GAME_CONSTANTS.MANUFACTURING[product as keyof typeof GAME_CONSTANTS.MANUFACTURING]?.inHouseCost || 0;
         const confirmed = Number((data as any).confirmedMaterialCost || 0);
         const actualUC = Number((currentState as any).actualUnitCost || 0);
         const planningFloor = 1.05 * (confirmed + prodCost);
         const actualFloor = actualUC > 0 ? 1.05 * actualUC : 0;
         const floor = Math.max(planningFloor, actualFloor);
-        if (rrp && rrp * (1 - discount) < floor) {
+        const currentDiscount = Number((currentState as any).weeklyDiscounts?.[product as keyof any] ?? 0);
+        if (rrp && rrp * (1 - currentDiscount) < floor) {
           errors.push(`Discounted price below cost floor for ${product} (need ≥ ${floor.toFixed(2)})`);
+        }
+        const nextWeek = weekNumber + 1;
+        const plannedDiscount = Number((currentState as any).plannedWeeklyDiscounts?.[product as keyof any] ?? 0);
+        if (nextWeek <= 12 && rrp && rrp * (1 - plannedDiscount) < floor) {
+          errors.push(`Planned next-week discount below cost floor for ${product} (need ≥ ${floor.toFixed(2)})`);
         }
       }
     }
