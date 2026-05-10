@@ -721,11 +721,6 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
               );
             })}
           </div>
-          {campaignComponents.length === 0 && marketingSpend > 0 && !manual && (
-            <div className="text-sm text-red-600 mt-3 inline-flex items-center gap-1">
-              <AlertTriangle size={14}/> Select at least one component or switch to manual.
-            </div>
-          )}
           {manual && (
             <div className="text-xs text-gray-500 mt-3">Manual mode is active; component states reflect non-zero channel allocations while you edit the split directly.</div>
           )}
