@@ -767,10 +767,11 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                   const delivery = Number(p.purchaseWeek) + lead;
                   const dueWeek = p.type === 'gmc' ? (delivery + 2) : delivery;
                   const allowRemove = p.purchaseWeek === currentWeek && p.canDelete && !currentState?.isCommitted;
+                  const typeLabel = p.type === 'gmc' ? 'GMC' : 'SPT';
                   return (
                     <div key={`${p.timestamp}-${idx}`} className="border rounded-md p-3 text-sm">
                       <div className="flex justify-between items-center">
-                        <div className="font-medium">W{p.purchaseWeek} • {p.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {p.type?.toUpperCase()}</div>
+                        <div className="font-medium">W{p.purchaseWeek} • {p.supplier === 'supplier1' ? 'Supplier-1' : 'Supplier-2'} • {typeLabel}</div>
                         <div className="flex items-center gap-2">
                           <div className="text-gray-600 flex items-center gap-1"><Truck size={14}/> Arrives W{delivery}</div>
                           <div className="text-gray-600 flex items-center gap-1"><Receipt size={14}/> Invoice Due W{dueWeek}</div>

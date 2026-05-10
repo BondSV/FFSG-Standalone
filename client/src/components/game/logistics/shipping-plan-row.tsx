@@ -172,13 +172,13 @@ export function ShippingPlanRow({ batch, onChange, pending }: ShippingPlanRowPro
               </span>
             </TooltipWrapper>
           ) : recommendsExpedite ? (
-            <TooltipWrapper content="Switching to Expedited would land this batch on shelves before launch (Week 7).">
+            <TooltipWrapper content="Switching to Expedited would land this batch on shelves by launch (Week 7).">
               <span className="inline-flex items-center gap-1 text-xs text-amber-700 font-medium">
                 <AlertTriangle size={12} /> Late
               </span>
             </TooltipWrapper>
           ) : isLate ? (
-            <TooltipWrapper content="Even Expedited shipping won't get this batch to shelves before launch — late entry will incur lost sales.">
+            <TooltipWrapper content="Even Expedited shipping won't get this batch to shelves by launch — late entry will incur lost sales.">
               <span className="inline-flex items-center gap-1 text-xs text-red-600 font-medium">
                 <AlertTriangle size={12} /> Past launch
               </span>

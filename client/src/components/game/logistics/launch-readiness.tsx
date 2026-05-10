@@ -56,7 +56,7 @@ export function LaunchReadiness({ shippingPlan, currentWeek, onExpediteAllLate, 
     ? "No production batches scheduled yet"
     : late === 0
     ? `All ${total} batches arrive on time`
-    : `${onTime} of ${total} batches arrive before launch · ${late} late`;
+    : `${onTime} of ${total} batches arrive by launch · ${late} late`;
 
   const earliestArrival = shippingPlan.length > 0 ? Math.min(...shippingPlan.map((b) => b.onShelfWeek)) : currentWeek;
   const latestArrival = shippingPlan.length > 0 ? Math.max(...shippingPlan.map((b) => b.onShelfWeek), LAUNCH_WEEK + 1) : LAUNCH_WEEK + 1;

@@ -44,7 +44,7 @@ export function IntroCard({ gameId }: IntroCardProps) {
               <strong>Standard</strong> or <strong>Expedited</strong> freight (<strong>2</strong> vs{" "}
               <strong>1</strong> simulated in‑transit week). Units only book <strong>on shelf</strong> after an extra{" "}
               <strong>+1 stocking week</strong>: <em>arrival week = week production finishes (“ships”) + freight weeks + 1</em>.
-              Expedited trims one ladder step vs Standard overall. Aim to land everything <strong>before Week 7</strong>.
+              Expedited trims one ladder step vs Standard overall. Aim to land everything <strong>by Week 7</strong>.
               Holding cost (0.3% per week on stored value) applies at every stage.
             </p>
           </div>

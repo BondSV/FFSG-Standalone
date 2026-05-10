@@ -134,7 +134,12 @@ export function computeWeekSummary(params: {
       const isNext = wk === Number(nextState.weekNumber);
       const aw = isNext ? nextAw : isPrev ? prevAw : 0;
       const it = isNext ? nextIn : isPrev ? prevIn : 0;
-      const demand = Number((isPrev ? prevState.weeklyDemand?.jacket : 0) + (isPrev ? prevState.weeklyDemand?.dress : 0) + (isPrev ? prevState.weeklyDemand?.pants : 0) || 0);
+      const demandState = isNext ? nextState : isPrev ? prevState : undefined;
+      const demand = Number(
+        (demandState?.weeklyDemand?.jacket || 0) +
+        (demandState?.weeklyDemand?.dress || 0) +
+        (demandState?.weeklyDemand?.pants || 0)
+      );
       demandSeries.push({ week: wk, awareness: aw, intent: it, demand });
     }
   }

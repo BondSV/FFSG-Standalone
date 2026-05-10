@@ -15,6 +15,10 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
   const hasDemandSignal = demandData.some(d =>
     Number(d.awareness || 0) > 0 || Number(d.intent || 0) > 0 || Number(d.demand || 0) > 0
   );
+  const latestDemandPoint = [...demandData].reverse().find(d =>
+    Number(d.awareness || 0) > 0 || Number(d.intent || 0) > 0 || Number(d.demand || 0) > 0
+  ) || demandData[demandData.length - 1];
+  const formatDemandPct = (value: number | undefined) => `${Number(value || 0).toFixed(1)}%`;
 
   const outflows = [
     { name: 'Marketing', value: cash.outflows.marketing },
@@ -120,22 +124,38 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
             <Separator className="my-2" />
             <div className="mt-1 h-[calc(100%-1.75rem)]">
               {hasDemandSignal ? (
-                <ChartContainer
-                  config={{ awareness: { label: 'Awareness', color: 'hsl(217, 91%, 60%)' }, intent: { label: 'Intent to buy', color: 'hsl(142, 71%, 45%)' }, demand: { label: 'Demand', color: 'hsl(10, 78%, 45%)' } }}
-                  className="h-full aspect-auto overflow-hidden"
-                >
-                  <LineChart data={demandData} margin={{ top: 6, right: 8, left: 8, bottom: 6 }}>
-                    <CartesianGrid vertical={false} strokeDasharray="3 3" />
-                    <XAxis dataKey="week" tickLine={false} axisLine={false} />
-                    <YAxis yAxisId="left" tickLine={false} axisLine={false} domain={[0, 100]} width={30} />
-                    <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} width={36} />
-                    <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                    <Line yAxisId="left" type="monotone" dataKey="awareness" stroke="var(--color-awareness)" strokeWidth={2} dot={false} />
-                    <Line yAxisId="left" type="monotone" dataKey="intent" stroke="var(--color-intent)" strokeWidth={2} dot={false} />
-                    <Line yAxisId="right" type="monotone" dataKey="demand" stroke="var(--color-demand)" strokeWidth={2} dot={false} />
-                    <ChartLegend verticalAlign="top" content={<ChartLegendContent className="!pb-1" />} />
-                  </LineChart>
-                </ChartContainer>
+                <div className="h-full flex flex-col gap-2 min-h-0">
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="rounded border bg-blue-50/60 px-2 py-1">
+                      <div className="text-muted-foreground">Awareness</div>
+                      <div className="font-mono font-semibold text-blue-800">{formatDemandPct(latestDemandPoint?.awareness)}</div>
+                    </div>
+                    <div className="rounded border bg-emerald-50/60 px-2 py-1">
+                      <div className="text-muted-foreground">Intent to buy</div>
+                      <div className="font-mono font-semibold text-emerald-800">{formatDemandPct(latestDemandPoint?.intent)}</div>
+                    </div>
+                    <div className="rounded border bg-orange-50/60 px-2 py-1">
+                      <div className="text-muted-foreground">Demand</div>
+                      <div className="font-mono font-semibold text-orange-800">{Number(latestDemandPoint?.demand || 0).toLocaleString()} units</div>
+                    </div>
+                  </div>
+                  <ChartContainer
+                    config={{ awareness: { label: 'Awareness', color: 'hsl(217, 91%, 60%)' }, intent: { label: 'Intent to buy', color: 'hsl(142, 71%, 45%)' }, demand: { label: 'Demand', color: 'hsl(10, 78%, 45%)' } }}
+                    className="min-h-0 flex-1 aspect-auto overflow-hidden"
+                  >
+                    <LineChart data={demandData} margin={{ top: 6, right: 8, left: 8, bottom: 6 }}>
+                      <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                      <XAxis dataKey="week" tickLine={false} axisLine={false} />
+                      <YAxis yAxisId="left" tickLine={false} axisLine={false} domain={[0, 100]} width={30} />
+                      <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} width={36} />
+                      <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
+                      <Line yAxisId="left" type="monotone" dataKey="awareness" stroke="var(--color-awareness)" strokeWidth={2} dot={false} />
+                      <Line yAxisId="left" type="monotone" dataKey="intent" stroke="var(--color-intent)" strokeWidth={2} dot={false} />
+                      <Line yAxisId="right" type="monotone" dataKey="demand" stroke="var(--color-demand)" strokeWidth={2} dot={false} />
+                      <ChartLegend verticalAlign="top" content={<ChartLegendContent className="!pb-1" />} />
+                    </LineChart>
+                  </ChartContainer>
+                </div>
               ) : (
                 <div className="h-full rounded-md border border-dashed border-gray-200 bg-gray-50/70 flex items-center justify-center px-4 text-center text-sm text-muted-foreground">
                   You can build demand by running marketing.
@@ -194,4 +214,3 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
     </Dialog>
   );
 }
-
