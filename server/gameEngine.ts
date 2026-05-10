@@ -1352,7 +1352,7 @@ export class GameEngine {
     let logistics = 0;
     const prod = currentState.productionSchedule as any;
     for (const b of prod?.batches || []) {
-      if (b.startWeek === weekNumber) {
+      if (b.startWeek === weekNumber && !this.hasMaterializedBatch(currentState as any, String(b.id))) {
         const qty = Number(b.quantity || 0);
         const chargedQty = b.method === 'inhouse' ? Math.max(GAME_CONSTANTS.BATCH_SIZE, qty) : qty;
         production += chargedQty * this.getProductionUnitCost(b.product, b.method);
