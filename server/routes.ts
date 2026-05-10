@@ -1071,6 +1071,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Apply cash waterfall for N+1 outflows at start of week (interest + ops)
         const out = (computed as any).nextWeekOutflows || {};
+        const openingProductionCharges = (nextWeekState as any).openingProductionCharges;
+        if (openingProductionCharges) {
+          out.production = Number(openingProductionCharges.production || 0);
+          out.logistics = Number(openingProductionCharges.logistics || 0);
+        }
         let cashOnHandN1 = Number(nextWeekState.cashOnHand || 0);
         let creditUsedN1 = Number(nextWeekState.creditUsed || 0);
         const costInterest = Number(out.interest || 0);
@@ -1105,6 +1110,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           holding: Number(out.holding || 0),
           interest: costInterest,
         };
+        delete nextWeekState.openingProductionStarts;
+        delete nextWeekState.openingProductionCharges;
         nextWeekState.cashOnHand = cashOnHandN1.toFixed(2);
         nextWeekState.creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsedN1).toFixed(2);
 
@@ -1175,7 +1182,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const units = Number(b.quantity || 0);
           const mfg = (GAME_CONSTANTS.MANUFACTURING as any)[product] || {};
           const unitProd = method === 'inhouse' ? Number(mfg.inHouseCost || 0) : Number(mfg.outsourceCost || 0);
-          const productionUnitsBilled = method === 'inhouse' ? Math.max(Number(GAME_CONSTANTS.BATCH_SIZE || 25000), units) : units;
+          const productionUnitsBilled = units > 0 ? Math.max(Number(GAME_CONSTANTS.BATCH_SIZE || 25000), units) : 0;
           result.push({ type: 'production', amount: productionUnitsBilled * unitProd, refId: product });
           const shippingMode = (b.shipping || 'standard') as 'standard' | 'expedited';
           const shipUnit = Number((GAME_CONSTANTS.SHIPPING as any)[product]?.[shippingMode] || 0);

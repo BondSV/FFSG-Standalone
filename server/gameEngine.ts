@@ -202,18 +202,28 @@ export class GameEngine {
     return false;
   }
 
-  private static startProductionBatch(state: any, b: any, week: number): void {
+  private static getProductionBilledUnits(quantity: number): number {
+    const qty = Math.max(0, this.toNumber(quantity));
+    return qty > 0 ? Math.max(GAME_CONSTANTS.BATCH_SIZE, qty) : 0;
+  }
+
+  private static startProductionBatch(state: any, b: any, week: number): { quantity: number; productionCash: number } {
     const product = b.product as ProductKey;
     const method = b.method as "inhouse" | "outsource";
     const prodLead = this.getProductionLead(product, method);
     const prodUnitCost = this.getProductionUnitCost(product, method);
-    const quantity = this.toNumber(b.quantity);
+    const plannedQuantity = this.toNumber(b.quantity);
     const fabric = (state.productData as any)[product]?.fabric as MaterialKey;
     const rmEntry: any = state.rawMaterials[fabric] || { onHand: 0, allocated: 0, inTransit: [], costLots: [] };
     const netAvailable = this.toNumber(rmEntry.onHand) - this.toNumber(rmEntry.allocated);
+    const quantity = Math.min(plannedQuantity, Math.max(0, netAvailable));
 
-    if (!fabric || netAvailable + 1e-6 < quantity) {
+    if (!fabric || plannedQuantity <= 0 || quantity <= 0) {
       throw new Error(`Insufficient materials to start batch ${b.id || ""} (${product}) in week ${week}`);
+    }
+
+    if (quantity + 1e-6 < plannedQuantity) {
+      b.quantity = quantity;
     }
 
     rmEntry.allocated = Math.max(0, this.toNumber(rmEntry.allocated) - quantity);
@@ -222,9 +232,7 @@ export class GameEngine {
     rmEntry.lastUnitCost = avgUnitRM;
     state.rawMaterials[fabric] = rmEntry;
 
-    const chargedProductionUnits = method === "inhouse"
-      ? Math.max(GAME_CONSTANTS.BATCH_SIZE, quantity)
-      : quantity;
+    const chargedProductionUnits = this.getProductionBilledUnits(quantity);
     const productionCash = chargedProductionUnits * prodUnitCost;
     const productionUnitCostBasis = quantity > 0 ? productionCash / quantity : prodUnitCost;
 
@@ -239,6 +247,7 @@ export class GameEngine {
       materialUnitCost: avgUnitRM || this.toNumber((state.productData as any)[product]?.confirmedMaterialCost),
       productionUnitCost: productionUnitCostBasis,
     });
+    return { quantity, productionCash };
   }
 
   private static completeProductionAndArrivalsForWeek(state: any, week: number): void {
@@ -300,8 +309,27 @@ export class GameEngine {
 
     const startingBatches = (state.productionSchedule.batches || [])
       .filter((b: any) => this.toNumber(b.startWeek) === week && !this.hasMaterializedBatch(state, String(b.id)));
+    const openingProductionStarts: Array<{ id: string; product: string; quantity: number; production: number; logistics: number }> = [];
     for (const b of startingBatches) {
-      this.startProductionBatch(state, b, week);
+      const started = this.startProductionBatch(state, b, week);
+      const product = b.product as ProductKey;
+      const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
+      openingProductionStarts.push({
+        id: String(b.id || ''),
+        product,
+        quantity: started.quantity,
+        production: started.productionCash,
+        logistics: started.quantity * this.getShippingUnitCost(product, shipMethod),
+      });
+    }
+    if (openingProductionStarts.length > 0) {
+      state.openingProductionStarts = openingProductionStarts;
+      state.openingProductionCharges = openingProductionStarts.reduce((acc, item) => {
+        acc.production += item.production;
+        acc.logistics += item.logistics;
+        acc.total += item.production + item.logistics;
+        return acc;
+      }, { production: 0, logistics: 0, total: 0 });
     }
 
     const { wipByWeek, fgProjections } = this.computeWipAndFgProjections(state.productionSchedule, week);
@@ -711,26 +739,20 @@ export class GameEngine {
       .filter((b: any) => b.startWeek === week && !this.hasMaterializedBatch(state, String(b.id)));
     for (const b of startingBatches) {
       const product = b.product as ProductKey;
-      const method = b.method as 'inhouse' | 'outsource';
-      const prodUnitCost = this.getProductionUnitCost(product, method);
-      const quantity = this.toNumber(b.quantity);
+      const started = this.startProductionBatch(state, b, week);
 
-      // Pay production cost this week
-      const chargedProductionUnits = method === 'inhouse'
-        ? Math.max(GAME_CONSTANTS.BATCH_SIZE, quantity)
-        : quantity;
-      const productionCash = chargedProductionUnits * prodUnitCost;
+      // Pay production cost this week. Partial batches still bill the full
+      // production rung; shipping remains tied to units actually produced.
+      const productionCash = started.productionCash;
       operationalOutflows += productionCash;
       costProduction += productionCash;
 
       // Pay logistics (shipping) cost immediately on batch schedule as per rules
       const shipMethodAtSchedule = (b.shipping || 'standard') as 'standard' | 'expedited';
       const shipUnitCostAtSchedule = this.getShippingUnitCost(product, shipMethodAtSchedule);
-      const shippingCashAtSchedule = quantity * shipUnitCostAtSchedule;
+      const shippingCashAtSchedule = started.quantity * shipUnitCostAtSchedule;
       operationalOutflows += shippingCashAtSchedule;
       costLogistics += shippingCashAtSchedule;
-
-      this.startProductionBatch(state, b, week);
     }
 
     // 4) Complete production and receive shipments for this week. For newly
@@ -1410,7 +1432,7 @@ export class GameEngine {
     for (const b of prod?.batches || []) {
       if (b.startWeek === weekNumber && !this.hasMaterializedBatch(currentState as any, String(b.id))) {
         const qty = Number(b.quantity || 0);
-        const chargedQty = b.method === 'inhouse' ? Math.max(GAME_CONSTANTS.BATCH_SIZE, qty) : qty;
+        const chargedQty = this.getProductionBilledUnits(qty);
         production += chargedQty * this.getProductionUnitCost(b.product, b.method);
         const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
         logistics += qty * this.getShippingUnitCost(b.product, shipMethod);
@@ -1630,7 +1652,7 @@ export class GameEngine {
             ))
             .reduce((s: number, bb: any) => s + Number(bb.quantity || 0), 0);
           const projected = onHandNow + inboundByStart - allocatedBefore;
-          if (projected < Number(b.quantity || 0)) {
+          if (projected <= 0 && Number(b.quantity || 0) > 0) {
             errors.push(`Insufficient materials for batch ${b.id} (${b.product})`);
           }
         }

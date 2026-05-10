@@ -141,6 +141,64 @@ test("processProductionSchedule is a no-op (financials handled in commitWeek)", 
   assert.equal(result, updates);
 });
 
+test("partial production can start when remaining fabric is below one rung", async () => {
+  const state: any = {
+    weekNumber: 3,
+    cashOnHand: 1_000_000,
+    creditUsed: 0,
+    awareness: 0,
+    intent: 0,
+    rawMaterials: {
+      selvedgeDenim: {
+        onHand: 18_187,
+        allocated: 0,
+        onHandValue: 181_870,
+        costLots: [{ quantity: 18_187, unitCost: 10 }],
+      },
+    },
+    workInProcess: { batches: [] },
+    finishedGoods: { lots: [] },
+    shipmentsInTransit: [],
+    productionSchedule: {
+      batches: [{
+        id: "partial-jacket",
+        product: "jacket",
+        method: "inhouse",
+        startWeek: 3,
+        quantity: 25_000,
+        shipping: "standard",
+      }],
+    },
+    procurementContracts: { contracts: [] },
+    productData: {
+      jacket: { fabric: "selvedgeDenim", confirmedMaterialCost: 10, rrp: GAME_CONSTANTS.PRODUCTS.jacket.hmPrice * 1.2 },
+      dress: { fabric: "egyptianCotton", confirmedMaterialCost: 8, rrp: GAME_CONSTANTS.PRODUCTS.dress.hmPrice * 1.2 },
+      pants: { fabric: "fineWaleCorduroy", confirmedMaterialCost: 9, rrp: GAME_CONSTANTS.PRODUCTS.pants.hmPrice * 1.2 },
+    },
+    weeklyDemand: {},
+    weeklySales: {},
+    lostSales: {},
+    weeklyDiscounts: {},
+    marketingPlan: { totalSpend: 0 },
+    plannedMarketingPlan: { totalSpend: 0 },
+    materialCosts: "0",
+    productionCosts: "0",
+    logisticsCosts: "0",
+    holdingCosts: "0",
+    interestAccrued: "0",
+    totals: { revenueToDate: 0, unitsSoldToDate: 0, cogsMaterialsToDate: 0, cogsProductionToDate: 0, cogsLogisticsToDate: 0, cogsMarketingToDate: 0 },
+  };
+
+  const validation = GameEngine.validateWeeklyDecisions(3, state, {} as any);
+  assert.equal(validation.canCommit, true, validation.errors.join("; "));
+
+  const committed = await GameEngine.commitWeek(state);
+  const wip = (committed as any).workInProcess.batches.find((b: any) => b.id === "partial-jacket");
+  assert.equal(wip.quantity, 18_187);
+  assert.equal(Number((committed as any).rawMaterials.selvedgeDenim.onHand), 0);
+  assert.equal(Number((committed as any).productionCosts), 25_000 * GAME_CONSTANTS.MANUFACTURING.jacket.inHouseCost);
+});
+
 setTimeout(() => {
   console.log(`\n${passed} passed, ${failed} failed`);
   process.exit(failed > 0 ? 1 : 0);
