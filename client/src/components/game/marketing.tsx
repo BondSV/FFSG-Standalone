@@ -82,6 +82,25 @@ const componentsFromSplit = (split: Record<string, number>): CampaignComponentId
     .map((channel) => channel.id as CampaignComponentId)
 );
 
+const isPresetId = (value: unknown): value is PresetId =>
+  value === 'awareness' || value === 'balanced' || value === 'conversion';
+
+const isSplitSource = (value: unknown): value is SplitSource =>
+  value === 'preset' || value === 'components' || value === 'manual';
+
+const allocationFromPlan = (plan: any): Record<string, number> | null => {
+  if (!Array.isArray(plan?.channels)) return null;
+  const totalSpend = Number(plan?.totalSpend || 0);
+  if (totalSpend <= 0) return null;
+
+  const pct: Record<string, number> = {};
+  for (const c of marketingChannels) pct[c.id] = 0;
+  for (const c of plan.channels as any[]) {
+    pct[c.name] = Math.round((Number(c.spend || 0) / totalSpend) * 100);
+  }
+  return pct;
+};
+
 export default function Marketing({ gameSession, currentState }: MarketingProps) {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -114,18 +133,21 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
   const planned = (currentState as any)?.plannedMarketingPlan as any;
   const initialManual = Boolean(planned?.manual);
+  const initialPreset = isPresetId(planned?.preset) ? planned.preset : recommendedPreset;
+  const initialSplitSource = initialManual ? 'manual' : (isSplitSource(planned?.splitSource) ? planned.splitSource : 'preset');
+  const initialAllocation = allocationFromPlan(planned);
   const [manual, setManual] = useState<boolean>(initialManual);
-  const [splitSource, setSplitSource] = useState<SplitSource>(initialManual ? 'manual' : 'preset');
-  const [preset, setPreset] = useState<PresetId>(recommendedPreset);
-  const [campaignComponents, setCampaignComponents] = useState<CampaignComponentId[]>(() => initialManual ? componentsFromSplit(PRESET_SPLITS[recommendedPreset]) : []);
+  const [splitSource, setSplitSource] = useState<SplitSource>(initialSplitSource);
+  const [preset, setPreset] = useState<PresetId>(initialPreset);
+  const [campaignComponents, setCampaignComponents] = useState<CampaignComponentId[]>(() =>
+    initialSplitSource === 'components' && initialAllocation
+      ? componentsFromSplit(initialAllocation)
+      : initialManual && initialAllocation
+        ? componentsFromSplit(initialAllocation)
+        : []
+  );
   const [channelAllocation, setChannelAllocation] = useState<Record<string, number>>(() => {
-    if (initialManual && planned?.channels && Number(planned?.totalSpend) >= 0) {
-      const total = Number(planned.totalSpend) || 1;
-      const pct: Record<string, number> = {};
-      (planned.channels as any[]).forEach((c) => { pct[c.name] = Math.round((Number(c.spend||0) / total) * 100); });
-      return pct;
-    }
-    return { ...PRESET_SPLITS[recommendedPreset] };
+    return initialAllocation || { ...PRESET_SPLITS[initialPreset] };
   });
   // Remember the last non-zero allocation to restore after leaving £0 with manual on
   const lastNonZeroAllocation = useRef<Record<string, number> | null>(null);
@@ -137,6 +159,9 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   useEffect(() => {
     const plan = (currentState as any)?.plannedMarketingPlan as any;
     const nextManual = Boolean(plan?.manual);
+    const nextPreset = isPresetId(plan?.preset) ? plan.preset : recommendedPreset;
+    const nextSplitSource = nextManual ? 'manual' : (isSplitSource(plan?.splitSource) ? plan.splitSource : 'preset');
+    const nextAllocation = allocationFromPlan(plan);
     const nextSpend = Number(plan?.totalSpend ?? currentState?.marketingPlan?.totalSpend ?? 0);
     const discounts = (currentState as any)?.plannedWeeklyDiscounts || {};
     const avgDiscount = (
@@ -148,20 +173,14 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
 
     setMarketingSpend(nextSpend);
     setManual(nextManual);
-    setSplitSource(nextManual ? 'manual' : 'preset');
-    setPreset(recommendedPreset);
-    if (nextManual && Array.isArray(plan?.channels)) {
-      const total = Number(plan.totalSpend) || 1;
-      const pct: Record<string, number> = {};
-      for (const c of marketingChannels) pct[c.id] = 0;
-      (plan.channels as any[]).forEach((c) => {
-        pct[c.name] = Math.round((Number(c.spend || 0) / total) * 100);
-      });
-      setCampaignComponents(componentsFromSplit(pct));
-      setChannelAllocation(pct);
+    setSplitSource(nextSplitSource);
+    setPreset(nextPreset);
+    if (nextAllocation) {
+      setCampaignComponents(nextSplitSource === 'components' || nextManual ? componentsFromSplit(nextAllocation) : []);
+      setChannelAllocation(nextAllocation);
     } else {
       setCampaignComponents([]);
-      setChannelAllocation({ ...PRESET_SPLITS[recommendedPreset] });
+      setChannelAllocation({ ...PRESET_SPLITS[nextPreset] });
     }
 
     if (nextDiscountPct <= 0) {
@@ -308,7 +327,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       if (!manual) {
         if (splitSource === 'preset') {
           setCampaignComponents([]);
-          setChannelAllocation({ ...PRESET_SPLITS[recommendedPreset] });
+          setChannelAllocation({ ...PRESET_SPLITS[preset] });
         } else {
           setChannelAllocation({ ...splitFromComponents(campaignComponents) });
         }
@@ -320,7 +339,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
         }
       }
     }
-  }, [marketingSpend, manual, recommendedPreset, splitSource, campaignComponents]);
+  }, [marketingSpend, manual, preset, splitSource, campaignComponents]);
 
   // Recommended efficient zones by preset and channel (percent ranges)
   const getEfficientRange = (p: PresetId, channelId: string): [number, number] => {
@@ -439,7 +458,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
     const t = setTimeout(async () => {
       try {
         const channelsArray = marketingChannels.map((c) => ({ name: c.id, spend: (marketingSpend * (channelAllocation[c.id] || 0)) / 100 }));
-        const plan = { totalSpend: marketingSpend, channels: channelsArray, manual };
+        const plan = { totalSpend: marketingSpend, channels: channelsArray, manual, preset, splitSource };
         const res = await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentWeek}/marketing-preview`, { plannedMarketingPlan: plan, plannedWeeklyDiscounts: plannedDiscounts });
         const data = await res.json();
         setPreview({ nextAwareness: Number(data.nextAwareness||0), nextIntent: Number(data.nextIntent||0), forecastDemandTotal: Number(data.forecastDemandTotal||0) });
@@ -813,7 +832,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={() => {
               const channelsArray = marketingSpend === 0 ? [] : marketingChannels.map((c) => ({ name: c.id, spend: calculateChannelSpend(c.id) }));
-              const updates: any = { plannedMarketingPlan: { totalSpend: marketingSpend, channels: channelsArray, manual }, plannedWeeklyDiscounts: plannedDiscounts, plannedLocked: true };
+              const updates: any = { plannedMarketingPlan: { totalSpend: marketingSpend, channels: channelsArray, manual, preset, splitSource }, plannedWeeklyDiscounts: plannedDiscounts, plannedLocked: true };
               updateStateMutation.mutate(updates);
               setConfirmOpen(false);
             }}>Confirm & Lock</AlertDialogAction>

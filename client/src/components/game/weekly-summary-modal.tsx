@@ -129,9 +129,9 @@ export function WeeklySummaryModal({ open, onOpenChange, summary }: Props) {
                     <YAxis yAxisId="left" tickLine={false} axisLine={false} domain={[0, 100]} width={30} />
                     <YAxis yAxisId="right" orientation="right" tickLine={false} axisLine={false} width={36} />
                     <ChartTooltip cursor={false} content={<ChartTooltipContent hideLabel />} />
-                    <Line yAxisId="left" type="monotone" dataKey="awareness" stroke="var(--color-awareness)" strokeWidth={2} dot={false} />
-                    <Line yAxisId="left" type="monotone" dataKey="intent" stroke="var(--color-intent)" strokeWidth={2} dot={false} />
-                    <Line yAxisId="right" type="monotone" dataKey="demand" stroke="var(--color-demand)" strokeWidth={2} dot={false} />
+                    <Line yAxisId="left" type="monotone" dataKey="awareness" stroke="var(--color-awareness)" strokeWidth={2} dot={{ r: 2, strokeWidth: 1 }} activeDot={{ r: 4 }} connectNulls />
+                    <Line yAxisId="left" type="monotone" dataKey="intent" stroke="var(--color-intent)" strokeWidth={2} dot={{ r: 2, strokeWidth: 1 }} activeDot={{ r: 4 }} connectNulls />
+                    <Line yAxisId="right" type="monotone" dataKey="demand" stroke="var(--color-demand)" strokeWidth={2} dot={{ r: 2, strokeWidth: 1 }} activeDot={{ r: 4 }} connectNulls />
                     <ChartLegend verticalAlign="top" content={<ChartLegendContent className="!pb-1" />} />
                   </LineChart>
                 </ChartContainer>
