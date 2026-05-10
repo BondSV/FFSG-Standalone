@@ -229,8 +229,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
       }
       if (!confirmPartial) {
         const partialDescription = method === "inhouse"
-          ? `Only ${avail.toLocaleString()} units available. Running partial will consume full in-house capacity and full 25k production cost. Confirm to proceed and click Add again.`
-          : `Only ${avail.toLocaleString()} units available. Running partial will still bill the full 25k production rung. Confirm to proceed and click Add again.`;
+          ? `Only ${avail.toLocaleString()} units available. Running partial will consume full in-house capacity and bill full 25k production and logistics rungs. Confirm to proceed and click Add again.`
+          : `Only ${avail.toLocaleString()} units available. Running partial will still bill full 25k production and logistics rungs. Confirm to proceed and click Add again.`;
         setConfirmPartial(true);
         toast({
           title: "Partial batch possible",
@@ -532,8 +532,8 @@ export default function Production({ gameSession, currentState }: ProductionProp
                 <AlertTriangle size={14} className="mt-0.5" />
                 <div>
                   {method === "inhouse"
-                    ? "Partial batch mode: this will consume full in-house capacity and full 25k production cost; per-unit cost will be higher."
-                    : "Partial batch mode: this will bill the full 25k production rung; per-unit cost will be higher."}
+                    ? "Partial batch mode: this will consume full in-house capacity and bill full 25k production and logistics rungs; per-unit cost will be higher."
+                    : "Partial batch mode: this will bill full 25k production and logistics rungs; per-unit cost will be higher."}
                 </div>
               </div>
             )}

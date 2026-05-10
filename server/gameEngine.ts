@@ -258,11 +258,14 @@ export class GameEngine {
         const shipMethod = (plan?.shipping || "standard") as "standard" | "expedited";
         const shipWeeks = this.getShippingWeeks(shipMethod);
         const shipUnitCost = this.getShippingUnitCost(wb.product, shipMethod);
+        const quantity = this.toNumber(wb.quantity);
+        const shippingCash = this.getProductionBilledUnits(quantity) * shipUnitCost;
+        const shippingUnitCostBasis = quantity > 0 ? shippingCash / quantity : shipUnitCost;
         state.shipmentsInTransit!.push({
           id: `${wb.id}-ship-${week}`,
           product: wb.product,
-          quantity: wb.quantity,
-          unitShippingCost: shipUnitCost,
+          quantity,
+          unitShippingCost: shippingUnitCostBasis,
           unitMaterialCost: this.toNumber(wb.materialUnitCost),
           unitProductionCost: this.toNumber(wb.productionUnitCost),
           arrivalWeek: week + shipWeeks + 1,
@@ -319,7 +322,7 @@ export class GameEngine {
         product,
         quantity: started.quantity,
         production: started.productionCash,
-        logistics: started.quantity * this.getShippingUnitCost(product, shipMethod),
+        logistics: this.getProductionBilledUnits(started.quantity) * this.getShippingUnitCost(product, shipMethod),
       });
     }
     if (openingProductionStarts.length > 0) {
@@ -741,8 +744,8 @@ export class GameEngine {
       const product = b.product as ProductKey;
       const started = this.startProductionBatch(state, b, week);
 
-      // Pay production cost this week. Partial batches still bill the full
-      // production rung; shipping remains tied to units actually produced.
+      // Pay production and logistics this week. Partial batches still bill the
+      // full 25k rung throughout; physical units remain the actual quantity.
       const productionCash = started.productionCash;
       operationalOutflows += productionCash;
       costProduction += productionCash;
@@ -750,7 +753,7 @@ export class GameEngine {
       // Pay logistics (shipping) cost immediately on batch schedule as per rules
       const shipMethodAtSchedule = (b.shipping || 'standard') as 'standard' | 'expedited';
       const shipUnitCostAtSchedule = this.getShippingUnitCost(product, shipMethodAtSchedule);
-      const shippingCashAtSchedule = started.quantity * shipUnitCostAtSchedule;
+      const shippingCashAtSchedule = this.getProductionBilledUnits(started.quantity) * shipUnitCostAtSchedule;
       operationalOutflows += shippingCashAtSchedule;
       costLogistics += shippingCashAtSchedule;
     }
@@ -1435,7 +1438,7 @@ export class GameEngine {
         const chargedQty = this.getProductionBilledUnits(qty);
         production += chargedQty * this.getProductionUnitCost(b.product, b.method);
         const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
-        logistics += qty * this.getShippingUnitCost(b.product, shipMethod);
+        logistics += chargedQty * this.getShippingUnitCost(b.product, shipMethod);
       }
     }
     return { production, logistics, total: production + logistics };

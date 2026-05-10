@@ -382,7 +382,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const unitShipExpedited = Number((GAME_CONSTANTS.SHIPPING as any)[product]?.expedited || 0);
         const onShelfWeekStandard = endWeek + SHIPPING_WEEKS.standard + 1;
         const onShelfWeekExpedited = endWeek + SHIPPING_WEEKS.expedited + 1;
-        const cashDeltaToExpedite = qty * (unitShipExpedited - unitShipStandard);
+        const billedQty = qty > 0 ? Math.max(Number(GAME_CONSTANTS.BATCH_SIZE || 25000), qty) : 0;
+        const cashDeltaToExpedite = billedQty * (unitShipExpedited - unitShipStandard);
 
         return {
           id: String(b.id || ''),
@@ -398,8 +399,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           onShelfWeek,
           status,
           comparison: {
-            standard: { unitCost: unitShipStandard, totalCost: qty * unitShipStandard, onShelfWeek: onShelfWeekStandard },
-            expedited: { unitCost: unitShipExpedited, totalCost: qty * unitShipExpedited, onShelfWeek: onShelfWeekExpedited },
+            standard: { unitCost: unitShipStandard, totalCost: billedQty * unitShipStandard, onShelfWeek: onShelfWeekStandard },
+            expedited: { unitCost: unitShipExpedited, totalCost: billedQty * unitShipExpedited, onShelfWeek: onShelfWeekExpedited },
             cashDeltaToExpedite,
           },
         };
@@ -1182,11 +1183,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const units = Number(b.quantity || 0);
           const mfg = (GAME_CONSTANTS.MANUFACTURING as any)[product] || {};
           const unitProd = method === 'inhouse' ? Number(mfg.inHouseCost || 0) : Number(mfg.outsourceCost || 0);
-          const productionUnitsBilled = units > 0 ? Math.max(Number(GAME_CONSTANTS.BATCH_SIZE || 25000), units) : 0;
-          result.push({ type: 'production', amount: productionUnitsBilled * unitProd, refId: product });
+          const billedUnits = units > 0 ? Math.max(Number(GAME_CONSTANTS.BATCH_SIZE || 25000), units) : 0;
+          result.push({ type: 'production', amount: billedUnits * unitProd, refId: product });
           const shippingMode = (b.shipping || 'standard') as 'standard' | 'expedited';
           const shipUnit = Number((GAME_CONSTANTS.SHIPPING as any)[product]?.[shippingMode] || 0);
-          if (shipUnit > 0) result.push({ type: 'logistics', amount: units * shipUnit, refId: product });
+          if (shipUnit > 0) result.push({ type: 'logistics', amount: billedUnits * shipUnit, refId: product });
         }
       }
 

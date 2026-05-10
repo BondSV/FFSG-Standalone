@@ -197,6 +197,7 @@ test("partial production can start when remaining fabric is below one rung", asy
   assert.equal(wip.quantity, 18_187);
   assert.equal(Number((committed as any).rawMaterials.selvedgeDenim.onHand), 0);
   assert.equal(Number((committed as any).productionCosts), 25_000 * GAME_CONSTANTS.MANUFACTURING.jacket.inHouseCost);
+  assert.equal(Number((committed as any).logisticsCosts), 25_000 * GAME_CONSTANTS.SHIPPING.jacket.standard);
 });
 
 setTimeout(() => {
