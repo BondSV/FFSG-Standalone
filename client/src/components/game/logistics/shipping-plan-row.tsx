@@ -166,7 +166,7 @@ export function ShippingPlanRow({ batch, onChange, pending }: ShippingPlanRowPro
 
         <div className="md:w-32 text-right shrink-0 flex items-center justify-end gap-2">
           {batch.shippingLocked ? (
-            <TooltipWrapper content="Shipping mode is locked once the batch has finished production and is in transit.">
+            <TooltipWrapper content="Shipping mode is locked once the batch enters production.">
               <span className="inline-flex items-center gap-1 text-xs text-gray-500">
                 <Lock size={12} /> Locked
               </span>

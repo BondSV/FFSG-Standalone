@@ -13,6 +13,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Slider } from "@/components/ui/slider";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { estimateSeasonDemand } from "@/lib/simulation-formulas";
 
 interface ProcurementProps {
   gameSession: any;
@@ -98,12 +99,6 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
   // Helper: supplier basket counts
   const getSupplierBasketCount = (supplier: 'supplier1' | 'supplier2') => Object.keys(supplierPrices[supplier]).reduce((count, material) => count + ((materialQuantities[material] || 0) > 0 ? 1 : 0), 0);
 
-  // Demand helpers (match Price Positioning)
-  const UNIFIED_ELASTICITY = -1.4;
-  const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v));
-  const computePositionEffect = (price: number, ref: number) => { const d = Math.abs(price / ref - 1); const ceil = 0.95, p = 3, s = 0.21; const base = 1 - Math.exp(-Math.pow(d / s, p)); const bump = 40 * (d * d) * Math.exp(-Math.pow(d / 0.08, 2)); const mag = Math.min(1, ceil * base + bump); const raw = 1 + ((price < ref) ? mag : -mag); return clamp(raw, 0, 2); };
-  const fabricLift: Record<string, number> = { selvedgeDenim: 0.06, standardDenim: 0.0, egyptianCotton: 0.05, polyesterBlend: -0.02, fineWaleCorduroy: 0.04, wideWaleCorduroy: 0.0 };
-  const printLift = 0.03;
   // Supplier tiers from server constants
   const computeTierForSupplier = (supplier: 'supplier1' | 'supplier2', units: number): { discount: number; tierIndex: number | null } => {
     const tiers = (gameConstants?.VOLUME_DISCOUNTS as any)?.[supplier] || [];
@@ -127,16 +122,18 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
     let total = 0;
     products.forEach((p) => {
       const info = base[p]; if (!info) return;
-      const refPrice = Number(info.hmPrice) * 1.2;
       // Use locked RRP; if missing, assume reference price to avoid undercounting
-      const rrp = Number((productData as any)[p]?.rrp ?? refPrice);
-      const priceEffect = Math.pow(rrp / refPrice, UNIFIED_ELASTICITY);
-      const posEffect = computePositionEffect(rrp, refPrice);
+      const rrp = Number((productData as any)[p]?.rrp ?? Number(info.hmPrice) * 1.2);
       const material = (productData as any)[p]?.fabric || '';
       const hasPrint = !!(productData as any)[p]?.hasPrint;
-      const designEffect = 1 + (fabricLift[material] || 0) + (hasPrint ? printLift : 0);
-      const units = Number(info.forecast) * priceEffect * posEffect * promoLift * designEffect;
-      total += Math.round(clamp(units, 0, info.forecast * 2));
+      const units = estimateSeasonDemand(
+        { forecast: Number(info.forecast || 0), hmPrice: Number(info.hmPrice || 0), elasticity: Number(info.elasticity || -1.4) },
+        rrp,
+        0,
+        material,
+        hasPrint
+      ) || 0;
+      total += Math.round(units * promoLift);
     });
      return total;
   }, [gameConstants, productData]);
@@ -712,7 +709,7 @@ export default function Procurement({ gameSession, currentState }: ProcurementPr
                         <span className="font-mono">-{formatCurrency(contractData.orders.reduce((sum, order) => sum + order.totalCost, 0) * (contractData.discount / 100))}</span>
                       </div>
                     )}
-                  <div className="flex justify-between items-center text-sm text-gray-700"><span>{(gmcCommitments[selectedSupplier] || 0) > 0 ? 'GMC: each invoice is due two weeks after shipment' : 'SPT: pay on delivery (defects not billed)'}</span><span className="font-mono"></span></div>
+                  <div className="flex justify-between items-center text-sm text-gray-700"><span>{(gmcCommitments[selectedSupplier] || 0) > 0 ? 'GMC: each invoice is due two weeks after shipment' : 'SPT: pay on delivery'}</span><span className="font-mono"></span></div>
                   <div className="flex justify-between items-center font-bold text-lg border-t border-gray-300 pt-2 mt-2"><span>Order Total:</span><span className="font-mono">{formatCurrency(contractData.totalCommitment)}</span></div>
                   </div>
                 </div>

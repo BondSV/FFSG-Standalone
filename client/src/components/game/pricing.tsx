@@ -10,14 +10,12 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { DollarSign, AlertCircle } from "lucide-react";
+import { estimateSeasonDemand } from "@/lib/simulation-formulas";
 
 interface PricingProps {
   gameSession: any;
   currentState: any;
 }
-
-// Use a unified elasticity across SKUs for this screen
-const UNIFIED_ELASTICITY = -1.40;
 
 // Product configuration mapped to the required SkuCard contract
 const products = [
@@ -27,7 +25,7 @@ const products = [
     base_units: 100000,
     hmp: 80,
     hi_low: [300, 550] as [number, number],
-    elasticity: UNIFIED_ELASTICITY,
+    elasticity: -1.40,
   },
   {
     skuId: 'dress',
@@ -35,7 +33,7 @@ const products = [
     base_units: 150000,
     hmp: 50,
     hi_low: [180, 210] as [number, number],
-    elasticity: UNIFIED_ELASTICITY,
+    elasticity: -1.20,
   },
   {
     skuId: 'pants',
@@ -43,7 +41,7 @@ const products = [
     base_units: 120000,
     hmp: 60,
     hi_low: [190, 220] as [number, number],
-    elasticity: UNIFIED_ELASTICITY,
+    elasticity: -1.55,
   },
 ];
 
@@ -74,42 +72,10 @@ function percentGap(price: number, hmp: number) {
 function badgeColour(price: number, hmp: number) {
   if (!price || !hmp) return "bg-gray-100 text-gray-700";
   const pct = ((price - hmp) / hmp) * 100;
-  // green (−20% – +10%), amber (+10% – +40%), red (outside)
-  if (pct >= -20 && pct <= 10) return "bg-green-100 text-green-800";
-  if (pct > 10 && pct <= 40) return "bg-amber-100 text-amber-800";
+  // Target accessible-premium pricing is around +20% to H&M.
+  if (pct >= 10 && pct <= 30) return "bg-green-100 text-green-800";
+  if ((pct >= 0 && pct < 10) || (pct > 30 && pct <= 45)) return "bg-amber-100 text-amber-800";
   return "bg-red-100 text-red-800";
-}
-
-// Saturating S-shaped position effect around the reference price.
-// - Gentle near the reference price (small deltas => tiny effect)
-// - Accelerates through psychologically significant gaps
-// - Slows as it approaches saturation (ceiling/floor)
-function computePositionEffect(price: number, ref_price: number): number {
-  const signedDelta = (price / ref_price) - 1; // relative gap to reference
-  const delta = Math.abs(signedDelta);
-
-  const ceil = 0.95;    // max amplitude of positioning influence
-  const p = 3;          // curvature (higher => flatter near zero, steeper mid)
-  const s = 0.21;       // scale where acceleration becomes noticeable (~21%)
-  const base = 1 - Math.exp(-Math.pow(delta / s, p));
-
-  // Small-delta bump to reflect noticeable response around ~5-8% gaps, decays quickly
-  const bumpGamma = 40;
-  const bumpWidth = 0.08;
-  const bump = bumpGamma * (delta * delta) * Math.exp(-Math.pow(delta / bumpWidth, 2));
-
-  const magnitude = Math.min(1, ceil * base + bump);
-  const raw = 1 + (signedDelta < 0 ? magnitude : -magnitude);
-  // Allow full floor at 0 and ceiling at 2 for extreme cases
-  return clamp(raw, 0, 2.0);
-}
-
-function demand(price: number, hmp: number, ref_price: number, base_units: number, elasticity: number) {
-  const ratio = price / ref_price;
-  const price_effect = Math.pow(ratio, elasticity);
-  const position_effect = computePositionEffect(price, ref_price);
-  const demand_units = base_units * price_effect * position_effect;
-  return demand_units;
 }
 
 function PricingMetrics({ price, hmp, ref_price, base_units, elasticity }: { price: number; hmp: number; ref_price: number; base_units: number; elasticity: number; }) {
@@ -119,10 +85,10 @@ function PricingMetrics({ price, hmp, ref_price, base_units, elasticity }: { pri
   let demand_pct_raw = 0;
 
   if (hasValidPrice) {
-    const ratio = price / ref_price;
-    const price_effect = Math.pow(ratio, elasticity);
-    const position_effect = computePositionEffect(price, ref_price);
-    demand_units_raw = base_units * price_effect * position_effect;
+    demand_units_raw = estimateSeasonDemand(
+      { forecast: base_units, hmPrice: hmp, elasticity },
+      price
+    ) || 0;
     demand_pct_raw = demand_units_raw / base_units;
   }
 
@@ -215,7 +181,7 @@ function SkuCard({
         </Badge>
 
         <small className="text-slate-500 italic">
-          Consider where your RRP positions you: below, near, or above H&M — and how far from the high‑end.
+          The engine is tuned for accessible premium positioning, with the best margin-demand balance around +20% to H&M.
         </small>
       </div>
 

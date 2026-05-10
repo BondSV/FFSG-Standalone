@@ -55,7 +55,7 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
       const credit = Number(w.creditUsed || 0);
       const rmVal = Object.values((w as any).rawMaterials || {}).reduce((s: number, v: any) => s + Number(v.onHandValue || 0), 0);
       const wipVal = ((w as any).workInProcess?.batches || []).reduce((s: number, b: any) => s + Number(b.quantity || 0) * (Number(b.materialUnitCost || 0) + Number(b.productionUnitCost || 0)), 0);
-      const itVal = ((w as any).shipmentsInTransit || []).reduce((s: number, sh: any) => s + Number(sh.units || 0) * (Number(sh.materialCostPerUnit || 0) + Number(sh.productionCostPerUnit || 0) + Number(sh.shippingCostPerUnit || 0)), 0);
+      const itVal = ((w as any).shipmentsInTransit || []).reduce((s: number, sh: any) => s + Number(sh.quantity || 0) * (Number(sh.unitMaterialCost || 0) + Number(sh.unitProductionCost || 0) + Number(sh.unitShippingCost || 0)), 0);
       const fgVal = ((w as any).finishedGoods?.lots || []).reduce((s: number, l: any) => s + Number(l.quantity || 0) * Number(l.unitCostBasis || 0), 0);
       return acc + cash + credit + rmVal + wipVal + itVal + fgVal;
     }, 0);
@@ -74,23 +74,26 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
   ];
 
   // Strategic choices summary
-  const allContracts = ([] as any[]).concat(...weeks.map((w: any) => ((w as any).procurementContracts?.contracts || [])));
+  const allContracts = ((finalState as any).procurementContracts?.contracts || []) as any[];
+  const contractUnits = (c: any) => c.type === 'GMC'
+    ? (c.gmcOrders || []).reduce((s: number, o: any) => s + Number(o.units || 0), 0)
+    : Number(c.units || 0);
   const primarySupplier = (() => {
     const bySupplier: Record<string, number> = {};
-    allContracts.forEach((c: any) => { bySupplier[c.supplier] = (bySupplier[c.supplier] || 0) + Number(c.units || 0); });
+    allContracts.forEach((c: any) => { bySupplier[c.supplier] = (bySupplier[c.supplier] || 0) + contractUnits(c); });
     const entries = Object.entries(bySupplier).sort((a, b) => b[1] - a[1]);
     return entries[0]?.[0] || 'N/A';
   })();
   const contractMix = (() => {
     const counts: Record<string, number> = { GMC: 0, SPT: 0 } as any;
-    const total = allContracts.reduce((s, c) => s + Number(c.units || 0), 0) || 1;
-    allContracts.forEach((c: any) => counts[c.type] = (counts[c.type] || 0) + Number(c.units || 0));
+    const total = allContracts.reduce((s, c) => s + contractUnits(c), 0) || 1;
+    allContracts.forEach((c: any) => counts[c.type] = (counts[c.type] || 0) + contractUnits(c));
     return {
       GMC: Math.round((counts.GMC || 0) / total * 100),
       SPT: Math.round((counts.SPT || 0) / total * 100),
     };
   })();
-  const allBatches = ([] as any[]).concat(...weeks.map((w: any) => ((w as any).productionSchedule?.batches || [])));
+  const allBatches = ((finalState as any).productionSchedule?.batches || []) as any[];
   const methodMix = (() => {
     const total = allBatches.reduce((s, b) => s + Number(b.quantity || 0), 0) || 1;
     const inhouse = allBatches.filter((b) => b.method === 'inhouse').reduce((s, b) => s + Number(b.quantity || 0), 0);
@@ -255,5 +258,4 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
     </div>
   );
 }
-
 

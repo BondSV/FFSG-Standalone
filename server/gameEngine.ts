@@ -100,6 +100,18 @@ export const GAME_CONSTANTS = {
     jacket: { standard: 4, expedited: 7 },
     dress: { standard: 2.5, expedited: 4 },
     pants: { standard: 3, expedited: 6 },
+  },
+
+  DESIGN_DEMAND_EFFECTS: {
+    fabric: {
+      selvedgeDenim: 0.06,
+      standardDenim: 0.00,
+      egyptianCotton: 0.05,
+      polyesterBlend: -0.02,
+      fineWaleCorduroy: 0.04,
+      wideWaleCorduroy: 0.00,
+    },
+    print: 0.03,
   }
 };
 
@@ -120,6 +132,65 @@ export class GameEngine {
 
   private static cloneJson<T>(obj: T): T {
     return JSON.parse(JSON.stringify(obj));
+  }
+
+  private static calculatePositioningEffect(
+    product: keyof typeof GAME_CONSTANTS.PRODUCTS,
+    rrp: number
+  ): number {
+    const productData = GAME_CONSTANTS.PRODUCTS[product];
+    const targetPrice = productData.hmPrice * 1.2;
+    if (!Number.isFinite(rrp) || rrp <= 0 || targetPrice <= 0) return 0;
+
+    const ratioToTarget = rrp / targetPrice;
+    const priceResistance = Math.pow(ratioToTarget, productData.elasticity);
+    const targetFit = ratioToTarget < 1
+      ? Math.max(0.65, 1 - 1.2 * Math.pow(1 - ratioToTarget, 0.8))
+      : Math.max(0.25, 1 - 1.15 * Math.pow(ratioToTarget - 1, 1.35));
+
+    return this.clamp(priceResistance * targetFit, 0.15, 2);
+  }
+
+  private static calculateDesignEffect(materialChoice?: MaterialKey | null, hasPrint: boolean = false): number {
+    const fabricLift = materialChoice
+      ? this.toNumber((GAME_CONSTANTS.DESIGN_DEMAND_EFFECTS.fabric as any)[materialChoice], 0)
+      : 0;
+    const printLift = hasPrint ? GAME_CONSTANTS.DESIGN_DEMAND_EFFECTS.print : 0;
+    return Math.max(0.5, 1 + fabricLift + printLift);
+  }
+
+  private static consumeRawMaterialFifo(rmEntry: any, quantity: number): number {
+    const costLots = Array.isArray(rmEntry.costLots) ? rmEntry.costLots : [];
+    let remaining = quantity;
+    let totalCost = 0;
+    const nextLots: Array<{ quantity: number; unitCost: number }> = [];
+
+    for (const lot of costLots) {
+      const lotQty = this.toNumber(lot.quantity);
+      const lotCost = this.toNumber(lot.unitCost);
+      if (lotQty <= 0) continue;
+      if (remaining <= 0) {
+        nextLots.push({ quantity: lotQty, unitCost: lotCost });
+        continue;
+      }
+      const take = Math.min(remaining, lotQty);
+      totalCost += take * lotCost;
+      remaining -= take;
+      const leftover = lotQty - take;
+      if (leftover > 0) {
+        nextLots.push({ quantity: leftover, unitCost: lotCost });
+      }
+    }
+
+    if (remaining > 0) {
+      const fallbackUnitCost = this.toNumber(rmEntry.lastUnitCost, 0)
+        || this.toNumber(rmEntry.onHandValue) / Math.max(1, this.toNumber(rmEntry.onHand) + quantity);
+      totalCost += remaining * fallbackUnitCost;
+    }
+
+    rmEntry.costLots = nextLots;
+    rmEntry.onHandValue = Math.max(0, this.toNumber(rmEntry.onHandValue) - totalCost);
+    return quantity > 0 ? totalCost / quantity : 0;
   }
 
   // --------------------
@@ -331,9 +402,10 @@ export class GameEngine {
       const dec = (state.productData as any)?.[p];
       const rrp = this.toNumber(dec?.rrp);
       const hasPrint = !!dec?.hasPrint;
+      const materialChoice = dec?.fabric as MaterialKey | undefined;
       const discount = this.toNumber((nextDiscounts as any)[p]);
       if (!rrp) { demandByProduct[p] = 0; continue; }
-      const base = this.calculateDemand(p, nextWeek, rrp, discount, 0, hasPrint);
+      const base = this.calculateDemand(p, nextWeek, rrp, discount, 0, hasPrint, materialChoice);
       // Single rounding at the end for determinism
       demandByProduct[p] = Math.round(base * marketingFactor);
     }
@@ -424,22 +496,24 @@ export class GameEngine {
 
       // Determine material to consume from product decision
       const fabric = (state.productData as any)[product]?.fabric as MaterialKey;
-      const rmEntry: any = state.rawMaterials[fabric] || { onHand: 0, allocated: 0, inTransit: [] };
+      const rmEntry: any = state.rawMaterials[fabric] || { onHand: 0, allocated: 0, inTransit: [], costLots: [] };
       const netAvailable = this.toNumber(rmEntry.onHand) - this.toNumber(rmEntry.allocated);
       if (netAvailable < quantity) {
         // Allocation failure will already be surfaced in validation; here we just clamp to 0 to avoid NaNs
       } else {
-        rmEntry.allocated = this.toNumber(rmEntry.allocated) + quantity;
+        rmEntry.allocated = Math.max(0, this.toNumber(rmEntry.allocated) - quantity);
         rmEntry.onHand = this.toNumber(rmEntry.onHand) - quantity;
-        // Reduce onHandValue proportionally using average cost if present
-        const avgUnitRM = rmEntry.onHand > 0 ? (this.toNumber(rmEntry.onHandValue) / (this.toNumber(rmEntry.onHand) + quantity)) : this.toNumber(rmEntry.lastUnitCost, 0) || this.toNumber(rmEntry.onHandValue) / Math.max(1, this.toNumber(rmEntry.onHand));
-        rmEntry.onHandValue = Math.max(0, this.toNumber(rmEntry.onHandValue) - quantity * avgUnitRM);
+        const avgUnitRM = this.consumeRawMaterialFifo(rmEntry, quantity);
         rmEntry.lastUnitCost = avgUnitRM;
         state.rawMaterials[fabric] = rmEntry;
       }
 
       // Pay production cost this week
-      const productionCash = quantity * prodUnitCost;
+      const chargedProductionUnits = method === 'inhouse'
+        ? Math.max(GAME_CONSTANTS.BATCH_SIZE, quantity)
+        : quantity;
+      const productionCash = chargedProductionUnits * prodUnitCost;
+      const productionUnitCostBasis = quantity > 0 ? productionCash / quantity : prodUnitCost;
       operationalOutflows += productionCash;
       costProduction += productionCash;
 
@@ -459,8 +533,9 @@ export class GameEngine {
         startWeek: week,
         endWeek,
         quantity,
-        materialUnitCost: this.toNumber((state.productData as any)[product]?.confirmedMaterialCost) || this.toNumber(rmEntry.lastUnitCost, 0),
-        productionUnitCost: prodUnitCost,
+        materialUnitCost: this.toNumber(rmEntry.lastUnitCost, 0)
+          || this.toNumber((state.productData as any)[product]?.confirmedMaterialCost),
+        productionUnitCost: productionUnitCostBasis,
       });
     }
 
@@ -628,7 +703,7 @@ export class GameEngine {
     // Apply start-of-next-week (Week N+1) procurement events: arrivals and payments
     const dueWeekNext = week + 1;
     const nextWeekLedger: Array<{ type: string; amount: number; refId?: string; weekNumber?: number }> = [];
-    const nextWeekArrivals: Array<{ material: MaterialKey; goodUnits: number; unitPrice: number }>
+    const nextWeekArrivals: Array<{ material: MaterialKey; goodUnits: number; orderedUnits: number; unitPrice: number; inventoryUnitCost: number }>
       = [];
     let nextWeekOutflowsMarketing = 0;
     let nextWeekOutflowsSPT = 0;
@@ -649,7 +724,8 @@ export class GameEngine {
             ? this.toNumber((d as any).goodUnits)
             : Math.round(units * (1 - defectRate));
           const u = this.toNumber(d.unitPrice ?? unitPriceC);
-          nextWeekArrivals.push({ material: c.material as MaterialKey, goodUnits, unitPrice: u });
+          const inventoryUnitCost = goodUnits > 0 ? (units * u) / goodUnits : u;
+          nextWeekArrivals.push({ material: c.material as MaterialKey, goodUnits, orderedUnits: units, unitPrice: u, inventoryUnitCost });
           c.deliveredUnits = this.toNumber(c.deliveredUnits) + goodUnits;
           (d as any).__arrived = true;
 
@@ -690,10 +766,11 @@ export class GameEngine {
       const dec = (state.productData as any)[p];
       const rrp = this.toNumber(dec?.rrp);
       const hasPrint = !!dec?.hasPrint;
+      const materialChoice = dec?.fabric as MaterialKey | undefined;
       const discount = this.toNumber((discounts as any)[p]);
       const price = rrp * (1 - discount);
       // Demand
-      const baseDemand = this.calculateDemand(p, week, rrp, discount, 0, hasPrint);
+      const baseDemand = this.calculateDemand(p, week, rrp, discount, 0, hasPrint, materialChoice);
       const demand = Math.round(baseDemand * marketingFactor);
       demandByProduct[p] = demand;
 
@@ -776,9 +853,10 @@ export class GameEngine {
           const dec = (state.productData as any)[p];
           const rrp = this.toNumber(dec?.rrp);
           const hasPrint = !!dec?.hasPrint;
+          const materialChoice = dec?.fabric as MaterialKey | undefined;
           const disc = this.toNumber((discountsN1 as any)[p]);
           if (!rrp) { demandN1[p] = 0; continue; }
-          const base = this.calculateDemand(p, nextWeek, rrp, disc, 0, hasPrint);
+          const base = this.calculateDemand(p, nextWeek, rrp, disc, 0, hasPrint, materialChoice);
           demandN1[p] = Math.round(base * mfN1);
         }
 
@@ -1124,7 +1202,8 @@ export class GameEngine {
     rrp: number,
     discount: number = 0,
     marketingSpend: number = 0,
-    hasPrint: boolean = false
+    hasPrint: boolean = false,
+    materialChoice?: MaterialKey | null
   ): number {
     const productData = GAME_CONSTANTS.PRODUCTS[product];
     // Use season forecast distributed evenly per sales week (9 weeks). We still compute weekly
@@ -1132,19 +1211,19 @@ export class GameEngine {
     // seasonality multiplier inside the 9-week window.
     const baseWeekly = productData.forecast / 9;
 
-    // Price effect
-    const finalPrice = rrp * (1 - discount);
-    const priceEffect = Math.pow(rrp / finalPrice, productData.elasticity);
-    
-    // Positioning effect 
-    const priceRatio = (rrp / productData.hmPrice) - 1;
-    const positioningEffect = 1 + (0.8 / (1 + Math.exp(-(-50) * (priceRatio - 0.20)))) - 0.4;
+    // RRP positioning is centred on "accessible premium": roughly +20% to H&M.
+    const positioningEffect = this.calculatePositioningEffect(product, rrp);
+
+    // Promotional discounts affect the live shelf price. With negative
+    // elasticity, a lower final price should increase unit demand.
+    const finalPrice = Math.max(0.01, rrp * (1 - this.clamp(discount, -1, 0.95)));
+    const discountEffect = Math.pow(finalPrice / Math.max(0.01, rrp), productData.elasticity);
     
     // Design appeal effect
-    const designEffect = hasPrint ? 1.05 : 0.95;
+    const designEffect = this.calculateDesignEffect(materialChoice, hasPrint);
     
     // Base demand before Awareness/Intent adjustment; marketingSpend no longer directly boosts demand
-    return Math.round(baseWeekly * priceEffect * positioningEffect * designEffect);
+    return Math.round(baseWeekly * positioningEffect * discountEffect * designEffect);
   }
   
   static calculateProjectedUnitCost(
@@ -1199,7 +1278,8 @@ export class GameEngine {
     for (const b of prod?.batches || []) {
       if (b.startWeek === weekNumber) {
         const qty = Number(b.quantity || 0);
-        operationalOutflows += qty * this.getProductionUnitCost(b.product, b.method);
+        const chargedQty = b.method === 'inhouse' ? Math.max(GAME_CONSTANTS.BATCH_SIZE, qty) : qty;
+        operationalOutflows += chargedQty * this.getProductionUnitCost(b.product, b.method);
         const shipMethod = (b.shipping || 'standard') as 'standard' | 'expedited';
         operationalOutflows += qty * this.getShippingUnitCost(b.product, shipMethod);
       }
@@ -1457,7 +1537,7 @@ export class GameEngine {
       for (const p of ['jacket', 'dress', 'pants']) {
         const d = productData?.[p];
         if (d?.rrp) {
-          nextDemand += this.calculateDemand(p as any, nextWeek, Number(d.rrp), 0, Number((currentState as any).marketingPlan?.totalSpend ?? 0), Boolean(d.hasPrint));
+          nextDemand += this.calculateDemand(p as any, nextWeek, Number(d.rrp), 0, Number((currentState as any).marketingPlan?.totalSpend ?? 0), Boolean(d.hasPrint), (d as any).fabric);
         }
       }
       // Approx finished goods value in units

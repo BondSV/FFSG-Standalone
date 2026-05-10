@@ -92,6 +92,28 @@ test("demand falls when discount is negative (price above RRP)", () => {
   assert.ok(higher < baseline, `expected demand to drop with higher price (baseline=${baseline}, higher=${higher})`);
 });
 
+test("demand rises when discount is positive", () => {
+  const rrp = GAME_CONSTANTS.PRODUCTS.jacket.hmPrice * 1.2;
+  const baseline = GameEngine.calculateDemand("jacket" as any, 8, rrp, 0, 0, false);
+  const discounted = GameEngine.calculateDemand("jacket" as any, 8, rrp, 0.2, 0, false);
+  assert.ok(discounted > baseline, `expected demand to rise with discount (baseline=${baseline}, discounted=${discounted})`);
+});
+
+test("accessible-premium RRP around H&M plus 20% has stronger demand than extreme premium", () => {
+  const target = GAME_CONSTANTS.PRODUCTS.pants.hmPrice * 1.2;
+  const extreme = GAME_CONSTANTS.PRODUCTS.pants.hmPrice * 2.5;
+  const targetDemand = GameEngine.calculateDemand("pants" as any, 8, target, 0, 0, false);
+  const extremeDemand = GameEngine.calculateDemand("pants" as any, 8, extreme, 0, 0, false);
+  assert.ok(targetDemand > extremeDemand, `expected accessible-premium demand to exceed extreme premium demand (target=${targetDemand}, extreme=${extremeDemand})`);
+});
+
+test("fabric and print choices affect demand in the engine", () => {
+  const rrp = GAME_CONSTANTS.PRODUCTS.jacket.hmPrice * 1.2;
+  const standard = GameEngine.calculateDemand("jacket" as any, 8, rrp, 0, 0, false, "standardDenim" as any);
+  const selvedgePrint = GameEngine.calculateDemand("jacket" as any, 8, rrp, 0, 0, true, "selvedgeDenim" as any);
+  assert.ok(selvedgePrint > standard, `expected premium fabric + print to lift demand (standard=${standard}, selvedgePrint=${selvedgePrint})`);
+});
+
 test("calculateActualUnitCost handles zero units", () => {
   assert.equal(GameEngine.calculateActualUnitCost(0, 0, 0, 0, 0, 0), 0);
 });

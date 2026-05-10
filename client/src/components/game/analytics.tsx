@@ -52,6 +52,7 @@ interface WeekRow {
   cumulativeRevenue: number;
   cumulativeCogs: number;
   cumulativeMargin: number;
+  actualUnitCost: number;
 }
 
 const COST_COLORS: Record<string, string> = {
@@ -121,15 +122,23 @@ export default function Analytics({ gameSession, currentState }: AnalyticsProps)
     const out: WeekRow[] = [];
     let cumulativeRevenue = 0;
     let cumulativeCogs = 0;
+    let prevCumulativeMaterialCosts = 0;
+    let prevCumulativeInterest = 0;
     for (const w of weeks) {
       const cb = (w.costBreakdown || {}) as Record<string, number>;
       const totals = (w.totals || {}) as Record<string, number>;
-      const cm = num(cb.materials);
+      const cumulativeMaterialCosts = num(w.materialCosts);
+      const materialPaymentThisWeek = Math.max(0, cumulativeMaterialCosts - prevCumulativeMaterialCosts);
+      const cm = num(cb.materials) || materialPaymentThisWeek;
+      prevCumulativeMaterialCosts = Math.max(prevCumulativeMaterialCosts, cumulativeMaterialCosts);
+      const cumulativeInterest = num(w.interestAccrued);
+      const interestThisWeek = Math.max(0, cumulativeInterest - prevCumulativeInterest);
+      prevCumulativeInterest = Math.max(prevCumulativeInterest, cumulativeInterest);
       const cp = num(cb.production);
       const cl = num(cb.logistics);
       const cmkt = num(cb.marketing);
       const ch = num(cb.holding);
-      const ci = num(cb.interest);
+      const ci = num(cb.interest) || interestThisWeek;
       const totalCost = cm + cp + cl + cmkt + ch + ci;
       const weeklyRevenue = num(w.weeklyRevenue);
       const margin = weeklyRevenue - totalCost;
@@ -143,13 +152,13 @@ export default function Analytics({ gameSession, currentState }: AnalyticsProps)
       const serviceLevelWeek = demandTotal > 0 ? salesTotal / demandTotal : (lostTotal === 0 ? 1 : 0);
 
       const rm = w.rawMaterials || {};
-      const rmValue = Object.values(rm).reduce((s: number, e: any) => s + num(e?.onHand) * num(e?.unitCost), 0);
+      const rmValue = Object.values(rm).reduce((s: number, e: any) => s + num(e?.onHandValue), 0);
       const wipBatches = (w.workInProcess?.batches || []) as any[];
-      const wipValue = wipBatches.reduce((s, b) => s + num(b.units || b.quantity) * num(b.unitCost || b.materialCostPerUnit), 0);
+      const wipValue = wipBatches.reduce((s, b) => s + num(b.quantity) * (num(b.materialUnitCost) + num(b.productionUnitCost)), 0);
       const inTransitArr = (w.shipmentsInTransit || []) as any[];
-      const inTransitValue = inTransitArr.reduce((s, sh) => s + num(sh.units) * (num(sh.materialCostPerUnit) + num(sh.productionCostPerUnit) + num(sh.shippingCostPerUnit)), 0);
+      const inTransitValue = inTransitArr.reduce((s, sh) => s + num(sh.quantity) * (num(sh.unitMaterialCost) + num(sh.unitProductionCost) + num(sh.unitShippingCost)), 0);
       const fgLots = (w.finishedGoods?.lots || []) as any[];
-      const fgValue = fgLots.reduce((s, l) => s + num(l.units) * (num(l.materialCostPerUnit) + num(l.productionCostPerUnit) + num(l.shippingCostPerUnit)), 0);
+      const fgValue = fgLots.reduce((s, l) => s + num(l.quantity) * num(l.unitCostBasis), 0);
       const inventoryValue = rmValue + wipValue + inTransitValue + fgValue;
 
       const cash = num(w.cashOnHand);
@@ -193,6 +202,7 @@ export default function Analytics({ gameSession, currentState }: AnalyticsProps)
         cumulativeRevenue,
         cumulativeCogs,
         cumulativeMargin,
+        actualUnitCost: num(w.actualUnitCost),
       });
     }
     return out;
@@ -244,12 +254,12 @@ export default function Analytics({ gameSession, currentState }: AnalyticsProps)
   }, [series, last]);
 
   const grossMarginPct = totals.revenue > 0 ? (totals.revenue - totals.cogs) / totals.revenue : 0;
-  const economicProfit = totals.revenue - (totals.cogs + totals.cogsMarketing + totals.holding + totals.interest);
   const avgCapital = useMemo(() => {
     if (!series.length) return 0;
     const sum = series.reduce((s, r) => s + r.capitalEmployed, 0);
     return sum / series.length;
   }, [series]);
+  const economicProfit = totals.revenue - (totals.cogs + totals.cogsMarketing + totals.holding + totals.interest) - avgCapital * 0.10;
   const rollingService = useMemo(() => {
     const window = series.filter((r) => r.demandTotal > 0).slice(-4);
     if (!window.length) return 1;
@@ -632,16 +642,15 @@ export default function Analytics({ gameSession, currentState }: AnalyticsProps)
           {/* Panel 7: Three-tier cost vs RRP per product */}
           <Card>
             <CardHeader>
-              <CardTitle>Three-Tier Costs vs RRP (per product)</CardTitle>
-              <p className="text-sm text-gray-500">Standard cost (planning), Discount cost (orders adjusted), Actual cost (COGS / units sold).</p>
+              <CardTitle>Unit Cost vs RRP (per product)</CardTitle>
+              <p className="text-sm text-gray-500">Actual unit cost is calculated from cumulative COGS divided by units sold.</p>
             </CardHeader>
             <CardContent>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 {productKeys.map((p) => {
                   const rrp = num((currentState?.productData as any)?.[p]?.rrp);
                   const std = num(last?.cumulativeCogs && totals.unitsSold ? totals.cogs / totals.unitsSold : 0);
-                  const discounted = std; // engine reports unified actualUnitCost; we re-use it for now
-                  const actual = num(last && (last as any).actualUnitCost) || std;
+                  const actual = num(last?.actualUnitCost) || std;
                   const margin = rrp - actual;
                   const marginPct = rrp > 0 ? (margin / rrp) : 0;
                   return (
@@ -651,8 +660,7 @@ export default function Analytics({ gameSession, currentState }: AnalyticsProps)
                         <Badge variant="secondary">{rrp ? formatCurrency(rrp) : "RRP TBD"}</Badge>
                       </div>
                       <div className="space-y-2 text-sm">
-                        <div className="flex justify-between"><span className="text-gray-600">Standard unit cost</span><span className="font-mono">{formatCurrency(std)}</span></div>
-                        <div className="flex justify-between"><span className="text-gray-600">Discounted unit cost</span><span className="font-mono">{formatCurrency(discounted)}</span></div>
+                        <div className="flex justify-between"><span className="text-gray-600">Average sold COGS/unit</span><span className="font-mono">{formatCurrency(std)}</span></div>
                         <div className="flex justify-between"><span className="text-gray-600">Actual unit cost</span><span className="font-mono">{formatCurrency(actual)}</span></div>
                         <div className="flex justify-between border-t pt-2"><span className="text-gray-600">Unit margin</span><span className={`font-mono ${margin >= 0 ? "text-emerald-600" : "text-red-600"}`}>{formatCurrency(margin)} ({(marginPct * 100).toFixed(0)}%)</span></div>
                       </div>

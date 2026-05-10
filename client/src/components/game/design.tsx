@@ -11,6 +11,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { Palette, AlertCircle, Users, PoundSterling, Tag } from "lucide-react";
 import { ProductIcon } from "@/components/ui/product-icon";
+import { FABRIC_DEMAND_LIFT, PRINT_DEMAND_LIFT, estimateSeasonDemand } from "@/lib/simulation-formulas";
 
 interface DesignProps {
   gameSession: any;
@@ -50,34 +51,9 @@ const products = [
   },
 ];
 
-// Demand helpers matched to Price Positioning behavior
-const UNIFIED_ELASTICITY = -1.40;
-function clamp(value: number, min: number, max: number) { return Math.min(max, Math.max(min, value)); }
-function round(value: number) { return Math.round(value); }
 function currency(value: number) {
   return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(value || 0);
 }
-function computePositionEffect(price: number, ref_price: number): number {
-  const signedDelta = (price / ref_price) - 1;
-  const delta = Math.abs(signedDelta);
-  const ceil = 0.95, p = 3, s = 0.21;
-  const base = 1 - Math.exp(-Math.pow(delta / s, p));
-  const bump = 40 * (delta * delta) * Math.exp(-Math.pow(delta / 0.08, 2));
-  const magnitude = Math.min(1, ceil * base + bump);
-  const raw = 1 + (signedDelta < 0 ? magnitude : -magnitude);
-  return clamp(raw, 0, 2);
-}
-
-// Small demand lift by fabric quality, and optional print lift
-const fabricDemandLift: Record<string, number> = {
-  selvedgeDenim: 0.06,
-  standardDenim: 0.00,
-  egyptianCotton: 0.05,
-  polyesterBlend: -0.02,
-  fineWaleCorduroy: 0.04,
-  wideWaleCorduroy: 0.00,
-};
-const printDemandLift = 0.03;
 
 export default function Design({ gameSession, currentState }: DesignProps) {
   const { toast } = useToast();
@@ -140,19 +116,17 @@ export default function Design({ gameSession, currentState }: DesignProps) {
 
   const projectedDemand = (productId: string, fabricId: string | undefined, hasPrint: boolean): number | null => {
     if (!constants) return null;
-    const p = products.find((x) => x.id === productId)!;
     const rrp = Number(currentState?.productData?.[productId]?.rrp);
     if (!rrp) return null;
-    const hm = constants.PRODUCTS?.[productId]?.hmPrice || 0;
-    const ref = hm * 1.2;
-    const baseUnits = p.forecast;
-    const priceEffect = Math.pow(rrp / ref, UNIFIED_ELASTICITY);
-    const positionEffect = computePositionEffect(rrp, ref);
-    const fabricLift = fabricDemandLift[fabricId || ''] || 0;
-    const designEffect = 1 + fabricLift + (hasPrint ? printDemandLift : 0);
-    const units = baseUnits * priceEffect * positionEffect * designEffect;
-    const pct = clamp(units / baseUnits, 0, 2);
-    return round(baseUnits * pct);
+    const info = constants.PRODUCTS?.[productId];
+    if (!info) return null;
+    return estimateSeasonDemand(
+      { forecast: Number(info.forecast || 0), hmPrice: Number(info.hmPrice || 0), elasticity: Number(info.elasticity || -1.4) },
+      rrp,
+      0,
+      fabricId,
+      hasPrint
+    );
   };
 
   const updateStateMutation = useMutation({
@@ -249,7 +223,7 @@ export default function Design({ gameSession, currentState }: DesignProps) {
   };
 
   const designLockedAll = ['jacket', 'dress', 'pants'].every((p) => currentState?.productData?.[p]?.designLocked);
-  const isLocked = designLockedAll || (currentState?.weekNumber > 1);
+  const isLocked = designLockedAll;
 
   return (
     <div className="p-6">
@@ -322,7 +296,7 @@ export default function Design({ gameSession, currentState }: DesignProps) {
                   >
                     {product.fabricOptions.map((fabric) => {
                       const matCost = getAvgMaterialPrice(fabric.id);
-                      const lift = fabricDemandLift[fabric.id] || 0;
+                      const lift = FABRIC_DEMAND_LIFT[fabric.id] || 0;
                       const avail = getMaterialAvailability(fabric.id);
                       const availText = avail === 'both' ? 'Both suppliers' : avail === 'supplier1' ? 'Only Supplier‑1' : avail === 'supplier2' ? 'Only Supplier‑2' : 'Availability TBD';
                       const availClass = avail === 'both' ? 'bg-gray-100 text-gray-700' : 'bg-amber-100 text-amber-800';
@@ -359,7 +333,7 @@ export default function Design({ gameSession, currentState }: DesignProps) {
                     </div>
                     <div className="flex items-center gap-3 text-xs">
                       <span className="px-2 py-1 rounded bg-gray-100 text-gray-700">Surcharge {currency(sel.fabric ? getAvgPrintSurcharge(sel.fabric) : 0)}</span>
-                      <span className="px-2 py-1 rounded bg-green-100 text-green-700">Demand +{Math.round(printDemandLift*100)}%</span>
+                      <span className="px-2 py-1 rounded bg-green-100 text-green-700">Demand +{Math.round(PRINT_DEMAND_LIFT*100)}%</span>
                     </div>
                   </div>
                 </div>

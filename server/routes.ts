@@ -374,7 +374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           leadWeeks: lead,
           productionLastWeek,
           shipping: shipMethod,
-          shippingLocked: status !== 'planned' && status !== 'inProduction',
+          shippingLocked: status !== 'planned',
           onShelfWeek,
           status,
           comparison: {
@@ -782,6 +782,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } 
         // Process production schedule if it exists in updates
         else if (updates.productionSchedule) {
+          const existingBatches = ((weeklyState as any).productionSchedule?.batches || []) as any[];
+          const proposedBatches = ((updates.productionSchedule as any)?.batches || []) as any[];
+          const currentWeekForLock = Number((weeklyState as any).weekNumber || week);
+          const existingById = new Map(existingBatches.map((b: any) => [String(b.id), b]));
+          for (const proposed of proposedBatches) {
+            const existing = existingById.get(String(proposed.id));
+            if (!existing) continue;
+            const hasStarted = Number(existing.startWeek || 0) <= currentWeekForLock;
+            const existingShipping = existing.shipping || 'standard';
+            const proposedShipping = proposed.shipping || 'standard';
+            if (hasStarted && existingShipping !== proposedShipping) {
+              return res.status(400).json({
+                message: "Shipping is locked once production starts for a batch.",
+              });
+            }
+          }
           const processedUpdates = GameEngine.processProductionSchedule(weeklyState, updates);
           weeklyState = await storage.updateWeeklyState(weeklyState.id, processedUpdates);
         } 
@@ -932,11 +948,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             (acc: number, b: any) => acc + Number(b.quantity || 0) * (Number(b.materialUnitCost || 0) + Number(b.productionUnitCost || 0)),
             0
           );
+          const inTransitValue = ((s.shipmentsInTransit) || []).reduce(
+            (acc: number, sh: any) => acc + Number(sh.quantity || 0) * (Number(sh.unitMaterialCost || 0) + Number(sh.unitProductionCost || 0) + Number(sh.unitShippingCost || 0)),
+            0
+          );
           const fgValue = ((s.finishedGoods?.lots) || []).reduce(
             (acc: number, l: any) => acc + Number(l.quantity || 0) * Number(l.unitCostBasis || 0),
             0
           );
-          return cash + credit + rmValue + wipValue + fgValue;
+          return cash + credit + rmValue + wipValue + inTransitValue + fgValue;
         });
         const averageCapital = capitalByWeek.length > 0
           ? capitalByWeek.reduce((s, v) => s + v, 0) / capitalByWeek.length
@@ -1006,13 +1026,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
 
         // Apply staged N+1 arrivals and outflows into the new state's opening snapshot
-        const arrivals: Array<{ material: string; goodUnits: number; unitPrice: number }> = (computed as any).nextWeekArrivals || [];
+        const arrivals: Array<{ material: string; goodUnits: number; orderedUnits?: number; unitPrice: number; inventoryUnitCost?: number }> = (computed as any).nextWeekArrivals || [];
         nextWeekState.rawMaterials = nextWeekState.rawMaterials || {};
         for (const a of arrivals) {
           const mat = String(a.material || 'unknown');
-          const entry: any = nextWeekState.rawMaterials[mat] || { onHand: 0, allocated: 0, inTransit: [] };
+          const entry: any = nextWeekState.rawMaterials[mat] || { onHand: 0, allocated: 0, inTransit: [], costLots: [] };
+          const goodUnits = Number(a.goodUnits || 0);
+          const inventoryUnitCost = Number(a.inventoryUnitCost ?? a.unitPrice ?? 0);
           entry.onHand = Number(entry.onHand || 0) + Number(a.goodUnits || 0);
-          entry.onHandValue = Number(entry.onHandValue || 0) + Number(a.goodUnits || 0) * Number(a.unitPrice || 0);
+          entry.onHandValue = Number(entry.onHandValue || 0) + goodUnits * inventoryUnitCost;
+          entry.lastUnitCost = inventoryUnitCost;
+          entry.costLots = Array.isArray(entry.costLots) ? entry.costLots : [];
+          if (goodUnits > 0) {
+            entry.costLots.push({ quantity: goodUnits, unitCost: inventoryUnitCost });
+          }
           nextWeekState.rawMaterials[mat] = entry;
         }
 
@@ -1023,10 +1050,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const costInterest = Number(out.interest || 0);
         if (costInterest > 0) {
           if (cashOnHandN1 >= costInterest) cashOnHandN1 -= costInterest; else { creditUsedN1 += (costInterest - cashOnHandN1); cashOnHandN1 = 0; }
+          nextWeekState.interestAccrued = (Number(nextWeekState.interestAccrued || 0) + costInterest).toFixed(2);
         }
         const ops = Number(out.marketing || 0) + Number(out.materials_spt || 0) + Number(out.materials_gmc || 0) + Number(out.holding || 0);
         if (ops > 0) {
           if (cashOnHandN1 >= ops) cashOnHandN1 -= ops; else { creditUsedN1 += (ops - cashOnHandN1); cashOnHandN1 = 0; }
+        }
+        const supplierMaterialsPaid = Number(out.materials_spt || 0) + Number(out.materials_gmc || 0);
+        if (supplierMaterialsPaid > 0) {
+          nextWeekState.materialCosts = (Number(nextWeekState.materialCosts || 0) + supplierMaterialsPaid).toFixed(2);
         }
         nextWeekState.cashOnHand = cashOnHandN1.toFixed(2);
         nextWeekState.creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsedN1).toFixed(2);
@@ -1073,17 +1105,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (c.type === 'SPT') {
           for (const d of (c.deliveries || [])) {
             if (Number(d.week) === week) {
-              const goodUnits = Number((d as any).goodUnits ?? d.units);
+              const billedUnits = Number(d.units || 0);
               const u = Number(d.unitPrice ?? unitPrice);
-              result.push({ type: 'materials_spt', amount: goodUnits * u, refId: `${c.supplier}:${c.material}` });
+              result.push({ type: 'materials_spt', amount: billedUnits * u, refId: `${c.supplier}:${c.material}` });
             }
           }
         } else if (c.type === 'GMC') {
           for (const d of (c.deliveries || [])) {
             if (Number(d.week) + 2 === week) {
-              const goodUnits = Number((d as any).goodUnits ?? d.units);
+              const billedUnits = Number(d.units || 0);
               const u = Number(d.unitPrice ?? unitPrice);
-              result.push({ type: 'materials_gmc', amount: goodUnits * u, refId: `${c.supplier}:${c.material}` });
+              result.push({ type: 'materials_gmc', amount: billedUnits * u, refId: `${c.supplier}:${c.material}` });
             }
           }
         }
@@ -1098,8 +1130,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const units = Number(b.quantity || 0);
           const mfg = (GAME_CONSTANTS.MANUFACTURING as any)[product] || {};
           const unitProd = method === 'inhouse' ? Number(mfg.inHouseCost || 0) : Number(mfg.outsourceCost || 0);
-          result.push({ type: 'production', amount: units * unitProd, refId: product });
-          const shipUnit = 0; // shipping cost is already captured at schedule time by engine; unknown per-product config here
+          const productionUnitsBilled = method === 'inhouse' ? Math.max(Number(GAME_CONSTANTS.BATCH_SIZE || 25000), units) : units;
+          result.push({ type: 'production', amount: productionUnitsBilled * unitProd, refId: product });
+          const shippingMode = (b.shipping || 'standard') as 'standard' | 'expedited';
+          const shipUnit = Number((GAME_CONSTANTS.SHIPPING as any)[product]?.[shippingMode] || 0);
           if (shipUnit > 0) result.push({ type: 'logistics', amount: units * shipUnit, refId: product });
         }
       }
@@ -1130,7 +1164,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/game/calculate-demand', async (req, res) => {
     try {
-      const { product, week, rrp, discount, marketingSpend, hasPrint } = req.body;
+      const { product, week, rrp, discount, marketingSpend, hasPrint, materialChoice, fabric } = req.body;
       
       const demand = GameEngine.calculateDemand(
         product,
@@ -1138,7 +1172,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rrp,
         discount || 0,
         marketingSpend || 0,
-        hasPrint || false
+        hasPrint || false,
+        materialChoice || fabric || null
       );
       
       res.json({ demand });

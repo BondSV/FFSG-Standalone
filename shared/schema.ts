@@ -231,6 +231,9 @@ export interface MaterialsInventoryByKey {
   onHand: number; // units
   allocated: number; // units reserved for production
   inTransit: Array<{ quantity: number; arrivalWeek: number; supplier: SupplierKey; unitCost: number }>;
+  costLots?: Array<{ quantity: number; unitCost: number }>; // FIFO cost layers for actual COGS
+  onHandValue?: number;
+  lastUnitCost?: number;
 }
 
 export type RawMaterialsInventory = Partial<Record<MaterialKey, MaterialsInventoryByKey>>;
@@ -269,7 +272,7 @@ export interface ShipmentInTransit {
 export interface ProductionBatchPlan {
   id: string;
   product: ProductKey;
-  quantity: number; // must be multiple of 25,000
+  quantity: number; // normally 25,000; partial in-house batches still consume and cost one full rung
   method: 'inhouse' | 'outsource';
   startWeek: number;
   shipping: 'standard' | 'expedited';
