@@ -343,7 +343,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                 <span className="font-medium">Right message, right time.</span> Early weeks focus on being seen; mid‑season balances reach and conversion; late season turns interest into action. Use discounts thoughtfully: they trade margin for speed.
               </li>
               <li>
-                <span className="font-medium">Learn by experimenting.</span> Make small adjustments to budget and split, watch Awareness and Intent to Buy respond, and track ROAS/CAC trends. Aim for steady improvement, not one‑week spikes.
+                <span className="font-medium">Learn by experimenting.</span> Make small adjustments to budget and split, watch top-of-mind awareness and likely-buyer intent respond, and track ROAS/CAC trends. Aim for steady improvement, not one‑week spikes.
               </li>
               <li>
                 <span className="font-medium">Stock and price reality.</span> Marketing can’t sell what isn’t available, and deep discounts can erode profit faster than they boost units. Check inventory and price before pushing harder.
@@ -357,25 +357,25 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       <Card className="border border-gray-100 mb-6">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">Awareness • Intent to Buy • Demand</CardTitle>
-          <p className="text-sm text-gray-600">These indicators summarize how well people know about your brand (Awareness), how ready they are to purchase (Intent to Buy), and the units sold last week (Demand). Adjust your plan below and apply it to next week.</p>
+          <p className="text-sm text-gray-600">These indicators summarize the share of target customers who would name your brand first (Awareness), the share likely to buy (Intent to Buy), and the units sold last week (Demand). Adjust your plan below and apply it to next week.</p>
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-center">
             <div className="flex items-center gap-3">
               <DonutGauge key={`A-${awarenessNow}-${preview?.nextAwareness ?? 'na'}`} value={Number.isFinite(awarenessNow)?awarenessNow:undefined} forecast={isFinalWeek?undefined:preview?.nextAwareness} colorClass="stroke-blue-500" />
-              <TooltipWrapper content="Awareness: how many people have heard about your product. Builds slowly with broad‑reach channels (Social, Influencers, Print/TV). Higher awareness enables faster growth in intent.">
+              <TooltipWrapper content="Awareness: top-of-mind share of target customers who would name your brand first. Builds slowly with broad-reach channels (Social, Influencers, Print/TV). Higher awareness enables faster growth in intent.">
                 <div>
                   <div className="text-sm text-gray-700">Awareness</div>
-                  <div className="text-xs text-gray-500">Long‑term visibility</div>
+                  <div className="text-xs text-gray-500">Top-of-mind brand recall</div>
                 </div>
               </TooltipWrapper>
             </div>
             <div className="flex items-center gap-3">
               <DonutGauge key={`I-${intentNow}-${preview?.nextIntent ?? 'na'}`} value={Number.isFinite(intentNow)?intentNow:undefined} forecast={isFinalWeek?undefined:preview?.nextIntent} colorClass="stroke-blue-500" />
-              <TooltipWrapper content="Intent to Buy: readiness to purchase. Grows faster when awareness is already high and you focus on performance channels (Search) or promotions. Volatile if discounts change erratically.">
+              <TooltipWrapper content="Intent to Buy: share of target customers likely to buy. Grows faster when awareness is already high and you focus on performance channels (Search) or promotions. Volatile if discounts change erratically.">
                 <div>
                   <div className="text-sm text-gray-700">Intent to Buy</div>
-                  <div className="text-xs text-gray-500">Short‑term purchase motivation</div>
+                  <div className="text-xs text-gray-500">Likely-buyer share</div>
                 </div>
               </TooltipWrapper>
             </div>

@@ -553,7 +553,7 @@ export default function Analytics({ gameSession, currentState }: AnalyticsProps)
             <Card>
               <CardHeader>
                 <CardTitle>Marketing — Awareness, Intent &amp; Spend</CardTitle>
-                <p className="text-sm text-gray-500">A &amp; I trajectory vs. weekly spend</p>
+                <p className="text-sm text-gray-500">Top-of-mind awareness and likely-buyer intent vs. weekly spend</p>
               </CardHeader>
               <CardContent>
                 <div className="h-72">
@@ -565,8 +565,8 @@ export default function Analytics({ gameSession, currentState }: AnalyticsProps)
                       <YAxis yAxisId="right" orientation="right" tick={{ fontSize: 12 }} tickLine={false} axisLine={false} tickFormatter={(v) => `£${(v / 1000).toFixed(0)}k`} />
                       <Tooltip formatter={(v: any, n: any) => (n === "Spend" ? formatCurrency(Number(v)) : `${Number(v).toFixed(1)}%`)} labelFormatter={(l) => `Week ${l}`} />
                       <Legend />
-                      <Area yAxisId="left" type="monotone" dataKey="awareness" name="Awareness" stroke="#8B5CF6" fill="#8B5CF6" fillOpacity={0.15} strokeWidth={2} />
-                      <Area yAxisId="left" type="monotone" dataKey="intent" name="Intent" stroke="#EC4899" fill="#EC4899" fillOpacity={0.15} strokeWidth={2} />
+                      <Area yAxisId="left" type="monotone" dataKey="awareness" name="Top-of-mind awareness" stroke="#8B5CF6" fill="#8B5CF6" fillOpacity={0.15} strokeWidth={2} />
+                      <Area yAxisId="left" type="monotone" dataKey="intent" name="Likely buyers" stroke="#EC4899" fill="#EC4899" fillOpacity={0.15} strokeWidth={2} />
                       <Bar yAxisId="right" dataKey="marketingSpend" name="Spend" fill="#F59E0B" />
                     </ComposedChart>
                   </ResponsiveContainer>
