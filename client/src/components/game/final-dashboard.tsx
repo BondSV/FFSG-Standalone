@@ -122,7 +122,7 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
   const formatCurrency = (v: number) => new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP', maximumFractionDigits: 0 }).format(v);
 
   return (
-    <div className="fixed inset-0 bg-white bg-opacity-95 backdrop-blur-sm overflow-y-auto z-50 p-6">
+    <div className="bg-white">
       <div className="max-w-6xl mx-auto space-y-6">
         <h1 className="text-2xl font-bold">Final Performance Dashboard</h1>
 
@@ -258,4 +258,3 @@ export default function FinalDashboard({ gameId }: FinalDashboardProps) {
     </div>
   );
 }
-
