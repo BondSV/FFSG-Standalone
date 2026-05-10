@@ -132,6 +132,30 @@ export default function Dashboard() {
   const gameSession = (gameData as any)?.gameSession || null;
   const currentState = (gameData as any)?.currentState || null;
 
+  if (gameSession?.isCompleted) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <header className="border-b bg-white px-6 py-4">
+          <div className="mx-auto flex max-w-7xl items-center justify-between gap-4">
+            <div>
+              <h1 className="text-xl font-bold text-gray-900">Fast Fashion Simulation</h1>
+              <p className="text-sm text-gray-600">Final results and debrief</p>
+            </div>
+            <Button
+              onClick={() => startGameMutation.mutate()}
+              disabled={startGameMutation.isPending}
+            >
+              {startGameMutation.isPending ? "Starting..." : "Start New Game"}
+            </Button>
+          </div>
+        </header>
+        <main className="mx-auto max-w-7xl p-6">
+          <FinalDashboard gameId={gameSession.id} />
+        </main>
+      </div>
+    );
+  }
+
   // Build/refresh the overview summary when currentState changes (requires prev week & ledger)
   // Summary pane is temporarily disabled
 

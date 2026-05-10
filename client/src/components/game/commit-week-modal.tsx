@@ -38,6 +38,24 @@ export default function CommitWeekModal({
   const [summary, setSummary] = useState<WeeklySummary | null>(null);
   const [showSummary, setShowSummary] = useState(false);
 
+  const parseCommitError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : String(error || "");
+    const jsonStart = message.indexOf("{");
+    if (jsonStart >= 0) {
+      try {
+        const parsed = JSON.parse(message.slice(jsonStart));
+        const errors = Array.isArray(parsed.errors) ? parsed.errors : [];
+        return {
+          message: String(parsed.message || "Cannot commit week due to validation errors"),
+          errors: errors.map(String),
+        };
+      } catch {
+        // Fall through to the raw message.
+      }
+    }
+    return { message, errors: [] as string[] };
+  };
+
   const validateMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest('POST', `/api/game/${gameSession.id}/week/${currentState.weekNumber}/validate`);
@@ -116,9 +134,17 @@ export default function CommitWeekModal({
         }, 500);
         return;
       }
+      const parsed = parseCommitError(error);
+      if (parsed.errors.length > 0) {
+        setValidationData({
+          canCommit: false,
+          errors: parsed.errors,
+          warnings: validationData?.warnings || [],
+        });
+      }
       toast({
         title: "Commit Failed",
-        description: "Failed to commit week. Please address validation errors and try again.",
+        description: parsed.errors[0] || parsed.message || "Failed to commit week. Please address validation errors and try again.",
         variant: "destructive",
       });
     },
@@ -126,11 +152,15 @@ export default function CommitWeekModal({
 
   // Trigger validation when modal opens
   useEffect(() => {
-    if (open && !validationData && !isValidating) {
+    if (open) {
+      setValidationData(null);
       setIsValidating(true);
       validateMutation.mutate();
     }
-  }, [open]);
+    // Revalidate every time the modal opens or the active weekly state changes.
+    // Validation can become stale after marketing, procurement, production, or
+    // logistics edits; stale "ready" messages are worse than a short spinner.
+  }, [open, currentState?.id]);
 
   const handleCommit = () => {
     if (validationData?.canCommit) {

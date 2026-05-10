@@ -37,6 +37,7 @@ export interface IStorage {
   createGameSession(gameSession: InsertGameSession): Promise<GameSession>;
   getGameSession(id: string): Promise<GameSession | undefined>;
   getUserActiveGameSession(userId: string): Promise<GameSession | undefined>;
+  getUserLatestGameSession(userId: string): Promise<GameSession | undefined>;
   updateGameSession(id: string, updates: Partial<GameSession>): Promise<GameSession>;
   createWeeklyState(weeklyState: InsertWeeklyState): Promise<WeeklyState>;
   getWeeklyState(gameSessionId: string, weekNumber: number): Promise<WeeklyState | undefined>;
@@ -116,6 +117,13 @@ class InMemoryStorage implements IStorage {
   async getUserActiveGameSession(userId: string): Promise<GameSession | undefined> {
     const sessions = gameSessionsStore
       .filter(s => s.userId === userId && s.isCompleted === false)
+      .sort((a, b) => (a.createdAt as any) > (b.createdAt as any) ? -1 : 1);
+    return sessions[0];
+  }
+
+  async getUserLatestGameSession(userId: string): Promise<GameSession | undefined> {
+    const sessions = gameSessionsStore
+      .filter(s => s.userId === userId)
       .sort((a, b) => (a.createdAt as any) > (b.createdAt as any) ? -1 : 1);
     return sessions[0];
   }
@@ -217,6 +225,15 @@ class DatabaseStorage implements IStorage {
       .select()
       .from(gameSessionsTable)
       .where(and(eq(gameSessionsTable.userId, userId), eq(gameSessionsTable.isCompleted, false as any)))
+      .orderBy(desc(gameSessionsTable.createdAt))
+      .limit(1);
+    return rows[0] as any;
+  }
+  async getUserLatestGameSession(userId: string): Promise<GameSession | undefined> {
+    const rows = await db
+      .select()
+      .from(gameSessionsTable)
+      .where(eq(gameSessionsTable.userId, userId))
       .orderBy(desc(gameSessionsTable.createdAt))
       .limit(1);
     return rows[0] as any;

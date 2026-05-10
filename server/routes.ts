@@ -68,7 +68,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/game/current', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const gameSession = await storage.getUserActiveGameSession(userId);
+      let gameSession = await storage.getUserActiveGameSession(userId);
+      if (!gameSession) {
+        const latestSession = await storage.getUserLatestGameSession(userId);
+        const hasFinalResults = latestSession?.isCompleted && (
+          latestSession.finalScore != null ||
+          latestSession.finalEconomicProfit != null ||
+          latestSession.finalServiceLevel != null
+        );
+        if (hasFinalResults) {
+          gameSession = latestSession;
+        }
+      }
       
       // Return an explicit empty payload instead of 404 so the client can render a start screen gracefully
       if (!gameSession) {
