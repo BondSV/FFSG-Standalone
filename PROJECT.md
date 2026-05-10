@@ -1,6 +1,6 @@
 # Overview
 
-Vintage Revival is a comprehensive business simulation game focused on fast fashion retail operations and project management. Players manage a fashion company through strategic phases including product design, pricing, procurement, production, logistics, and marketing. The simulation teaches real-world business concepts through gameplay mechanics spanning 15 weeks across different business phases (Strategy, Development, Sales, and Run-out). The application is a **standalone** full-stack app: React frontend, Express backend, **PostgreSQL** for persistence (e.g. **Render** or any host with `DATABASE_URL`), and **session-style identification** for players (see Authentication below).
+Fast Fashion Simulation is a business simulation game focused on product launch decisions under time, cash, and supply constraints. Players manage the Vintage Revival capsule collection through strategic phases including product design, pricing, procurement, production, logistics, and marketing. The simulation teaches real-world business concepts through gameplay mechanics spanning 15 weeks across different business phases (Strategy, Development, Sales, and Run-out). The application is a **standalone** full-stack app: React frontend, Express backend, **PostgreSQL** for persistence (e.g. **Render** or any host with `DATABASE_URL`), and **session-style identification** for players (see Authentication below).
 
 This repository is **not** tied to Replit. An early prototype was drafted there once; **no Replit services, hosting, or OIDC are used** in this project.
 

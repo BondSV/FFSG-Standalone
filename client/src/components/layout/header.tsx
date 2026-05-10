@@ -49,8 +49,8 @@ export default function Header({ currentState, onCommitWeek }: HeaderProps) {
         {/* Left side - Game info */}
         <div className="flex items-center gap-6">
           <div>
-            <h1 className="text-xl font-bold text-gray-900">Vintage Revival</h1>
-            <p className="text-sm text-gray-600">Fast Fashion Business Simulation</p>
+            <h1 className="text-xl font-bold text-gray-900">Fast Fashion Simulation</h1>
+            <p className="text-sm text-gray-600">Product launch under time, cash, and supply constraints</p>
           </div>
           
           <div className="flex items-center gap-4">

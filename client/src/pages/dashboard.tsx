@@ -58,7 +58,7 @@ export default function Dashboard() {
       queryClient.invalidateQueries({ queryKey: ['/api/game/current'] });
       toast({
         title: "Game Started",
-        description: "Welcome to the Vintage Revival simulation!",
+        description: "Welcome to Fast Fashion Simulation.",
       });
     },
     onError: (error) => {
@@ -116,7 +116,7 @@ export default function Dashboard() {
             <ArrowRight className="text-white" size={32} />
           </div>
           <h1 className="text-2xl font-bold text-gray-900 mb-4">Ready to Start?</h1>
-          <p className="text-gray-600 mb-8">Launch your Vintage Revival collection and manage it through 15 weeks of strategic decisions.</p>
+          <p className="text-gray-600 mb-8">Launch the Vintage Revival capsule collection and manage it through 15 weeks of strategic decisions.</p>
           <Button 
             onClick={() => startGameMutation.mutate()}
             disabled={startGameMutation.isPending}

@@ -23,8 +23,8 @@ export default function Landing() {
           <div className="mx-auto h-16 w-16 bg-primary rounded-xl flex items-center justify-center mb-6">
             <BarChart3 className="text-white" size={32} />
           </div>
-          <h1 className="text-3xl font-bold text-gray-900 mb-2">Vintage Revival</h1>
-          <p className="text-lg text-gray-600 mb-8">Fast Fashion Business Simulation</p>
+          <h1 className="text-3xl font-bold text-gray-900 mb-2">Fast Fashion Simulation</h1>
+          <p className="text-lg text-gray-600 mb-8">Product launch under time, cash, and supply constraints</p>
         </div>
 
         <Card className="shadow-lg">
