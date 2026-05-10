@@ -331,6 +331,27 @@ export class GameEngine {
     return GAME_CONSTANTS.SUPPLIERS[supplier].defectRate;
   }
 
+  private static hashToUnitInterval(seed: string): number {
+    let hash = 2166136261;
+    for (let i = 0; i < seed.length; i += 1) {
+      hash ^= seed.charCodeAt(i);
+      hash = Math.imul(hash, 16777619);
+    }
+    return (hash >>> 0) / 4294967295;
+  }
+
+  private static getSeededDeliveryDefectRate(supplier: SupplierKey, seed: string): number {
+    const maxDefectRate = this.getSupplierDefectRate(supplier);
+    if (maxDefectRate <= 0) return 0;
+    return this.hashToUnitInterval(seed) * maxDefectRate;
+  }
+
+  private static calculateDeliveryGoodUnits(supplier: SupplierKey, units: number, seed: string): number {
+    const orderedUnits = Math.max(0, Math.round(this.toNumber(units)));
+    const defectRate = this.getSeededDeliveryDefectRate(supplier, seed);
+    return Math.min(orderedUnits, Math.max(0, Math.round(orderedUnits * (1 - defectRate))));
+  }
+
   private static getMaterialBasePrice(supplier: SupplierKey, material: MaterialKey): number {
     return (GAME_CONSTANTS.SUPPLIERS as any)[supplier].materials[material].price || 0;
   }
@@ -355,7 +376,7 @@ export class GameEngine {
   private static scheduleDeliveriesForContract(contract: any): any {
     // Always ensure deliveries reflect the latest orders; merge missing entries
     const lead = this.getSupplierLeadTime(contract.supplier);
-    const defectRate = this.getSupplierDefectRate(contract.supplier);
+    const supplier = contract.supplier as SupplierKey;
     const locked = contract.lockedUnitPrice != null ? Number(contract.lockedUnitPrice) : undefined;
     const unitPrice = locked != null ? locked : this.computeContractUnitPrice(contract);
     contract.deliveries = contract.deliveries || [];
@@ -366,7 +387,8 @@ export class GameEngine {
         const arrWeek = this.toNumber(o.week) + lead;
         const units = this.toNumber(o.units);
         const uPrice = this.toNumber(o.unitPrice ?? unitPrice);
-        const goodUnits = Math.round(units * (1 - defectRate));
+        const seed = `${contract.id || ''}:${o.orderId || ''}:${arrWeek}:${units}:${uPrice}`;
+        const goodUnits = this.calculateDeliveryGoodUnits(supplier, units, seed);
         // consider an entry existing if same week and units exist
         const exists = (contract.deliveries as any[]).some((d: any) => this.toNumber(d.week) === arrWeek && this.toNumber(d.units) === units);
         if (!exists) {
@@ -376,10 +398,12 @@ export class GameEngine {
     } else {
       if ((contract.deliveries as any[]).length === 0) {
         const units = this.toNumber(contract.units);
+        const arrWeek = contract.weekSigned + lead;
+        const seed = `${contract.id || ''}:${arrWeek}:${units}:${unitPrice}`;
         (contract.deliveries as any[]).push({
-          week: contract.weekSigned + lead,
+          week: arrWeek,
           units,
-          goodUnits: Math.round(units * (1 - defectRate)),
+          goodUnits: this.calculateDeliveryGoodUnits(supplier, units, seed),
           unitPrice,
         });
       }
@@ -387,7 +411,8 @@ export class GameEngine {
     for (const delivery of contract.deliveries as any[]) {
       if (!Number.isFinite(Number(delivery.goodUnits))) {
         const units = this.toNumber(delivery.units);
-        delivery.goodUnits = Math.round(units * (1 - defectRate));
+        const seed = `${contract.id || ''}:${delivery.week}:${units}:${delivery.unitPrice ?? unitPrice}`;
+        delivery.goodUnits = this.calculateDeliveryGoodUnits(supplier, units, seed);
       }
     }
     return contract;
@@ -604,12 +629,12 @@ export class GameEngine {
         const orders = (c as any).gmcOrders || [];
         const lead = this.getSupplierLeadTime(c.supplier as SupplierKey);
         const unitPrice = this.computeContractUnitPrice(c);
-        const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
         c.deliveries = orders.map((o: any) => {
           const units = this.toNumber(o.units);
           const arrWeek = this.toNumber(o.week) + lead;
           const uPrice = this.toNumber(o.unitPrice ?? unitPrice);
-          const goodUnits = Math.round(units * (1 - defectRate));
+          const seed = `${c.id || ''}:${o.orderId || ''}:${arrWeek}:${units}:${uPrice}`;
+          const goodUnits = this.calculateDeliveryGoodUnits(c.supplier as SupplierKey, units, seed);
           return { week: arrWeek, units, goodUnits, unitPrice: uPrice } as any;
         });
       }
@@ -778,11 +803,10 @@ export class GameEngine {
       for (const d of (c.deliveries || [])) {
         // Both SPT and GMC: physical arrival lands at d.week.
         if (this.toNumber(d.week) === dueWeekNext && !(d as any).__arrived) {
-          const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
           const units = this.toNumber(d.units);
           const goodUnits = Number.isFinite((d as any).goodUnits)
             ? this.toNumber((d as any).goodUnits)
-            : Math.round(units * (1 - defectRate));
+            : this.calculateDeliveryGoodUnits(c.supplier as SupplierKey, units, `${c.id || ''}:${d.week}:${units}:${d.unitPrice ?? unitPriceC}`);
           const u = this.toNumber(d.unitPrice ?? unitPriceC);
           const inventoryUnitCost = goodUnits > 0 ? (units * u) / goodUnits : u;
           nextWeekArrivals.push({ material: c.material as MaterialKey, goodUnits, orderedUnits: units, unitPrice: u, inventoryUnitCost });
@@ -1000,10 +1024,9 @@ export class GameEngine {
               ledger.push({ type: 'materials_spt', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: 15 });
               // Credit goodUnits as delivered for reporting accuracy
               if (!(d as any).__arrived) {
-                const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
                 const goodUnits = Number.isFinite((d as any).goodUnits)
                   ? this.toNumber((d as any).goodUnits)
-                  : Math.round(units * (1 - defectRate));
+                  : this.calculateDeliveryGoodUnits(c.supplier as SupplierKey, units, `${c.id || ''}:${d.week}:${units}:${d.unitPrice ?? unitPriceForced}`);
                 c.deliveredUnits = this.toNumber(c.deliveredUnits) + goodUnits;
                 (d as any).__arrived = true;
               }
@@ -1024,10 +1047,9 @@ export class GameEngine {
               costMaterials += due;
               ledger.push({ type: 'materials_gmc', amount: due, refId: `${c.supplier}:${c.material}`, weekNumber: 15 });
               if (!(d as any).__arrived) {
-                const defectRate = this.getSupplierDefectRate(c.supplier as SupplierKey);
                 const goodUnits = Number.isFinite((d as any).goodUnits)
                   ? this.toNumber((d as any).goodUnits)
-                  : Math.round(units * (1 - defectRate));
+                  : this.calculateDeliveryGoodUnits(c.supplier as SupplierKey, units, `${c.id || ''}:${d.week}:${units}:${d.unitPrice ?? unitPriceForced}`);
                 c.deliveredUnits = this.toNumber(c.deliveredUnits) + goodUnits;
                 (d as any).__arrived = true;
               }
@@ -1471,11 +1493,11 @@ export class GameEngine {
           if (!productInfo.rrp) {
             errors.push(`RRP not set for ${product}`);
           }
-          // Price floor: selling price should not be less than 105% of confirmed material + production cost
+          // Below-floor pricing is allowed, but should be explicit because it can be a deliberate clearance or acquisition tactic.
           const confirmed = Number(productInfo.confirmedMaterialCost || 0);
           const productionCost = GAME_CONSTANTS.MANUFACTURING[product as keyof typeof GAME_CONSTANTS.MANUFACTURING]?.inHouseCost || 0; // conservative
           if (productInfo.rrp && productInfo.rrp < 1.05 * (confirmed + productionCost)) {
-            errors.push(`RRP for ${product} below cost floor`);
+            warnings.push(`RRP for ${product} below cost floor; expect weak contribution margin unless this is deliberate customer-acquisition pricing`);
           }
         }
       }
@@ -1527,18 +1549,30 @@ export class GameEngine {
           const contracts: any[] = (currentState.procurementContracts as any)?.contracts || [];
           const leadBySupplier = (sup: SupplierKey) => Number((GAME_CONSTANTS.SUPPLIERS as any)[sup]?.leadTime || 0);
           const unitPriceOf = (c: any) => this.computeContractUnitPrice(c);
-          const defectOf = (sup: SupplierKey) => this.getSupplierDefectRate(sup);
           const arrivals = contracts.flatMap((c: any) => {
             if (c.material !== fabric) return [] as any[];
             const uLocked = unitPriceOf(c);
-            const defect = defectOf(c.supplier as SupplierKey);
             if (c.type === 'SPT') {
               const arrW = Number(c.weekSigned || 0) + leadBySupplier(c.supplier as SupplierKey);
-              return [{ week: arrW, goodUnits: Math.round(this.toNumber(c.units) * (1 - defect)), unitPrice: uLocked }];
+              const units = this.toNumber(c.units);
+              return [{
+                week: arrW,
+                goodUnits: this.calculateDeliveryGoodUnits(c.supplier as SupplierKey, units, `${c.id || ''}:${arrW}:${units}:${uLocked}`),
+                unitPrice: uLocked,
+              }];
             }
             if (c.type === 'GMC') {
               const orders = (c.gmcOrders || []) as any[];
-              return orders.map((o: any) => ({ week: Number(o.week || 0) + leadBySupplier(c.supplier as SupplierKey), goodUnits: Math.round(this.toNumber(o.units) * (1 - defect)), unitPrice: this.toNumber(o.unitPrice ?? uLocked) }));
+              return orders.map((o: any) => {
+                const arrW = Number(o.week || 0) + leadBySupplier(c.supplier as SupplierKey);
+                const units = this.toNumber(o.units);
+                const uPrice = this.toNumber(o.unitPrice ?? uLocked);
+                return {
+                  week: arrW,
+                  goodUnits: this.calculateDeliveryGoodUnits(c.supplier as SupplierKey, units, `${c.id || ''}:${o.orderId || ''}:${arrW}:${units}:${uPrice}`),
+                  unitPrice: uPrice,
+                };
+              });
             }
             return [] as any[];
           });
@@ -1602,12 +1636,12 @@ export class GameEngine {
         const floor = Math.max(planningFloor, actualFloor);
         const currentDiscount = Number((currentState as any).weeklyDiscounts?.[product as keyof any] ?? 0);
         if (rrp && rrp * (1 - currentDiscount) < floor) {
-          errors.push(`Discounted price below cost floor for ${product} (need ≥ ${floor.toFixed(2)})`);
+          warnings.push(`Discounted price below cost floor for ${product}; expect loss-making sales below £${floor.toFixed(2)}`);
         }
         const nextWeek = weekNumber + 1;
         const plannedDiscount = Number((currentState as any).plannedWeeklyDiscounts?.[product as keyof any] ?? 0);
         if (nextWeek <= 12 && rrp && rrp * (1 - plannedDiscount) < floor) {
-          errors.push(`Planned next-week discount below cost floor for ${product} (need ≥ ${floor.toFixed(2)})`);
+          warnings.push(`Planned next-week discount below cost floor for ${product}; expect loss-making sales below £${floor.toFixed(2)}`);
         }
       }
     }

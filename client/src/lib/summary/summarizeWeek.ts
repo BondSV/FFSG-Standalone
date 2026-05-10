@@ -1,5 +1,21 @@
 import type { WeeklySummary, LedgerEntry, InventoryDelta } from '@/types/weekly-summary';
 
+function hashToUnitInterval(seed: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash ^= seed.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0) / 4294967295;
+}
+
+function fallbackGoodUnitsForDelivery(supplier: string, ordered: number, seed: string): number {
+  const maxDefectRate = supplier === 'supplier2' ? 0.05 : 0;
+  const units = Math.max(0, Math.round(Number(ordered || 0)));
+  const defectRate = hashToUnitInterval(seed) * maxDefectRate;
+  return Math.min(units, Math.max(0, Math.round(units * (1 - defectRate))));
+}
+
 export function computeWeekSummary(params: {
   gameSessionId: string;
   prevState: any;      // Week N
@@ -56,10 +72,13 @@ export function computeWeekSummary(params: {
         if (Number(del.week) === w) {
           const mat = String(c.material || 'unknown');
           const ordered = Number(del.units || 0);
-          const defectRate = String(c.supplier) === 'supplier2' ? 0.05 : 0;
           const good = Number.isFinite(Number(del.goodUnits))
             ? Number(del.goodUnits)
-            : Math.round(ordered * (1 - defectRate));
+            : fallbackGoodUnitsForDelivery(
+                String(c.supplier || ''),
+                ordered,
+                `${c.id || ''}:${del.week}:${ordered}:${del.unitPrice ?? c.lockedUnitPrice ?? 0}`,
+              );
           const unitPrice = Number(del.unitPrice ?? c.lockedUnitPrice ?? 0);
           arrivalsByMaterial[mat] = arrivalsByMaterial[mat] || { ordered: 0, good: 0, value: 0 };
           arrivalsByMaterial[mat].ordered += ordered;
