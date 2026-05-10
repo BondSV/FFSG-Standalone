@@ -9,6 +9,15 @@ import { GameEngine, GAME_CONSTANTS } from "./gameEngine";
 import { insertGameSessionSchema, insertWeeklyStateSchema } from "@shared/schema";
 import { z } from "zod";
 
+function sanitizeForPersistence<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value, (_key, innerValue) => {
+    if (typeof innerValue === 'number') {
+      return Number.isFinite(innerValue) ? innerValue : 0;
+    }
+    return innerValue;
+  }));
+}
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
@@ -909,7 +918,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Persist A/I as decimals, not integers
       (toPersist as any).awareness = Number((toPersist as any).awareness ?? 0).toFixed(2);
       (toPersist as any).intent = Number((toPersist as any).intent ?? 0).toFixed(2);
-      const committedState = await storage.updateWeeklyState(weeklyState.id, toPersist as any);
+      const committedState = await storage.updateWeeklyState(weeklyState.id, sanitizeForPersistence(toPersist) as any);
       await storage.commitWeeklyState(weeklyState.id);
       
       // If this is week 15, mark game as completed
@@ -1089,7 +1098,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         nextWeekState.creditUsed = Math.min(GAME_CONSTANTS.CREDIT_LIMIT, creditUsedN1).toFixed(2);
 
 
-        await storage.createWeeklyState(nextWeekState);
+        await storage.createWeeklyState(sanitizeForPersistence(nextWeekState));
       }
       
       // Cash ledger entries are written directly by gameEngine
