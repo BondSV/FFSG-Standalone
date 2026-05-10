@@ -56,7 +56,10 @@ export function computeWeekSummary(params: {
         if (Number(del.week) === w) {
           const mat = String(c.material || 'unknown');
           const ordered = Number(del.units || 0);
-          const good = Number(del.goodUnits ?? del.units ?? 0);
+          const defectRate = String(c.supplier) === 'supplier2' ? 0.05 : 0;
+          const good = Number.isFinite(Number(del.goodUnits))
+            ? Number(del.goodUnits)
+            : Math.round(ordered * (1 - defectRate));
           const unitPrice = Number(del.unitPrice ?? c.lockedUnitPrice ?? 0);
           arrivalsByMaterial[mat] = arrivalsByMaterial[mat] || { ordered: 0, good: 0, value: 0 };
           arrivalsByMaterial[mat].ordered += ordered;

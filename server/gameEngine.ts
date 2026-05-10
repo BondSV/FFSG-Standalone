@@ -355,6 +355,7 @@ export class GameEngine {
   private static scheduleDeliveriesForContract(contract: any): any {
     // Always ensure deliveries reflect the latest orders; merge missing entries
     const lead = this.getSupplierLeadTime(contract.supplier);
+    const defectRate = this.getSupplierDefectRate(contract.supplier);
     const locked = contract.lockedUnitPrice != null ? Number(contract.lockedUnitPrice) : undefined;
     const unitPrice = locked != null ? locked : this.computeContractUnitPrice(contract);
     contract.deliveries = contract.deliveries || [];
@@ -365,15 +366,28 @@ export class GameEngine {
         const arrWeek = this.toNumber(o.week) + lead;
         const units = this.toNumber(o.units);
         const uPrice = this.toNumber(o.unitPrice ?? unitPrice);
+        const goodUnits = Math.round(units * (1 - defectRate));
         // consider an entry existing if same week and units exist
         const exists = (contract.deliveries as any[]).some((d: any) => this.toNumber(d.week) === arrWeek && this.toNumber(d.units) === units);
         if (!exists) {
-          (contract.deliveries as any[]).push({ week: arrWeek, units, unitPrice: uPrice });
+          (contract.deliveries as any[]).push({ week: arrWeek, units, goodUnits, unitPrice: uPrice });
         }
       }
     } else {
       if ((contract.deliveries as any[]).length === 0) {
-        (contract.deliveries as any[]).push({ week: contract.weekSigned + lead, units: contract.units, unitPrice });
+        const units = this.toNumber(contract.units);
+        (contract.deliveries as any[]).push({
+          week: contract.weekSigned + lead,
+          units,
+          goodUnits: Math.round(units * (1 - defectRate)),
+          unitPrice,
+        });
+      }
+    }
+    for (const delivery of contract.deliveries as any[]) {
+      if (!Number.isFinite(Number(delivery.goodUnits))) {
+        const units = this.toNumber(delivery.units);
+        delivery.goodUnits = Math.round(units * (1 - defectRate));
       }
     }
     return contract;
