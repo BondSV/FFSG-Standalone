@@ -123,8 +123,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   const lastNonZeroAllocation = useRef<Record<string, number> | null>(null);
 
   // Discounts for next week
-  const [discountMode, setDiscountMode] = useState<'none' | 'minimal' | 'standard' | 'aggressive'>(preset === 'conversion' ? 'standard' : 'none');
-  const [discountPercent, setDiscountPercent] = useState<number>(preset === 'conversion' ? 15 : 0);
+  const [discountMode, setDiscountMode] = useState<'none' | 'minimal' | 'standard' | 'aggressive'>('none');
+  const [discountPercent, setDiscountPercent] = useState<number>(0);
 
   useEffect(() => {
     const plan = (currentState as any)?.plannedMarketingPlan as any;
@@ -179,7 +179,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       setChannelAllocation({ ...splitFromComponents(DEFAULT_COMPONENTS[preset]) });
       if (preset === 'awareness') { setDiscountMode('none'); setDiscountPercent(0); }
       if (preset === 'balanced') { setDiscountMode('none'); }
-      if (preset === 'conversion') { setDiscountMode('standard'); setDiscountPercent(15); }
+      if (preset === 'conversion') { setDiscountMode('none'); setDiscountPercent(0); }
     }
   }, [preset, manual]);
 
@@ -188,6 +188,14 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
       setChannelAllocation({ ...splitFromComponents(campaignComponents) });
     }
   }, [campaignComponents, manual]);
+
+  useEffect(() => {
+    if (manual) {
+      setCampaignComponents(marketingChannels
+        .filter((channel) => Number(channelAllocation[channel.id] || 0) > 0)
+        .map((channel) => channel.id as CampaignComponentId));
+    }
+  }, [channelAllocation, manual]);
 
   const totalAllocation = useMemo(() => Object.values(channelAllocation).reduce((s, v) => s + (Number(v) || 0), 0), [channelAllocation]);
   const isFinalWeek = currentWeek === 15;
@@ -275,16 +283,8 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
   }, [preset, discountMode, discountPercent]);
 
   const discountBounds = useMemo(() => {
-    if (discountMode === 'minimal') return { min: 1, max: 10 };
-    if (discountMode === 'standard') return { min: 11, max: 29 };
-    if (discountMode === 'aggressive') return { min: 30, max: 95 };
-    return { min: 0, max: 0 };
-  }, [discountMode]);
-
-  useEffect(() => {
-    if (discountMode === 'none') return;
-    setDiscountPercent((value) => Math.min(discountBounds.max, Math.max(discountBounds.min, value)));
-  }, [discountMode, discountBounds.min, discountBounds.max]);
+    return { min: 0, max: 95 };
+  }, []);
 
   // TV inefficiency indicator: TV needs a meaningful channel budget and share.
   const tvInefficient = useMemo(() => {
@@ -637,23 +637,22 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             <div className="space-y-2">
               <Label>Discounts (next week)</Label>
               {preset === 'awareness' && (<div className="text-sm text-gray-600">Hidden during Awareness.</div>)}
-              {preset !== 'awareness' && (
-                <div className="space-y-2">
+	              {preset !== 'awareness' && (
+	                <div className="space-y-2">
                   <div className="flex gap-2 flex-wrap">
                     <Button variant={discountMode==='none'?'default':'outline'} onClick={()=>{ setDiscountMode('none'); setDiscountPercent(0); }} disabled={isLocked}>None</Button>
                     <Button variant={discountMode==='minimal'?'default':'outline'} onClick={()=>{ setDiscountMode('minimal'); setDiscountPercent(10); }} disabled={isLocked}>Minimal</Button>
                     <Button variant={discountMode==='standard'?'default':'outline'} onClick={()=>{ setDiscountMode('standard'); setDiscountPercent(15); }} disabled={isLocked}>Standard</Button>
                     <Button variant={discountMode==='aggressive'?'default':'outline'} onClick={()=>{ setDiscountMode('aggressive'); setDiscountPercent(35); }} disabled={isLocked}>Aggressive</Button>
                   </div>
-                  {discountMode!=='none' && (
-                    <div>
-                      <div className="flex justify-between text-xs text-gray-600"><span>Discount %</span><span>{discountPercent}%</span></div>
-                      <input type="range" min={discountBounds.min} max={discountBounds.max} step={1} value={discountPercent} onChange={(e)=> setDiscountPercent(Number(e.target.value))} className="w-full" disabled={isLocked} />
-                      {floorWarnings.length>0 && (<div className="text-xs text-red-600 mt-1">Below cost risk: {floorWarnings.join(', ')}</div>)}
-                    </div>
-                  )}
-              </div>
-            )}
+                  <div className="text-xs text-gray-500">Preset buttons set the discount level; the slider always uses the full range.</div>
+                  <div>
+                    <div className="flex justify-between text-xs text-gray-600"><span>Discount %</span><span>{discountPercent}%</span></div>
+                    <input type="range" min={discountBounds.min} max={discountBounds.max} step={1} value={discountPercent} onChange={(e)=> { const value = Number(e.target.value); setDiscountPercent(value); setDiscountMode(value === 0 ? 'none' : value <= 10 ? 'minimal' : value <= 29 ? 'standard' : 'aggressive'); }} className="w-full" disabled={isLocked} />
+                    {floorWarnings.length>0 && (<div className="text-xs text-red-600 mt-1">Below cost risk: {floorWarnings.join(', ')}</div>)}
+                  </div>
+	              </div>
+	            )}
             </div>
           </div>
         </CardContent>
@@ -677,12 +676,14 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
                   type="button"
                   onClick={() => toggleCampaignComponent(component.id)}
                   disabled={manual || isLocked || marketingSpend === 0}
-                  className={`text-left rounded-lg border px-3 py-2 transition ${
+                  aria-pressed={active}
+                  className={`relative text-left rounded-lg border px-3 py-2 transition ${
                     active
-                      ? 'border-amber-400 bg-amber-50 text-gray-900'
+                      ? 'border-amber-500 bg-amber-50 text-gray-900 shadow-sm ring-2 ring-amber-200'
                       : 'border-gray-200 bg-white text-gray-700 hover:border-amber-200'
-                  } ${manual || isLocked || marketingSpend === 0 ? 'opacity-60 cursor-not-allowed' : ''}`}
+                  } ${manual || isLocked || marketingSpend === 0 ? 'cursor-not-allowed' : ''}`}
                 >
+                  <div className={`absolute right-3 top-3 h-2.5 w-2.5 rounded-full ${active ? 'bg-amber-500' : 'bg-gray-200'}`} />
                   <div className="font-medium">{component.label}</div>
                   <div className="text-xs text-gray-600 mt-0.5">{component.description}</div>
                 </button>
@@ -695,7 +696,7 @@ export default function Marketing({ gameSession, currentState }: MarketingProps)
             </div>
           )}
           {manual && (
-            <div className="text-xs text-gray-500 mt-3">Manual mode is active; component buttons are paused while you edit the split directly.</div>
+            <div className="text-xs text-gray-500 mt-3">Manual mode is active; component states reflect non-zero channel allocations while you edit the split directly.</div>
           )}
         </CardContent>
       </Card>
