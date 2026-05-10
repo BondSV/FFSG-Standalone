@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+node_modules
+dist
+npm-debug.log*
+Dockerfile
+compose.yml
+README.local.md

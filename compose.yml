@@ -1,0 +1,14 @@
+services:
+  ffbsg:
+    build:
+      context: .
+    image: ffbsg:latest
+    container_name: ffbsg
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+    ports:
+      - "8081:5000"
